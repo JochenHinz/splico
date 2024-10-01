@@ -126,8 +126,31 @@ def mesh_difference(mesh0: Mesh, mesh1: Mesh):
 
 @njit(cache=True)
 def _make_matching(points0, points1, eps):
-  # XXX: docstring
+  """
+    Given two sets of points and a threshold `eps`, create a correspondence
+    between points in pairs if they are sufficiently close, i.e., if their
+    Euclidean distance is below `eps`.
+    If two points have been matched their indices will be removed from the
+    set of indices that are still eligible for matching to avoid duplicate
+    matching.
+
+    Parameters
+    ----------
+    points0 : :class:`np.ndarray`
+        The array containing the first mesh's points.
+    points1 : :class:`np.ndarray`
+        The array containing the second mesh's points.
+    eps : :class:`float`
+        The matching tolerance.
+
+    Returns
+    -------
+    matching : :class:`np.ndarray` of integers
+        An (nmatchings, 2) - shaped integer array containing the matches
+        as rows.
+  """
   assert points0.ndim == 2 and points0.shape[1:] == points1.shape[1:]
+  assert eps >= 0
   n = points0.shape[1]
 
   # make set of available right matches
@@ -160,15 +183,15 @@ def _make_matching(points0, points1, eps):
     # of the ones left behind, retain only those whose Euclidean distance is
     # truly less than eps
 
-    # compute Euclidean distance (squared)
-    # distances = ((points1[candidates, :] - point[None]) ** 2).sum((1,))
-
+    # compute Euclidean distance (squared, for some reason I can't vectorize)
     distances = np.empty((len(candidates),), dtype=np.float64)
 
     for k, candidate in enumerate(candidates):
       distances[k] = ((points1[candidate] - point)**2).sum()
 
     # retain only indices that are below the threshold
+    # XXX: for stability reasons it will probably be better in the long run
+    #      to require that the number of retained indices is at most one.
     retain = np.where(distances <= eps ** 2)[0]
 
     # no indices left ? => continue
@@ -184,6 +207,9 @@ def _make_matching(points0, points1, eps):
     # find local_index of j in `indices` and remove it from the available indices
     local_index = np.searchsorted(indices, j)
     indices = np.delete(indices, local_index)
+
+  if len(match0) == 0:
+    return np.empty((0, 2), dtype=np.int64)
 
   ret = np.empty((len(match0), 2), dtype=np.int64)
 
@@ -209,6 +235,9 @@ def _remap_elements(elems0, elems1, mindices0, mindices1, points0, points1):
     in mindices0 are unchaged while those of elems1 that are not in mindices1
     only receive an offset, representing the number of indices in elems0 (excl mindices0).
   """
+
+  # XXX: generalize to arbitrary number of meshes (see `mesh_boundary_union`)
+
   # get number of matches
   nmatches = len(mindices0)
 
@@ -224,59 +253,83 @@ def _remap_elements(elems0, elems1, mindices0, mindices1, points0, points1):
 
   # XXX: what follows can probably be parallelised
 
-  # make two index maps, mapping the matching indices in mindices0, mindices1
-  # to a shared new global index (at the end)
-  indexmap0, indexmap1 = {}, {}
-  for i, (i0, i1) in enumerate(zip(mindices0, mindices1)):
-    indexmap0[i0] = tot_int_points + i
-    indexmap1[i1] = tot_int_points + i
-
-  # remap elems0 by only changing matched indices
-  for i, row in enumerate(elems0):
-    for j, val in enumerate(row):
-      if val in indexmap0:
-        elems0[i, j] = indexmap0[val]
-
-  # remap elems1 by changing matched indices and giving unmatched ones an
-  # appropriate offset
-  for i, row in enumerate(elems1):
-    for j, val in enumerate(row):
-      if val in indexmap1:
-        elems1[i, j] = indexmap1[val]
-      else:
-        elems1[i, j] += tot_int_points0 - nmatches
+  # keep track of the matched indices from both meshes in a set
+  indexset0, indexset1 = set(), set()
+  for i0, i1 in zip(mindices0, mindices1):
+    indexset0.add(i0)
+    indexset1.add(i1)
 
   # compute the matched points as the average from both point sets
   matched_points = (points0[mindices0] + points1[mindices1]) / 2.0
+
+  # allocate two integer arrays of len(points0) and len(points1), respectively
+  # containing at the i-th position the new global index of the local i-th node
+  remap0 = np.empty((len(points0),), dtype=np.int64)
+  remap1 = np.empty((len(points1),), dtype=np.int64)
+
+  # set the matched indices to an arange from the total internal points to
+  # the total internal points + the number of matches
+  remap0[mindices0] = np.arange(tot_int_points, tot_int_points + len(mindices0))
+  remap1[mindices1] = np.arange(tot_int_points, tot_int_points + len(mindices0))
 
   # create new point array and fill it first with the unmatched points in
   # points0, then the unmatched ones in points1 and then with the matched points.
   points = np.empty( (tot_int_points + nmatches, 3), dtype=np.float64 )
 
   i = 0
-  for j, point in enumerate(points0):
-    if j in indexmap0:
-      continue
-    points[i] = point
-    i += 1
+  for mypoints, myindexset, myremap in zip((points0, points1), (indexset0, indexset1), (remap0, remap1)):
 
-  for j, point in enumerate(points1):
-    if j in indexmap1:
-      continue
-    points[i] = point
-    i += 1
+    for j, point in enumerate(mypoints):
+      if j in myindexset:
+        continue
+      points[i] = point  # set the i-th entry to point
+      myremap[j] = i  # set the j-th entry of the remap to i
+      i += 1
 
   for point in matched_points:
     points[i] = point
     i += 1
 
+  # remaps have been finished at this point
+
+  elems = np.empty((len(elems0) + len(elems1), elems0.shape[1]), dtype=np.int64)
+
+  # remap elems0 and elems1
+  for myelems, myremap, myoffset in zip((elems0, elems1), (remap0, remap1), (0, len(elems0))):
+    for i, row in enumerate(myelems):
+      for j, val in enumerate(row):
+        elems[i + myoffset, j] = myremap[myelems[i, j]]
+
   # return concatenation of both remapped element arrays and the points
-  return np.concatenate((elems0, elems1)), points
+  return elems, points
 
 
 def mesh_boundary_union(*meshes, eps=1e-6):
 
-  # XXX: docstring
+  """
+    Create a union of meshes without checking for duplicate interior points
+    but only points that are on the boundary.
+    As opposed to `mesh_union`, the points need not exactly match but are
+    considered equal if their Euclidean distance is below `eps`.
+
+    Parameters
+    ----------
+    meshes : :class:`Tuple[Mesh]`
+        The input meshes whose union we take. Needs to contain at least one element.
+    eps : :class:`float`
+        The matching tolerance.
+
+    Returns
+    -------
+    union_mesh : :class:`Mesh`
+        The union of the input meshes, only considering boundary points.
+  """
+
+  # XXX: currently the boundary union takes place repeatedly in case more than
+  #      two meshes have been passed. In the long run it would be better to
+  #      take the union of all of them at once. This would also enable creating
+  #      a global matching of all meshes which could then optionally be returned
+  #      and reused for meshes with the same topology.
 
   assert meshes
 
@@ -304,9 +357,8 @@ def mesh_boundary_union(*meshes, eps=1e-6):
   gmatch0, gmatch1 = [active[loc] for active, loc in zip((active0, active1), local_matching.T)]
 
   # create new elems, points from the matching data
-  # XXX: try to avoid copying somehow
-  elems, points = _remap_elements(mesh0.elements.copy(),
-                                  mesh1.elements.copy(),
+  elems, points = _remap_elements(mesh0.elements,
+                                  mesh1.elements,
                                   gmatch0,
                                   gmatch1,
                                   mesh0.points,

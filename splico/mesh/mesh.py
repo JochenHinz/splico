@@ -11,10 +11,11 @@ from ._ref_structured import _refine_structured as ref_structured
 
 import pyvista as pv
 import vtk
+import treelog as log
 
 from abc import abstractmethod
 
-from typing import Callable, Sequence, Self
+from typing import Callable, Sequence, Self, Tuple
 
 from functools import cached_property, lru_cache
 from itertools import count, product
@@ -24,7 +25,7 @@ import pickle
 
 # all supported element types (for now)
 SIMPLEX_TYPES = ('point', 'line', 'triangle',
-                 'quadrilateral', 'tetrahedron' 'hexahedron')
+                 'quadrilateral', 'tetrahedron', 'hexahedron')
 
 
 class MissingVertexError(Exception):
@@ -41,8 +42,23 @@ class HasNoBoundaryError(Exception):
 
 @lru_cache
 def _issubmesh(mesh0, mesh1):
+  """
+    Check if `mesh0` is a submesh of `mesh1`.
+    A submesh is defined as a mesh that contains the same or a subset of the
+    other mesh's points and elements. Alternatively, `mesh0` is also considered
+    a submesh of `mesh1` if it is a submesh of `mesh1.submesh` or its submeshes.
 
-  # XXX: docstring
+    Parameters
+    ----------
+    mesh0 : :class:`Mesh`
+        The submesh candidate.
+    mesh1 : :class:`Mesh`
+        The mesh we check if `mesh0` is a submesh of.
+
+    Returns
+    -------
+    A boolean indicating whether `mesh0` is a submesh of `mesh1`.
+  """
 
   # mesh0 mesh has more vertices per element than mesh1 => False
   if mesh0.nverts > mesh1.nverts:
@@ -66,6 +82,8 @@ def _issubmesh(mesh0, mesh1):
 
     # the shape is the same => make sure that unique_elements and
     # mesh1.elements have the same indices when brought into lexigraphically sorted form
+    # XXX: note that two elements can be the same even though the indices appear
+    #      in a different order.
     if (all_unique_elements != np.unique(mesh1.elements, axis=0)).any():
       return False
 
@@ -83,11 +101,13 @@ def _issubmesh(mesh0, mesh1):
 
 
 def mesh_boundary_union(*meshes, **kwargs):
-  from _jit import mesh_boundary_union as _mesh_boundary_union
+  """ Docstring: see _jit.py """
+  from ._jit import mesh_boundary_union as _mesh_boundary_union
   return _mesh_boundary_union(*meshes, **kwargs)
 
 
 def mesh_union(*meshes):
+  """ Docstring: see _jit.py """
   from ._jit import mesh_union as _mesh_union
   return _mesh_union(*meshes)
 
@@ -348,13 +368,14 @@ class Mesh(HashMixin):
     """
     assert (n := int(n)) >= 0
     if n == 0:
-      ret = self
-    else:
-      ret = self._refine().refine(n=n-1)
-    return ret
+      return self
+    return self._refine().refine(n=n-1)
 
   def drop_points_and_renumber(self):
-    # XXX: docstring
+    """
+      Drop all points that are not used by `self.elements` and renumber
+      `self.elements` to reflect the renumbering of the points from 0 to npoints-1.
+    """
     unique_vertices = np.unique(self.elements)
     if len(unique_vertices) == unique_vertices[-1] + 1 == len(self.points):
       return self
@@ -364,24 +385,40 @@ class Mesh(HashMixin):
     return self._edit(elements=elements, points=points)
 
   @property
-  def _submesh_indices(self):
-    # XXX: docstring
+  def _submesh_indices(self) -> Tuple[np.ndarray]:
+    """
+      The submesh indices are the columns of `self.elements` that have to be
+      extracted to create the mesh's submesh. By default returns a `HasNoSubMeshError`
+      but can be overwritten.
+      Example: to go from a triangulation to a linmesh, we have to extract the
+      columns ([0, 1], [1, 2], [2, 0]) (all edges of each triangle).
+    """
     raise HasNoSubMeshError("A mesh of type '{}' has no submesh.".format(self.__class__.__name__))
 
   def _submesh(self):
-    # XXX: docstring
+    """
+      Take the mesh's submesh, if applicable.
+      Requres `self._submesh_indices` to tbe implemented by the class.
+    """
+    # XXX: jit-compile the element map
+
     elements = np.concatenate([ self.elements[:, slce] for slce in self._submesh_indices ])
 
+    # iterate over all elements and map the sorted element indices to the element.
     sorted_elements = {}
     for elem in map(tuple, elements):
       sorted_elements.setdefault(tuple(sorted(elem)), []).append(elem)
 
+    # for each list of equivalent elements (differing only by a permutation)
+    # retain the minimum one. Example [(2, 3, 1), (1, 2, 3)] -> (1, 2, 3)
     elements = sorted(map(min, sorted_elements.values()))
     return frozen(elements)
 
   @cached_property
   def _boundary_nonboundary_elements(self):
-    # XXX: docstring
+    """
+      Split all elements of the submesh into boundary and non-boundary elements.
+    """
 
     # get all facets
     all_submesh_facets = np.concatenate([self.elements[:, indices] for indices in self._submesh_indices ])
@@ -392,7 +429,7 @@ class Mesh(HashMixin):
     # get the unique sorted_edges, their corresponding unique indices and the number of occurences of each
     _, unique_indices, counts = np.unique(sorted_edges, return_index=True, return_counts=True, axis=0)
 
-    # keep only the ones that have been counted only once
+    # keep the ones that have been counted only once
     one_mask = counts == 1
 
     return tuple(map(frozen, (all_submesh_facets[unique_indices[mask]] for mask in (one_mask, ~one_mask))))
@@ -439,8 +476,7 @@ class Mesh(HashMixin):
     return self.take(keep_elems)
 
   def __or__(self, other):
-    # from _jit import union_of_two_meshes
-    # return union_of_two_meshes(self, other)
+    assert self.__class__ is other.__class__, NotImplementedError
     return mesh_union(self, other)
 
   @property
@@ -453,6 +489,10 @@ class Mesh(HashMixin):
 
   @property
   def pvelements(self):
+    """
+      PyVista may expect the elements in an order that differs from the chosen
+      order. May need to be overwritten in order to properly work with PyVista.
+    """
     return self.elements
 
   def points_iter(self):
@@ -514,6 +554,13 @@ class Mesh(HashMixin):
     return self._edit(elements=self.elements[elemindices])
 
   def take_elements(self, selecter: Callable, complement=False):
+    """
+      Given a Callable `selecter` iterator over all of the mesh's elements
+      and keep only those elements for which selecter(*points) evaluates
+      to `True`, where `points` are the element's points.
+    """
+    # XXX: re-implement `selecter` to apply to all elements at once to allow
+    #      for proper vectorization (avoid element for loop).
     if complement:
       _selecter = selecter
       selecter = lambda *args, **kwargs: not _selecter(*args, **kwargs)
@@ -526,6 +573,7 @@ class Mesh(HashMixin):
 
 @lru_cache(maxsize=32)
 def _refine_structured(self):
+  """ Refine a structured mesh (LineMesh, QuadMesh, HexMesh) """
   elems, points = ref_structured(self.elements, self.points, self.ndims)
   return self.__class__(elems, points)
 
@@ -619,7 +667,17 @@ class Triangulation(AffineMixin, Mesh):
 
   """
     `is_valid` is implemented via `AffineMixin`.
+
+      2
+      |\
+      |  \
+      |    \
+      |      \
+      |        \
+      |__________\
+     0            1
   """
+  # XXX: not sure if the counterclockwise ordering is the best choice.
 
   simplex_type = 'triangle'
   ndims = 2
@@ -757,10 +815,13 @@ def triangulation_from_polygon(points: np.ndarray, mesh_size=0.05) -> Triangulat
       creates a denser mesh close to the point (x, y) = (.5, .5).
   """
 
-  import pygmsh
+  try:
+    import pygmsh
+  except ModuleNotFoundError as ex:
+    log.warning("The pygmsh library has not been found. Please install it via 'pip install pygmsh'.")
+    raise ModuleNotFoundError from ex
 
-  if np.isscalar(mesh_size):
-    _mesh_size = mesh_size
+  if np.isscalar((_mesh_size := mesh_size)):
     mesh_size = lambda *args, **kwargs: _mesh_size
 
   assert isinstance(type(mesh_size), Callable)
@@ -859,7 +920,25 @@ class PointMesh(AffineMixin, Mesh):
     return gmap
 
 
-def unitsquare(_points: Sequence[int | np.ndarray]):
+def rectilinear(_points: Sequence[int | np.ndarray]):
+  """
+    Rectilinear mesh in one, two or three dimensions.
+
+    Parameters
+    ----------
+    _points : Sequence of integers or flat and strictly monotone np.ndarray.
+        The dimensionality of the mesh follows from the length of the sequence.
+        If an integer is encountered, it is converted to a linspace where the
+        integer determines the number of steps.
+        Else, it is assumed to be strictly monotone.
+
+    Returns
+    -------
+    ret : :class:`LineMesh` or :class:`QuadMesh` or :class:`HexMesh`
+        A rectilinear mesh whose dimensionality follows from the length of `_points`.
+        The mesh vertices follow from a tensor product of all values generated
+        by the conversion of `_points`.
+  """
 
   assert (dim := len(_points)) <= 3, NotImplementedError
 
@@ -890,4 +969,6 @@ def unitsquare(_points: Sequence[int | np.ndarray]):
 
   elements = indices[ tuple(ijk) ]
 
-  return {1: LineMesh, 2: QuadMesh, 3: HexMesh}[dim](elements, points)
+  return {1: LineMesh,
+          2: QuadMesh,
+          3: HexMesh}[dim](elements, points)

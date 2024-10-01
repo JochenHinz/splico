@@ -305,7 +305,7 @@ class TensorKnotVector(HashMixin):
 
     list_of_abscissae = list(map(np.asarray, list_of_abscissae))
     data = np.asarray(data)
-    assert data.shape[:1] == np.prod(list(map(len, list_of_abscissae)))
+    assert data.shape[:1] == (np.prod(list(map(len, list_of_abscissae))),)
     assert all(lam >= 0 for lam in (lam0, lam1))
     X = self.collocate(*list_of_abscissae)
     M = X @ X.T

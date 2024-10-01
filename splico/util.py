@@ -409,3 +409,8 @@ def clparam(points: Sequence | np.ndarray):
 
   ret = np.array([0, *np.linalg.norm(points, axis=1).cumsum()])
   return ret / ret[-1]
+
+
+def normalize(array: np.array) -> np.array:
+  array = np.asarray(array)
+  return array / np.linalg.norm(array, axis=-1, ord=2, keepdims=True)

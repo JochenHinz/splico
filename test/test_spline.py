@@ -1,7 +1,7 @@
 from splico.util import _
 from splico.spl import UnivariateKnotVector, TensorKnotVector
 from splico.spl import NDSpline, SplineCollection
-from splico.mesh import unitsquare
+from splico.mesh import rectilinear
 
 import unittest
 
@@ -46,7 +46,7 @@ class TestFitSample(unittest.TestCase):
     x, y = map(np.ravel, np.meshgrid(abscissae, abscissae))
     z = np.zeros_like(x)
     spline = kv.fit([abscissae] * 2, np.stack([x, 1 + x + y, z], axis=1))
-    mesh = unitsquare((21, 21))
+    mesh = rectilinear((21, 21))
     # call = spline(*mesh.points[:, :2].T)
     # sampled_mesh = mesh._edit(points=np.concatenate([call, np.zeros((mesh.points.shape[0], 1))], axis=1))
     sampled_mesh = spline.sample_mesh( mesh )

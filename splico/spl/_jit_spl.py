@@ -406,7 +406,8 @@ def _call3D( xi, eta, zeta, kv0, kv1, kv2, p0, p1, p2, x, dx, dy, dz ):
   return ret
 
 
-# XXX: write a function that can do all types of calls 1D 2D 3D by calling itself repeatedly ...
+# XXX: write a function that can do all types of calls 1D 2D 3D by
+#      calling itself repeatedly. Outsource to Rust if this is easier.
 
 
 def call(list_of_abscissae,

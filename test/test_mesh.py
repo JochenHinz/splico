@@ -1,4 +1,4 @@
-from splico.mesh import Mesh, unitsquare, Triangulation, mesh_union
+from splico.mesh import Mesh, rectilinear, Triangulation, mesh_union
 from splico.util import GlobalPrecision, _round_array
 
 import unittest
@@ -23,11 +23,11 @@ def unit_disc_triangulation(npoints=11, **kwargs):
 
 class UnitSquare(unittest.TestCase):
 
-  def test_unitsquare(self):
+  def test_rectilinear(self):
     points = [ np.linspace(0, 1, n) for n in (4, 5, 6) ]
     lengths = list(map(len, points))
     for i in range(1, 4):
-      mesh = unitsquare(points[:i])
+      mesh = rectilinear(points[:i])
 
       with GlobalPrecision(8):
         element = np.asarray(list(product(*[range(2) for _ in range(i)]))).T
@@ -51,9 +51,9 @@ class RefineAndGeometryMap(unittest.TestCase):
 
     for i in range(1, 4):
       # make mesh and refine it
-      mesh0 = unitsquare(lengths[:i])
+      mesh0 = rectilinear(lengths[:i])
       self.assertTrue(mesh0.is_valid())
-      mesh1 = order_mesh(unitsquare([2 * n - 1 for n in lengths[:i]]))
+      mesh1 = order_mesh(rectilinear([2 * n - 1 for n in lengths[:i]]))
       rmesh = order_mesh(mesh0.refine(1).drop_points_and_renumber())
 
       self.assertEqual(mesh1.elements.shape, rmesh.elements.shape)
@@ -111,7 +111,7 @@ class TestBoundary(unittest.TestCase):
     """
     npoints = 11
     for i in range(1, 4):
-      mesh = unitsquare((npoints,) * i)
+      mesh = rectilinear((npoints,) * i)
       with GlobalPrecision(8):
         dmesh = mesh.boundary.drop_points_and_renumber()
         points_c = dmesh.points - np.array([.5] * dmesh.points.shape[1])[_]
@@ -121,7 +121,7 @@ class TestBoundary(unittest.TestCase):
 class TestSubMesh(unittest.TestCase):
 
   def test_structured(self):
-    mesh = unitsquare((4, 5, 6))
+    mesh = rectilinear((4, 5, 6))
     for i in range(3):
       mesh = mesh.submesh
       self.assertTrue(mesh.is_valid())
@@ -140,8 +140,8 @@ class TestUnion(unittest.TestCase):
     npoints = (3, 3, 4)
     for i in range(1, 4):
       with GlobalPrecision(8):
-        meshes = [ unitsquare(points) for points in product(*([np.linspace(0, .5, n), np.linspace(.5, 1, n)] for n in npoints[:i])) ]
-        mesh0 = order_mesh(unitsquare([2 * n - 1 for n in npoints[:i]]))
+        meshes = [ rectilinear(points) for points in product(*([np.linspace(0, .5, n), np.linspace(.5, 1, n)] for n in npoints[:i])) ]
+        mesh0 = order_mesh(rectilinear([2 * n - 1 for n in npoints[:i]]))
         mesh1 = order_mesh(mesh_union(*meshes))
 
         self.assertTrue( np.allclose(mesh0.points, mesh1.points) )
