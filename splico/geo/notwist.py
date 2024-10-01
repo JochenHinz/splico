@@ -8,8 +8,27 @@ import treelog as log
 
 @njit(cache=True)
 def _compute_notwistframe(T, n0, zero_thresh):
+  """
+    Compute a discrete no-twist-frame.
 
-  # XXX: docstring
+    Parameters
+    ----------
+    T : :class:`np.ndarray`
+        Array of shape (n, 3) containing n tangents. Assumed to be normalized.
+    n0 : :class:`np.ndarray`
+        The initial normal vector of shape (3,).
+    zero_thresh : :class:`float`
+        A threshold value that dictates whether two consecutive tangents
+        should be considered equal.
+        They're considered equal if |t0 - t1|_2 < zero_thresh.
+
+    Returns
+    -------
+    Rs : :class:`np.ndarray`
+        Array of shape (n, 3, 3) containing rotation matrices.
+        Rs[i][:, j] equals the i-th normal for j=0, binormal for j=1 and
+        tangent for j=2, respectively.
+  """
 
   t0 = T[0]
   binormal0 = np.cross(t0, n0)
@@ -47,8 +66,11 @@ def _compute_notwistframe(T, n0, zero_thresh):
 def compute_notwistframe(tangents: np.ndarray,
                          n0: Optional[np.ndarray | Sequence[float]] = None,
                          zero_thresh=1e-8):
-
-  # XXX: docstring
+  """
+    Compute a discrete no-twist-frame.
+    The docstring is the same as for `_compute_notwistframe` but `n0` and
+    `zero_thresh` receive reasonable default values if not passed.
+  """
 
   assert (tangents := normalize(tangents)).shape[1:] == (3,)
   assert zero_thresh >= 0
@@ -66,12 +88,39 @@ def compute_notwistframe_from_spline(spline: NDSpline,
                                      refit=False,
                                      framekwargs=None,
                                      refitkwargs=None) -> np.ndarray | NDSpline:
+  """
+    Compute a discrete no-twist-frame from an `NDSpline` input.
+    The spline's tangent is computed in `abscissae` and the result is forwarded
+    to `compute_notwistframe`. If `refit` is `True`, a spline with the same
+    knotvector as `spline` is fit to the discrete no-twist-frame.
 
-  # XXX: docstring
+    Parameters
+    ----------
+    spline : :class:`splico.spl.NDSpline`
+        The input spline. Must satisfy spline.shape == (3,) and spline.nvars == 1.
+    abscissae : :class:`np.ndarray` or Sequence[float] or :class:`int`
+        A strictly monotone sequence of parametric values. If passed as an integer,
+        it will be converted to a linspace from a to b in `abscissae` steps, where
+        a and b are the first and last knot for the spline's knotvector.
+        Input must be contained in the interval [a, b].
+    refit : :class:`bool`
+        Whether or not the result should be refit.
+    framekwargs : :class:`dict`, optional
+        Keyword arguments that are forwarded to `compute_notwistframe`.
+    refitkwargs : :class:`dict`, optional
+        Keyword arguments that are forwarded to `splico.spl.TensorKnotVector.fit`.
+
+    Returns
+    -------
+
+    Rs : :class:`np.ndarray` or :class:`splico.spl.NDSpline`
+        The discrete no-twist-frame or a spline fit of it if `refit` is `True`.
+  """
 
   assert spline.nvars == 1 and spline.shape == (3,)
   if refit is False and refitkwargs:
-    log.warning("Received refit keyword arguments but refit is set to false. They will be ignored.")
+    log.warning("Received refit keyword arguments but refit is set to false."
+                " They will be ignored.")
 
   (a, *ignore, b), = spline.knotvector.knots
 
