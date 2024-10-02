@@ -51,7 +51,7 @@ def _refine_structured(elements: np.ndarray, points: np.ndarray, ndims: int):
   xi = np.linspace(0, 1, 3)
 
   # make a subdivision of [0, 1] ** n with 3 points in each direction
-  _X = np.stack(list(map(np.ravel, np.meshgrid(*[xi] * ndims))), axis=1)
+  _X = np.stack(list(map(np.ravel, np.meshgrid(*[xi] * ndims, indexing='ij'))), axis=1)
 
   # format X into the form (i0, i1, ...), (w0, w1, ...)
   X = tuple(map(_formatter, _X))

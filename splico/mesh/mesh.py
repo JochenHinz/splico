@@ -7,7 +7,7 @@
 
 from ..util import np, _, frozen, HashMixin, frozen_cached_property, _round_array, isincreasing
 
-from ._ref_structured import _refine_structured as ref_structured
+from ._jit_ref_structured import _refine_structured as ref_structured
 
 import pyvista as pv
 import vtk
