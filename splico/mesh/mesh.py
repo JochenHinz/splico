@@ -5,7 +5,8 @@
 @author: Jochen Hinz
 """
 
-from ..util import np, _, frozen, HashMixin, frozen_cached_property, _round_array, isincreasing
+from ..util import np, _, frozen, HashMixin, frozen_cached_property, \
+                   _round_array, isincreasing, column_meshgrid
 
 from ._jit_ref_structured import _refine_structured as ref_structured
 
@@ -134,14 +135,16 @@ class AffineMixin:
     Each derived class needs to implement `BK` in order for the others to work.
   """
 
-  @property
+  @frozen_cached_property
   def BK(self) -> np.ndarray:
-    raise NotImplementedError("Any derived mesh has to implement the `BK` attribute.")
+    p0, *tail = self.points[self.elements.T]
+    return np.stack([p - p0 for p in tail], axis=2)
 
   @frozen_cached_property
   def GK(self) -> np.ndarray:
     """ Metric Tensor on each element. """
-    return (self.BK.swapaxes(-1, -2)[..., _] * self.BK[..., _, :, :]).sum(-2)
+    return (self.BK.swapaxes(-1, -2)[..., _] *
+            self.BK[..., _, :, :]).sum(-2)
 
   @frozen_cached_property
   def GKinv(self) -> np.ndarray:
@@ -151,16 +154,20 @@ class AffineMixin:
   @frozen_cached_property
   def detBK(self) -> np.ndarray:
     """ Jacobian determinant (measure) per element. """
-    # the np.linalg.det function returns of an array ``x`` of shape
-    # (n, m, m) the determinant taken along the last two axes, i.e.,
-    # in this case an array of shape (nelems,) where the i-th entry is the
-    # determinant of self.BK[i]
     BK = self.BK
     if len(BK.shape) == 2:
       BK = BK[..., _]
-    return np.sqrt(np.abs(np.linalg.det((BK.swapaxes(-1, -2)[..., _] * BK[..., _, :, :]).sum(-2))))
+    return np.sqrt(np.abs(np.linalg.det((self.GK))))
 
-  def is_valid(self) -> bool:
+  def geometry_map(self, ielem):
+    p0 = self.points[self.elements[ielem, 0]][_]
+
+    def gmap(x, p0=p0):
+      return p0 + x @ self.BK[ielem].T
+
+    return gmap
+
+  def is_valid(self, ischeme=None) -> bool:
     return (np.linalg.det(self.GK) > 0).all()
 
 
@@ -201,6 +208,8 @@ class BilinearMixin:
 
   def Jmap(self, ielem: int) -> Callable:
     """ Jacobian matrix per element that works for general bilinear meshes. """
+    # XXX: Jmap should be computed symbolically from `geometry_map` and not
+    #      by hand.
     mypoints = list(map(lambda x: x[_], self.points[self.elements[ielem]]))
 
     def gmap(x: np.ndarray, mypoints=mypoints) -> np.ndarray:
@@ -215,11 +224,12 @@ class BilinearMixin:
 
     return gmap
 
-  def is_valid(self) -> bool:
+  def is_valid(self, ischeme=None) -> bool:
     # XXX: vertex check may not always be sufficient.
-    check_points = np.stack(list(map(np.ravel, np.meshgrid(*[[0, 1]] * self.ndims))), axis=1)
+    if ischeme is None:
+      ischeme = column_meshgrid(*[[0, 1]]*self.ndims)
     for i in range(len(self.elements)):
-      Jeval = self.Jmap(i)(check_points)
+      Jeval = self.Jmap(i)(ischeme)
       G = (Jeval.swapaxes(-1, -2)[..., _] * Jeval[..., _, :, :]).sum(-2)
       if (np.linalg.det(G) < 0).any():
         return False
@@ -654,10 +664,6 @@ class QuadMesh(BilinearMixin, Mesh):
     return np.stack(list(map(np.ravel, np.meshgrid(x, x))), axis=1)
 
   @cached_property
-  def submesh(self):
-    return LineMesh(self._submesh(), self.points)
-
-  @cached_property
   def pvelements(self):
     return self.elements[:, [0, 2, 3, 1]]
 
@@ -681,6 +687,7 @@ class Triangulation(AffineMixin, Mesh):
      0            1
   """
   # XXX: not sure if the counterclockwise ordering is the best choice.
+  #      Python-wise it's probably better to reorder 2 => 1, 1 => 2.
 
   simplex_type = 'triangle'
   ndims = 2
@@ -705,45 +712,12 @@ class Triangulation(AffineMixin, Mesh):
     """ See `_refine_Triangulation`. """
     return _refine_Triangulation(self)
 
-  def __init__(self, *args, **kwargs):
-    super().__init__(*args, **kwargs)
-
-  @frozen_cached_property
-  def BK(self):
-    """
-      Jacobi matrix per element of shape (nelems, 2, 2).
-      mesh.BK[i, :, :] or, in short, mesh.BK[i] gives
-      the Jacobi matrix corresponding to the i-th element.
-
-      Example
-      -------
-
-      for i, BK in enumerate(mesh.BK):
-        # do stuff with the Jacobi matrix BK corresponding to the i-th element.
-    """
-    a, b, c = self.points[self.elements.T]
-    return np.stack([b - a, c - a], axis=2)
-
   def _local_ordinances(self, order):
     return _round_array(np.stack([[i, j] for i, j, k in product(*[range(order+1)]*3) if i + j + k == order ]) / order, 12)
 
   def default_ordinances(self, order):
     loc_ords = self._local_ordinances(order)
     return tuple( frozen(_round_array(loc_ords @ BK.T + a[_])) for (a, b, c), BK in zip(self.points_iter(), self.BK) )
-
-  @cached_property
-  def submesh(self):
-    return LineMesh(self._submesh(), self.points)
-
-  def geometry_map(self, ielem):
-    # XXX: this should not be implemented by hand but should simply follow from
-    #      a tri / tet - based abstraction
-    p0, p1, p2 = map(lambda x: x[_], self.points[self.elements[ielem]])
-
-    def gmap(x, p0=p0):
-      return p0 + x @ self.BK[ielem].T
-
-    return gmap
 
 
 def abs_tuple(tpl):
@@ -848,6 +822,9 @@ class LineMesh(AffineMixin, Mesh):
   nref = 2
   is_affine = True
 
+  def _refine(self):
+    return _refine_structured(self)
+
   @cached_property
   def _submesh_indices(self):
     return (frozen([0]), frozen([1]))
@@ -855,14 +832,6 @@ class LineMesh(AffineMixin, Mesh):
   @property
   def _submesh_type(self):
     return PointMesh
-
-  def _refine(self):
-    return _refine_structured(self)
-
-  @frozen_cached_property
-  def BK(self):
-    a, b = self.points[self.elements.T]
-    return (b - a)[..., _]
 
   def _local_ordinances(self, order):
     return _round_array(np.linspace(0, 1, order+1))
@@ -872,22 +841,8 @@ class LineMesh(AffineMixin, Mesh):
     a, b = self.points[self.elements.T]
     return tuple(map(frozen, (_round_array(_a[_] * (1 - loc_ords[:, _]) + _b[_] * loc_ords[:, _]) for _a, _b in zip(a, b))))
 
-  @cached_property
-  def submesh(self):
-    return PointMesh(self._submesh(), self.points)
 
-  def geometry_map(self, ielem):
-    # XXX: this should not be implemented by hand but should simply follow from
-    #      a tri / tet - based abstraction
-    p0, p1 = map(lambda x: x[_], self.points[self.elements[ielem]])
-
-    def gmap(x, p0=p0, p1=p1):
-      return p0 * (1 - x) + p1 * x
-
-    return gmap
-
-
-class PointMesh(AffineMixin, Mesh):
+class PointMesh(Mesh):
 
   simplex_type = 'point'
   ndims = 0
@@ -897,10 +852,6 @@ class PointMesh(AffineMixin, Mesh):
 
   def _refine(self):
     return self
-
-  @frozen_cached_property
-  def BK(self):
-    return np.ones(len(self.elements)).reshape(-1, 1)
 
   def _local_ordinances(self, order):
     return np.zeros((1, 2))
@@ -921,6 +872,9 @@ class PointMesh(AffineMixin, Mesh):
       return p0 + 0 * x
 
     return gmap
+
+  def is_valid(self, ischeme=None):
+    return True
 
 
 def rectilinear(_points: Sequence[int | np.ndarray]):

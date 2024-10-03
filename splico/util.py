@@ -414,3 +414,7 @@ def clparam(points: Sequence | np.ndarray):
 def normalize(array: np.array) -> np.array:
   array = np.asarray(array)
   return array / np.linalg.norm(array, axis=-1, ord=2, keepdims=True)
+
+
+def column_meshgrid(*arrays, indexing='ij'):
+  return np.stack(list(map(np.ravel, np.meshgrid(*arrays, indexing=indexing))), axis=1)
