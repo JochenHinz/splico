@@ -1,5 +1,5 @@
-from splico.mesh import rectilinear
-from splico.mesh._jit import _make_matching, mesh_boundary_union
+from splico.mesh import rectilinear, mesh_boundary_union
+from splico.mesh._jit import _make_matching
 
 import unittest
 
@@ -22,6 +22,7 @@ class TestUnivariateKnotVector(unittest.TestCase):
     self.assertEqual(len(matching), 121)
 
     mesh = mesh_boundary_union(mesh0, mesh1)
+    mesh.plot()
 
     # XXX: test to make sure the boundary union gives the correct result
 

@@ -1,9 +1,13 @@
 # XXX: create module with jitted methods for use in `mesh.py` that improve performance
 
-from numba import njit, prange
-
 from .mesh import Mesh
 from ..util import np
+
+from itertools import product
+
+from numba import njit, prange
+import treelog as log
+
 
 """ Routines for normal mesh union / difference """
 
@@ -220,150 +224,146 @@ def _make_matching(points0, points1, eps):
   return ret
 
 
+def _match_active(mesh0, mesh1, eps=1e-8):
+  """
+    Match a matching of two meshs' points based on proximity.
+    As opposed to `_make_matching`, only the mesh's active points are matched
+    and the global rather than local matching indices are returned.
+  """
+  active0, active1 = mesh0.active_indices, mesh1.active_indices
+  return np.stack([active[ind] for active, ind
+                   in zip((active0, active1),
+                          _make_matching(mesh0.points[active0],
+                                         mesh1.points[active1], eps).T)], axis=1)
+
+
 @njit(cache=True)
-def _remap_elements(elems0, elems1, mindices0, mindices1, points0, points1):
+def _remap_elements(all_elements, all_points, all_matches):
   """
-    Given two sets of elements `(elems0, elems1)`, two equally-sized
-    index sets `(mindices0, mindices1)` representing matched points and
-    the corresponding two point sets `(points0, points1)`,
-    create a new set of elements from the old elements in which indices in
-    mindices0 (elems0) and mindices1 (elems1) are mapped to a shared index which
-    points to a point which is the average of points0[mindices0[i]] and
-    points1[mindices1[i]].
-
-    All other points are left unaffected. The indices of elems0 that are not
-    in mindices0 are unchaged while those of elems1 that are not in mindices1
-    only receive an offset, representing the number of indices in elems0 (excl mindices0).
-  """
-
-  # XXX: generalize to arbitrary number of meshes (see `mesh_boundary_union`)
-
-  # get number of matches
-  nmatches = len(mindices0)
-
-  # make sure both index arrays have equal length
-  assert len(mindices1) == nmatches
-
-  # make sure we're dealing with same element types
-  assert elems0.shape[1:] == elems1.shape[1:]
-
-  # get total interior points of both meshes and the sum of them
-  tot_int_points0, tot_int_points1 = len(points0) - nmatches, len(points1) - nmatches
-  tot_int_points = tot_int_points0 + tot_int_points1
-
-  # XXX: what follows can probably be parallelised
-
-  # keep track of the matched indices from both meshes in a set
-  indexset0, indexset1 = set(), set()
-  for i0, i1 in zip(mindices0, mindices1):
-    indexset0.add(i0)
-    indexset1.add(i1)
-
-  # compute the matched points as the average from both point sets
-  matched_points = (points0[mindices0] + points1[mindices1]) / 2.0
-
-  # allocate two integer arrays of len(points0) and len(points1), respectively
-  # containing at the i-th position the new global index of the local i-th node
-  remap0 = np.empty((len(points0),), dtype=np.int64)
-  remap1 = np.empty((len(points1),), dtype=np.int64)
-
-  # set the matched indices to an arange from the total internal points to
-  # the total internal points + the number of matches
-  remap0[mindices0] = np.arange(tot_int_points, tot_int_points + len(mindices0))
-  remap1[mindices1] = np.arange(tot_int_points, tot_int_points + len(mindices0))
-
-  # create new point array and fill it first with the unmatched points in
-  # points0, then the unmatched ones in points1 and then with the matched points.
-  points = np.empty( (tot_int_points + nmatches, 3), dtype=np.float64 )
-
-  i = 0
-  for mypoints, myindexset, myremap in zip((points0, points1), (indexset0, indexset1), (remap0, remap1)):
-
-    for j, point in enumerate(mypoints):
-      if j in myindexset:
-        continue
-      points[i] = point  # set the i-th entry to point
-      myremap[j] = i  # set the j-th entry of the remap to i
-      i += 1
-
-  for point in matched_points:
-    points[i] = point
-    i += 1
-
-  # remaps have been finished at this point
-
-  elems = np.empty((len(elems0) + len(elems1), elems0.shape[1]), dtype=np.int64)
-
-  # remap elems0 and elems1
-  for myelems, myremap, myoffset in zip((elems0, elems1), (remap0, remap1), (0, len(elems0))):
-    for i, row in enumerate(myelems):
-      for j, val in enumerate(row):
-        elems[i + myoffset, j] = myremap[myelems[i, j]]
-
-  # return concatenation of both remapped element arrays and the points
-  return elems, points
-
-
-def mesh_boundary_union(*meshes, eps=1e-6):
-
-  """
-    Create a union of meshes without checking for duplicate interior points
-    but only points that are on the boundary.
-    As opposed to `mesh_union`, the points need not exactly match but are
-    considered equal if their Euclidean distance is below `eps`.
+    Given an array of elements, an array of corresponding points and an array
+    of matched point pairs, create a new element array wherein the two distinct
+    indices of pairs are replaced by a single index for both while only the
+    corresponding point in `all_points` that corresponds to the lower of
+    the two indices is kept.
 
     Parameters
     ----------
-    meshes : :class:`Tuple[Mesh]`
-        The input meshes whose union we take. Needs to contain at least one element.
-    eps : :class:`float`
-        The matching tolerance.
+    all_elements : :class:`np.ndarray[int]`
+        The element array containing all element indices before re-indexing.
+    all_points : :class:`np.ndarray[float]`
+        The point array. Is assumed to be exhaustive, i.e., there are exact
+        as many points as there are unique element indices.
+    all_matches : :class:`np.ndarray[int]`
+        An (nmatches, 2) integer array containing matched point indices which
+        are then coupled.
+
+    Returns
+    -------
+    elements : :class:`np.ndarray[int]`
+        The renumbered element array.
+    points : :class:`np.ndarray[float]`
+        The corresponding point array that no longer contains two distinct
+        points for matched pairs.
+  """
+
+  # ascending index array
+  merge = np.arange(len(all_points))
+  while True:
+    _merge = merge.copy()
+
+    # iterate over all pairs and always assign the lower index of the
+    # two to the corresponding position in `merge`
+    for pair in all_matches:
+      a, b = merge[pair[0]], merge[pair[1]]
+      _min = min((a, b))
+      merge[pair[0]] = merge[pair[1]] = _min
+
+    # repeat until the merge array no longer changes
+    if (_merge == merge).all():
+      break
+
+  # get all unique indices that are left
+  active_indices = np.unique(merge)
+
+  new_elements = np.empty(all_elements.shape, dtype=np.int64)
+  for i, elem in enumerate(all_elements):
+    for j, index in enumerate(elem):
+
+      # the new index is the position of the mapped old index in `active_indices`
+      new_elements[i, j] = np.searchsorted(active_indices, merge[index])
+
+  # only keep active points
+  all_points = all_points[active_indices]
+
+  return new_elements, all_points
+
+
+def multi_mesh_boundary_union(*meshes, eps=1e-8, return_matches=False):
+  """
+    Take the union of several meshes at once, only matching points on the
+    boundary. Optionally return the computed matched vertex pairs for re-use
+    in other meshes with the same mutual conncetivity. Note that the matched
+    vertex pairs are based on a global index which is the local index plus
+    and offset that depends on the position in `meshes`.
+
+    Parameters
+    ----------
+    meshes : :class:`splico.mesh.Mesh`
+        The input meshes. All need to be of the same type and need to possess
+        a boundary mesh.
+    eps: :class:`float`
+        Matching tolerance that is forwarded to `make_mesh`.
+    return_matches : :class:`bool`
+        Boolean indicating whether the integer array of shape (nmatches, 2)
+        containing matching pairs should be returned. This enables its re-use
+        in case many meshes with the same topology need to be unified.
 
     Returns
     -------
     union_mesh : :class:`Mesh`
-        The union of the input meshes, only considering boundary points.
+        The mesh union.
+    all_matches : :class:`np.ndarray[int]
+        Optionally return the matching integer array.
   """
 
-  # XXX: currently the boundary union takes place repeatedly in case more than
-  #      two meshes have been passed. In the long run it would be better to
-  #      take the union of all of them at once. This would also enable creating
-  #      a global matching of all meshes which could then optionally be returned
-  #      and reused for meshes with the same topology.
+  if any( len(mesh.active_indices) != len(mesh.points) for mesh in meshes ):
+    log.warning("Warning, inactive points detected in at least one mesh,"
+                " they will be removed.")
 
-  assert meshes
+  meshes = [mesh.drop_points_and_renumber() for mesh in meshes]
 
-  if len(meshes) == 1:
-    return meshes[0]
+  # the local patch index is offset by a certain amount to assign a global
+  # index.
+  offsets = np.array([0, *map(lambda x: len(x.points), meshes)]).cumsum()
+  dmeshes = [mesh.boundary for mesh in meshes]
 
-  # for now all meshes need to be of the same type
-  assert all(mesh.__class__ is meshes[0].__class__ for mesh in meshes)
+  # make all matchings between differing meshes (i < j)
+  # XXX: find a more efficient solution
+  all_matches = []
+  for (i, dmesh0), (j, dmesh1) in product(enumerate(dmeshes), enumerate(dmeshes)):
+    if j <= i: continue
+    # add offset to the two columns of the matches to reflect global indexing
+    all_matches.append(_match_active(dmesh0, dmesh1, eps) + np.array([[offsets[i], offsets[j]]]))
 
-  mesh0, mesh1, *tail = meshes
+  # concatenate all matches into one array
+  all_matches = np.concatenate(all_matches)
 
-  # get boundaries
-  dmesh0, dmesh1 = mesh0.boundary, mesh1.boundary
+  # lexicographically sort all matches
+  shuffle = np.lexsort(all_matches.T[::-1])
+  all_matches = all_matches[shuffle]
 
-  # get sorted active indices
-  active0, active1 = map(np.unique, (dmesh0.elements, dmesh1.elements))
+  # concatenate all elements and add offset
+  all_elements = np.concatenate([ mesh.elements + myoffset
+                                  for mesh, myoffset in zip(meshes, offsets)])
 
-  # retain only active points
-  dmeshpoints = [dmesh.points[active] for dmesh, active in zip((dmesh0, dmesh1), (active0, active1))]
+  # concatenate all points
+  all_points = np.concatenate([mesh.points for mesh in meshes])
 
-  # get the local matching of active points
-  local_matching = _make_matching(*dmeshpoints, eps)
+  # remap the elements from the matches
+  elements, points = _remap_elements(all_elements, all_points, all_matches)
 
-  # convert to global
-  gmatch0, gmatch1 = [active[loc] for active, loc in zip((active0, active1), local_matching.T)]
+  ret = meshes[0].__class__(elements, points)
 
-  # create new elems, points from the matching data
-  elems, points = _remap_elements(mesh0.elements,
-                                  mesh1.elements,
-                                  gmatch0,
-                                  gmatch1,
-                                  mesh0.points,
-                                  mesh1.points)
-
-  # take union of the new mesh with the remaining meshes
-  # if tail is empty, the call simply returns the new mesh
-  return mesh_boundary_union(mesh0.__class__(elems, points), *tail)
+  if return_matches:
+    return ret, all_matches
+  return ret

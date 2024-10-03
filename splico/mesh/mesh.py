@@ -102,7 +102,7 @@ def _issubmesh(mesh0, mesh1):
 
 def mesh_boundary_union(*meshes, **kwargs):
   """ Docstring: see _jit.py """
-  from ._jit import mesh_boundary_union as _mesh_boundary_union
+  from ._jit import multi_mesh_boundary_union as _mesh_boundary_union
   return _mesh_boundary_union(*meshes, **kwargs)
 
 
@@ -336,6 +336,10 @@ class Mesh(HashMixin):
     # an array containing the indices of all vertices in self.elements (in sorted order).
     self.vertex_indices = frozen(np.unique(self.elements), dtype=int)
 
+  @cached_property
+  def active_indices(self):
+    return np.unique(self.elements)
+
   def lexsort_elements(self):
     """
       Reorder the elements in lexicographical ordering.
@@ -380,8 +384,7 @@ class Mesh(HashMixin):
     if len(unique_vertices) == unique_vertices[-1] + 1 == len(self.points):
       return self
     points = self.points[unique_vertices]
-    map_old_index_new = dict(zip(unique_vertices, count()))
-    elements = np.array([map_old_index_new[index] for index in self.elements.ravel()], dtype=int).reshape(self.elements.shape)
+    elements = np.searchsorted(unique_vertices, self.elements)
     return self._edit(elements=elements, points=points)
 
   @property

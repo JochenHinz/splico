@@ -1,5 +1,5 @@
 from splico.geo import CrossSectionMaker, notwist
-from splico.mesh import rectilinear, mesh_boundary_union, mesh_boundary_union
+from splico.mesh import rectilinear, mesh_boundary_union
 from splico.spl import UnivariateKnotVector, TensorKnotVector
 from splico.util import np, _
 
