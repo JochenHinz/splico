@@ -6,9 +6,10 @@
 """
 
 from ..util import np, _, frozen, HashMixin, frozen_cached_property, \
-                   _round_array, isincreasing, column_meshgrid
+                   _round_array, round_result, isincreasing, flat_meshgrid, freeze
 
 from ._jit_ref_structured import _refine_structured as ref_structured
+from .pol import _eval_nd_polynomial_local
 
 import pyvista as pv
 import vtk
@@ -124,59 +125,6 @@ def mesh_difference(mesh0, mesh1):
 #      with only one element type.
 
 
-class AffineMixin:
-
-  """
-    Mixin for affine mesh types (PointMesh, LineMesh, Triangulation).
-    Provides implementations for the elementwise metric tensor (GK),
-    its inverse (GKinv) the elementwise constant measure (detBK)
-    and a function to check for validty (is_valid).
-
-    Each derived class needs to implement `BK` in order for the others to work.
-  """
-
-  @frozen_cached_property
-  def BK(self) -> np.ndarray:
-    p0, *tail = self.points[self.elements.T]
-    return np.stack([p - p0 for p in tail], axis=2)
-
-  @frozen_cached_property
-  def GK(self) -> np.ndarray:
-    """ Metric Tensor on each element. """
-    return (self.BK.swapaxes(-1, -2)[..., _] *
-            self.BK[..., _, :, :]).sum(-2)
-
-  @frozen_cached_property
-  def GKinv(self) -> np.ndarray:
-    """ Metric Tensor inverse per element. """
-    return np.stack(list(map(np.linalg.inv, self.G)))
-
-  @frozen_cached_property
-  def detBK(self) -> np.ndarray:
-    """ Jacobian determinant (measure) per element. """
-    BK = self.BK
-    if len(BK.shape) == 2:
-      BK = BK[..., _]
-    return np.sqrt(np.abs(np.linalg.det((self.GK))))
-
-  def geometry_map(self, ielem):
-    p0 = self.points[self.elements[ielem, 0]][_]
-
-    def gmap(x, p0=p0):
-      return p0 + x @ self.BK[ielem].T
-
-    return gmap
-
-  def is_valid(self, ischeme=None) -> bool:
-    return (np.linalg.det(self.GK) > 0).all()
-
-
-# XXX: in the long run it would make more sense to implement the exact same
-#      methods for both affine and bilinear maps, even though the routines for
-#      affine maps are simpler and implementing them in a similar way as for
-#      bilinear maps seems redundant.
-
-
 class BilinearMixin:
 
   """
@@ -188,55 +136,33 @@ class BilinearMixin:
     Finally provides a standard implementation of `_refine`.
   """
 
-  # XXX: some routines may have to be jitted for acceptable performance in large
-  #      meshes.
-  #      Also, it makes more sense to evaluate all geometry maps at once
-  #      in a jitted routine rather than element-by-element.
-  #      Only evaluating a subset of elements can be accomplished by using
-  #      self.take(elemindices).
-
-  def geometry_map(self, ielem: int) -> Callable:
-    """ Geometry map per element that works for general bilinear meshes. """
-    mypoints = list(map(lambda x: x[_], self.points[self.elements[ielem]]))
-
-    def gmap(x: np.ndarray, mypoints=mypoints) -> np.ndarray:
-      assert x.shape[1:] == (self.ndims,)
-      return np.add.reduce([ p * np.multiply.reduce(*fs) for p, fs
-                             in zip(mypoints, product(*[ [1 - _x[:, _], _x[:, _]] for _x in x.T ])) ])
-
-    return gmap
-
-  def Jmap(self, ielem: int) -> Callable:
-    """ Jacobian matrix per element that works for general bilinear meshes. """
-    # XXX: Jmap should be computed symbolically from `geometry_map` and not
-    #      by hand.
-    mypoints = list(map(lambda x: x[_], self.points[self.elements[ielem]]))
-
-    def gmap(x: np.ndarray, mypoints=mypoints) -> np.ndarray:
-      assert x.shape[1:] == (self.ndims,)
-      ones = np.ones((x.shape[0], 1))
-      ret = []
-      for i in range(self.ndims):
-        myval = np.add.reduce([ p * np.multiply.reduce(fs, axis=0) for p, fs
-                                in zip(mypoints, product(*[ [-ones, ones] if j == i else [1 - _x[:, _], _x[:, _]] for j, _x in enumerate(x.T) ])) ])
-        ret.append(myval)
-      return np.stack(ret, axis=-1)
-
-    return gmap
-
-  def is_valid(self, ischeme=None) -> bool:
-    # XXX: vertex check may not always be sufficient.
-    if ischeme is None:
-      ischeme = column_meshgrid(*[[0, 1]]*self.ndims)
-    for i in range(len(self.elements)):
-      Jeval = self.Jmap(i)(ischeme)
-      G = (Jeval.swapaxes(-1, -2)[..., _] * Jeval[..., _, :, :]).sum(-2)
-      if (np.linalg.det(G) < 0).any():
-        return False
-    return True
+  @freeze
+  @round_result
+  def _local_ordinances(self, order):
+    assert (order := int(order)) > 0
+    x = np.linspace(0, 1, order+1)
+    return flat_meshgrid(*[x] * self.ndims, axis=1)
 
   def _refine(self) -> Self:
     return _refine_structured(self)
+
+
+class AffineMixin:
+
+  """
+    Mixin for affine mesh types (PointMesh, LineMesh, Triangulation).
+    Provides implementations for the elementwise metric tensor (GK),
+    its inverse (GKinv) the elementwise constant measure (detBK)
+    and a function to check for validty (is_valid).
+
+    Each derived class needs to implement `BK` in order for the others to work.
+  """
+
+  @freeze
+  @round_result
+  def _local_ordinances(self, order):
+    ret = BilinearMixin._local_ordinances(self, order)
+    return ret[ ret.sum(1) < 1 + 1e-8 ]
 
 
 class Mesh(HashMixin):
@@ -397,6 +323,64 @@ class Mesh(HashMixin):
     elements = np.searchsorted(unique_vertices, self.elements)
     return self._edit(elements=elements, points=points)
 
+  def JK(self, points):
+    return np.stack([self.eval_local(points, dx=_dx) for _dx in np.eye(self.ndims)], axis=-1)
+
+  def GK(self, points):
+    JK = self.JK(points)
+    return (JK.swapaxes(-1, -2)[..., _] * JK[..., _, :, :]).sum(-2)
+
+  def is_valid(self, order=1) -> bool:
+    points = self._local_ordinances(order)
+    return (np.linalg.det(self.GK(points)) > 0).all()
+
+  @frozen_cached_property
+  def _pol_weights(self):
+    """
+      Polynomial weights of each element's map.
+      For `self.eval_local`.
+    """
+    basis_funcs = self._basis_funcs
+
+    # get the element-wise weights in tensorial layout
+    # shape: (2 ** self.ndims, nelems, 3)
+    elementwise_weights = self.points[self.elements.T]
+
+    # (1, ..., 1, 2 ** ndims, nelems, 3) and (2, ..., 2, 2 **ndims, 1, 1 )
+    # becomes (2, ..., 2, 2 ** ndims, nelems, 3).sum(-3) == (2, ..., 2, nelems, 3)
+    return (elementwise_weights[(_,) * self.ndims] * basis_funcs[..., _, _]).sum(-3)
+
+  @frozen_cached_property
+  def _basis_funcs(self):
+    """
+      The polynomial weights of the nodal basis functions in the reference
+      element.
+      Shape: (2,) * self.ndims + (nverts,)
+    """
+    ords = self._local_ordinances(1).astype(int)
+    # set up the matrix we need to solve
+    X = np.stack([ np.multiply.reduce([_x ** i for _x, i in zip(ords.T, multi_index)])
+                   for multi_index in ords ], axis=1)
+
+    # solve for the nodal basis function's polynomial weights
+    # and reshape them to tensorial (nfuncs, x, y, z, ...) shape
+
+    # shape: (2 ** self.ndims, *(2,) * self.ndims)
+    # (basis_f_index, 2, 2, ...)
+    basis_funcs = np.zeros((*(2,) * self.ndims, X.shape[0]), dtype=float)
+    basis_funcs[*ords.T] = np.linalg.solve(X, np.eye(X.shape[0]))
+    return basis_funcs
+
+  def eval_local(self, points: np.ndarray, dx=None) -> np.ndarray:
+    """ Evaluate each element map locally in `points`. """
+    pol_weights = self._pol_weights
+
+    # pol_weights.shape == (2, 2, ..., nelems, 3)
+    # _eval_nd_polynomial_local(pol_weights, points, dx=dx).shape == (nelems, 3, npoints)
+    # we reshape to (nelems, npoints, 3)
+    # XXX: try to avoid swapaxes
+    return _eval_nd_polynomial_local(pol_weights, points, dx=dx).swapaxes(-1, -2)
+
   @property
   def _submesh_indices(self) -> Tuple[np.ndarray]:
     """
@@ -539,21 +523,6 @@ class Mesh(HashMixin):
     grid = pv.UnstructuredGrid(elements, np.array([cell_type] * nelems), points)
     grid.plot(show_edges=True, line_width=1, color="tan")
 
-  def is_valid(self) -> bool:
-    raise NotImplementedError
-
-  @abstractmethod
-  def geometry_map(self, ielem):
-    """
-      A Callable mapping from the reference element to the element
-      with index `ielem`.
-    """
-    pass
-
-  def geometry_map_iter(self):
-    for ielem in range(len(self.elements)):
-      yield self.geometry_map(ielem)
-
   @abstractmethod
   def _local_ordinances(self, order):
     # XXX: may potentially be removed
@@ -628,10 +597,6 @@ class HexMesh(BilinearMixin, Mesh):
   def _submesh_type(self):
     return QuadMesh
 
-  def _local_ordinances(self, order):
-    x = np.linspace(0, 1, order)
-    return np.stack(list(map(np.ravel, np.meshgrid(x, x, x))), axis=1)
-
 
 class QuadMesh(BilinearMixin, Mesh):
 
@@ -659,10 +624,6 @@ class QuadMesh(BilinearMixin, Mesh):
   def _submesh_type(self):
     return LineMesh
 
-  def _local_ordinances(self, order):
-    x = np.linspace(0, 1, order)
-    return np.stack(list(map(np.ravel, np.meshgrid(x, x))), axis=1)
-
   @cached_property
   def pvelements(self):
     return self.elements[:, [0, 2, 3, 1]]
@@ -677,17 +638,15 @@ class Triangulation(AffineMixin, Mesh):
   """
     `is_valid` is implemented via `AffineMixin`.
 
-      2
+      1
       |\
       |  \
       |    \
       |      \
       |        \
       |__________\
-     0            1
+     0            2
   """
-  # XXX: not sure if the counterclockwise ordering is the best choice.
-  #      Python-wise it's probably better to reorder 2 => 1, 1 => 2.
 
   simplex_type = 'triangle'
   ndims = 2
@@ -708,12 +667,13 @@ class Triangulation(AffineMixin, Mesh):
   def _submesh_type(self):
     return LineMesh
 
+  @cached_property
+  def pvelements(self):
+    return self.elements[:, [0, 2, 1]]
+
   def _refine(self):
     """ See `_refine_Triangulation`. """
     return _refine_Triangulation(self)
-
-  def _local_ordinances(self, order):
-    return _round_array(np.stack([[i, j] for i, j, k in product(*[range(order+1)]*3) if i + j + k == order ]) / order, 12)
 
   def default_ordinances(self, order):
     loc_ords = self._local_ordinances(order)
@@ -735,13 +695,13 @@ def abs_tuple(tpl):
 def _refine_Triangulation(mesh: Triangulation) -> Triangulation:
   """
     Uniformly refine the entire mesh once.
-          i2                             i2
+          i1                             i1
           / \                            / \
          /   \                          /   \
-        /     \         becomes      i20 ---- i12
+        /     \         becomes      i10 ---- i21
        /       \                      / \   /  \
       /         \                    /   \ /    \
-    i0 --------- i1                i0 -- i01 --- i1
+    i0 --------- i2                i0 -- i02 --- i2
 
     Returns
     -------
@@ -752,20 +712,20 @@ def _refine_Triangulation(mesh: Triangulation) -> Triangulation:
 
   points = mesh.points
   maxindex = len(points)
-  slices = np.array([[0, 1], [1, 2], [2, 0]])
+  slices = np.array([[0, 2], [2, 1], [1, 0]])
   all_edges = list(set(map(abs_tuple, np.concatenate(mesh.elements[:, slices]))))
   newpoints = points[np.array(all_edges)].sum(1) / 2
   map_edge_number = dict(zip(all_edges, count(maxindex)))
 
   triangles = []
   for tri in mesh.elements:
-    i01, i12, i20 = [map_edge_number[edge] for edge in map(abs_tuple, tri[slices])]
+    i02, i21, i10 = [map_edge_number[edge] for edge in map(abs_tuple, tri[slices])]
     i0, i1, i2 = tri
     triangles.extend([
-        [i0, i01, i20],
-        [i01, i1, i12],
-        [i01, i12, i20],
-        [i20, i12, i2]
+        [i0, i02, i10],
+        [i02, i2, i21],
+        [i02, i21, i10],
+        [i10, i21, i1]
     ])
 
   elements = np.array(triangles, dtype=int)
@@ -811,7 +771,7 @@ def triangulation_from_polygon(points: np.ndarray, mesh_size=0.05) -> Triangulat
     geom.set_mesh_size_callback(mesh_size)
     mesh = geom.generate_mesh(algorithm=5)
 
-  return mesh.cells_dict['triangle'], mesh.points
+  return mesh.cells_dict['triangle'][:, [0, 2, 1]], mesh.points
 
 
 class LineMesh(AffineMixin, Mesh):
@@ -834,7 +794,7 @@ class LineMesh(AffineMixin, Mesh):
     return PointMesh
 
   def _local_ordinances(self, order):
-    return _round_array(np.linspace(0, 1, order+1))
+    return _round_array(np.linspace(0, 1, order+1)[:, _])
 
   def default_ordinances(self, order):
     loc_ords = self._local_ordinances(order)

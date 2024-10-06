@@ -42,6 +42,7 @@ class UnitSquare(unittest.TestCase):
 
         self.assertTrue( (mesh.elements == elements).all() )
         self.assertTrue( np.allclose(mesh.points[:, :i], mypoints) )
+        self.assertTrue( mesh.is_valid() )
 
 
 class RefineAndGeometryMap(unittest.TestCase):
@@ -73,7 +74,7 @@ class RefineAndGeometryMap(unittest.TestCase):
       evalf = np.stack(list(map(np.ravel, np.meshgrid(*[np.array([0, 0.5, 1])]*2))), axis=1)
       evalf = evalf[ evalf.sum(1) < 1.000001 ]
 
-      allpoints = _round_array(np.concatenate([mesh.geometry_map(i)(evalf) for i in range(len(mesh.elements))]))
+      allpoints = np.round(mesh.eval_local(evalf).reshape(-1, 3), 8)
 
       u0 = np.unique(rmesh.points, axis=0)
       u1 = np.unique(allpoints, axis=0)
@@ -146,6 +147,16 @@ class TestUnion(unittest.TestCase):
 
         self.assertTrue( np.allclose(mesh0.points, mesh1.points) )
         self.assertTrue( mesh1.is_valid() )
+
+
+class TestEval(unittest.TestCase):
+
+  def test_eval(self):
+    for i in range(2, 4):
+      mesh = rectilinear([np.linspace(0, 1, 6) for j in range(i)])
+      points = np.stack(list(map(np.ravel, np.meshgrid(*[np.linspace(0, 1, 2)] * i, indexing='ij'))), axis=1)
+
+      self.assertTrue(np.allclose(mesh.eval_local(points), mesh.points[mesh.elements]))
 
 
 if __name__ == '__main__':

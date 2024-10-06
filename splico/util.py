@@ -44,6 +44,13 @@ def _round_array(arr, precision=None):
   return np.round(arr, precision)
 
 
+def round_result(fn):
+  @wraps(fn)
+  def wrapper(*args, **kwargs):
+    return _round_array(fn(*args, **kwargs))
+  return wrapper
+
+
 class GlobalPrecision:
   """
     Context manager for locally adjusting the machine precision.
@@ -368,6 +375,7 @@ def isincreasing(arr: Sequence | np.ndarray):
     Return True if an array-like is strictly increasing.
     Else return False.
   """
+  # XXX: add axis argument
   arr = np.asarray(arr)
   assert arr.ndim == 1
   return (np.diff(arr) > 0).all()
@@ -416,5 +424,8 @@ def normalize(array: np.array) -> np.array:
   return array / np.linalg.norm(array, axis=-1, ord=2, keepdims=True)
 
 
-def column_meshgrid(*arrays, indexing='ij'):
-  return np.stack(list(map(np.ravel, np.meshgrid(*arrays, indexing=indexing))), axis=1)
+def flat_meshgrid(*arrays, indexing='ij', axis=0):
+  ret = np.stack(list(map(np.ravel, np.meshgrid(*arrays, indexing=indexing))), axis=axis)
+  if ret.ndim == 1:
+    ret = ret[:, _]
+  return ret
