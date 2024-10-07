@@ -26,9 +26,10 @@ class UnitSquare(unittest.TestCase):
   def test_unitsquare(self):
     points = [ np.linspace(0, 1, n) for n in (4, 5, 6) ]
     lengths = list(map(len, points))
+
     for i in range(1, 4):
       mesh = unitsquare(points[:i])
-
+      
       with GlobalPrecision(8):
         element = np.asarray(list(product(*[range(2) for _ in range(i)]))).T
         indices = np.arange(np.multiply.reduce(lengths[:i])).reshape(*lengths[:i])
@@ -65,7 +66,7 @@ class RefineAndGeometryMap(unittest.TestCase):
 
   def test_refine_triangulation(self):
     mesh = unit_disc_triangulation()
-
+    
     with GlobalPrecision(8):
 
       rmesh = mesh.refine(1)
