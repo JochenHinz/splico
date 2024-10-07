@@ -5,11 +5,13 @@
 @author: Jochen Hinz
 """
 
-from ..util import np, _, frozen, HashMixin, frozen_cached_property, \
-                   _round_array, round_result, isincreasing, flat_meshgrid, freeze
+from ..util import np, _, frozen, HashMixin, _round_array, round_result, \
+                   isincreasing, flat_meshgrid, freeze, frozen_cached_property
 
-from ._jit_ref_structured import _refine_structured as ref_structured
-from .pol import _eval_nd_polynomial_local
+from ._refine import refine_structured, _refine_Triangulation
+from .pol import eval_nd_polynomial_local
+from .bool import _issubmesh, mesh_boundary_union, mesh_union, mesh_difference
+from .aux import MissingVertexError, HasNoSubMeshError, HasNoBoundaryError
 
 import pyvista as pv
 import vtk
@@ -19,8 +21,8 @@ from abc import abstractmethod
 
 from typing import Callable, Sequence, Self, Tuple
 
-from functools import cached_property, lru_cache
-from itertools import count, product
+from functools import cached_property
+from itertools import product
 
 import pickle
 
@@ -30,137 +32,45 @@ SIMPLEX_TYPES = ('point', 'line', 'triangle',
                  'quadrilateral', 'tetrahedron', 'hexahedron')
 
 
-class MissingVertexError(Exception):
-  pass
-
-
-class HasNoSubMeshError(Exception):
-  pass
-
-
-class HasNoBoundaryError(Exception):
-  pass
-
-
-@lru_cache
-def _issubmesh(mesh0, mesh1):
-  """
-    Check if `mesh0` is a submesh of `mesh1`.
-    A submesh is defined as a mesh that contains the same or a subset of the
-    other mesh's points and elements. Alternatively, `mesh0` is also considered
-    a submesh of `mesh1` if it is a submesh of `mesh1.submesh` or its submeshes.
-
-    Parameters
-    ----------
-    mesh0 : :class:`Mesh`
-        The submesh candidate.
-    mesh1 : :class:`Mesh`
-        The mesh we check if `mesh0` is a submesh of.
-
-    Returns
-    -------
-    A boolean indicating whether `mesh0` is a submesh of `mesh1`.
-  """
-
-  # mesh0 mesh has more vertices per element than mesh1 => False
-  if mesh0.nverts > mesh1.nverts:
-    return False
-
-  # both meshes have the same class, check if mesh0's elements
-  # are a subset of mesh1's and if the points are the same
-  if mesh0.__class__ is mesh1.__class__:
-
-    # mesh0 has more elements => mesh1 can't be a submesh of mesh0
-    if not len(mesh0.elements) <= len(mesh1.elements):
-      return False
-
-    # get the set of the union of both meshe's elements
-    all_unique_elements = np.unique(np.concatenate([mesh0.elements,
-                                                    mesh1.elements]), axis=0)
-
-    # the shape differs from mesh1.elements.shape => mesh0 can't be a submesh
-    if not all_unique_elements.shape == mesh1.elements.shape:
-      return False
-
-    # the shape is the same => make sure that unique_elements and
-    # mesh1.elements have the same indices when brought into lexigraphically sorted form
-    # XXX: note that two elements can be the same even though the indices appear
-    #      in a different order.
-    if (all_unique_elements != np.unique(mesh1.elements, axis=0)).any():
-      return False
-
-    # all tests passed => check if the relevant points of mesh0
-    # are equal to that of mesh1.
-    indices = np.unique(mesh0.elements)
-    return (mesh0.points[indices] == mesh1.points[indices]).all()
-  # try to take mesh1's submesh and see if mesh0 is a submesh of that one
-  try:
-    submesh1 = mesh1.submesh
-    return _issubmesh(mesh0, submesh1)
-  # if mesh1 has no submesh, return False
-  except HasNoSubMeshError:
-    return False
-
-
-def mesh_boundary_union(*meshes, **kwargs):
-  """ Docstring: see _jit.py """
-  from ._jit import multi_mesh_boundary_union as _mesh_boundary_union
-  return _mesh_boundary_union(*meshes, **kwargs)
-
-
-def mesh_union(*meshes):
-  """ Docstring: see _jit.py """
-  from ._jit import mesh_union as _mesh_union
-  return _mesh_union(*meshes)
-
-
-def mesh_difference(mesh0, mesh1):
-  """ Take the difference of two meshes. """
-  from ._jit import mesh_difference as _mesh_difference
-  return _mesh_difference(mesh0, mesh1)
-
-
 # XXX: write another parent class that allows for mixed element types.
 #      The meshes that have already been implemented are then special cases
 #      with only one element type.
 
 
 class BilinearMixin:
-
   """
-    Mixin for bilinear mesh types (QuadMesh, HexMesh).
-    Provides implementations for the geometry map as well as its jacobian
-    per element.
-    Furthermore provides an implementation of `is_valid` using the elementwise
-    Jacobian evaluated in the vertices.
-    Finally provides a standard implementation of `_refine`.
+    Mixin providing implementations for the `_local_ordinances` which is an
+    abstract method of the `Mesh` base class.
+    Additionally, provides an implementation of the `_refine` abstract method
+    which is accomplished using the _refine_structured routine, which works
+    for bilinear mesh types of any dimensionality.
   """
 
   @freeze
   @round_result
-  def _local_ordinances(self, order):
+  def _local_ordinances(self, order: int) -> np.ndarray[float]:
     assert (order := int(order)) > 0
     x = np.linspace(0, 1, order+1)
     return flat_meshgrid(*[x] * self.ndims, axis=1)
 
   def _refine(self) -> Self:
-    return _refine_structured(self)
+    return refine_structured(self)
 
 
 class AffineMixin:
-
   """
-    Mixin for affine mesh types (PointMesh, LineMesh, Triangulation).
-    Provides implementations for the elementwise metric tensor (GK),
-    its inverse (GKinv) the elementwise constant measure (detBK)
-    and a function to check for validty (is_valid).
-
-    Each derived class needs to implement `BK` in order for the others to work.
+    Mixin for affine mesh types.
+    Provides an implementation for the _local_ordinances abstract method.
   """
+  # XXX: currently affine meshes require special-tailored refinement methods.
+  #      Write a method that can refine any affine mesh type, similar to
+  #      _refine_structured. This should be possible by taking the same approach
+  #      as in `BilinearMixin` while restricting the attention to the plane
+  #      x + y + z <= 1
 
   @freeze
   @round_result
-  def _local_ordinances(self, order):
+  def _local_ordinances(self, order: int) -> np.ndarray[float]:
     ret = BilinearMixin._local_ordinances(self, order)
     return ret[ ret.sum(1) < 1 + 1e-8 ]
 
@@ -223,7 +133,7 @@ class Mesh(HashMixin):
 
   _items = 'elements', 'points'
 
-  def save(self, filename):
+  def save(self, filename: str):
     filename = str(filename)
     assert filename.endswith('.pkl'), 'The filename must end on .pkl'
     with open(filename, 'wb') as file:
@@ -231,31 +141,16 @@ class Mesh(HashMixin):
     print("Mesh successfully saved under the filename {}.".format(filename))
 
   @classmethod
-  def load(cls, filename):
+  def load(cls, filename: str):
     with open(filename, 'rb') as file:
       elements, points = pickle.load(file)
     return cls( np.frombuffer(elements, dtype=int).reshape(-1, cls.nverts),
                 np.frombuffer(points, dtype=int).reshape(-1, 2) )
 
-  @abstractmethod
-  def _refine(self):
-    """ Refine the mesh once.
-        We assume that the new elements are ordered such that the element with index `i`
-        is replaced by [self.nref * i, ..., self.nref * i + self.nref - 1] """
-    # each derived class HAS to implement this method
-    pass
-
-  def issubmesh(self, other):
-    """ Check if self is a submesh of other.
-        A submesh is defined as a mesh with a subset or the same vertex indices
-        and the same corresponding coordinates.
-        If the two meshes are not of the same type, we check if self is
-        a submesh of other.submesh and so on. """
-    return _issubmesh(self, other)
-
-  def __init__(self, elements: np.ndarray | Sequence[int], points: np.ndarray):
+  def __init__(self, elements: np.ndarray[int] | Sequence[int], points: np.ndarray[float]):
     assert hasattr(self, 'simplex_type') and hasattr(self, 'nverts') and hasattr(self, 'nref'), \
-        'Derived classes need to implement their element type and the number of vertices per element as well as the number of refinement elements.'
+        'Derived classes need to implement their element type and the number of' \
+        ' vertices per element as well as the number of refinement elements.'
 
     self.elements = frozen(elements, dtype=int)
 
@@ -264,7 +159,8 @@ class Mesh(HashMixin):
     self.points = frozen(points, dtype=float)
 
     # sanity checks
-    assert self.points.shape[1:] == (3,), NotImplementedError("Meshes are assumed to be manifolds in R^3 by default.")
+    assert self.points.shape[1:] == (3,), \
+      NotImplementedError("Meshes are assumed to be manifolds in R^3 by default.")
     assert self.elements.shape[1:] == (self.nverts,)
     assert 0 <= self.elements.min() <= self.elements.max() < len(self.points), 'Hanging node detected.'
     assert np.unique(self.elements, axis=0).shape == self.elements.shape, "Duplicate element detected."
@@ -272,8 +168,39 @@ class Mesh(HashMixin):
     # an array containing the indices of all vertices in self.elements (in sorted order).
     self.vertex_indices = frozen(np.unique(self.elements), dtype=int)
 
+  @abstractmethod
+  def _refine(self):
+    """
+      Refine the entire mesh once.
+      We assume that the new elements are ordered such that the element with index `i`
+      is replaced by [self.nref * i, ..., self.nref * i + self.nref - 1]
+    """
+    # each derived class HAS to implement this method
+    pass
+
+  @abstractmethod
+  def _local_ordinances(self, order: int):
+    """
+      Abstract method of the mesh's local ordinances.
+      Given `order >= 1`, the local ordinances refer to the nodal points inside
+      the mesh's reference element of a Lagrangian basis of order `order`.
+      For `order == 1` this should default to the referece element's vertices.
+    """
+    pass
+
+  def issubmesh(self, other: 'Mesh') -> bool:
+    """
+      Check if self is a submesh of other.
+      A submesh is defined as a mesh with a subset or the same vertex indices
+      and the same corresponding coordinates.
+      If the two meshes are not of the same type, we check if self is
+      a submesh of other.submesh and so on.
+    """
+    return _issubmesh(self, other)
+
   @cached_property
-  def active_indices(self):
+  def active_indices(self) -> np.ndarray[int]:
+    """ The indices of the points in self.points that are used in self.elements """
     return np.unique(self.elements)
 
   def lexsort_elements(self):
@@ -287,7 +214,7 @@ class Mesh(HashMixin):
     shuffle = np.lexsort(self.elements.T[::-1])
     return self._edit(elements=self.elements[shuffle])
 
-  def get_points(self, vertex_indices):
+  def get_points(self, vertex_indices: Sequence[int] | np.ndarray[int]) -> np.ndarray[float]:
     """
       Same as self.points[vertex_indices] with the difference that it first checks
       if `vertex_indices` is a subset of self.elements.
@@ -323,63 +250,28 @@ class Mesh(HashMixin):
     elements = np.searchsorted(unique_vertices, self.elements)
     return self._edit(elements=elements, points=points)
 
-  def JK(self, points):
-    return np.stack([self.eval_local(points, dx=_dx) for _dx in np.eye(self.ndims)], axis=-1)
+  def JK(self, points: np.ndarray[float]) -> np.ndarray[float]:
+    """ Evaluation of the jacobian per element. """
+    return np.stack([self.eval_local(points, dx=_dx) for _dx in np.eye(self.ndims, dtype=int)], axis=-1)
 
-  def GK(self, points):
+  def GK(self, points: np.ndarray[float]) -> np.ndarray[float]:
+    """ Evaluation of the metric tensor per element. """
     JK = self.JK(points)
     return (JK.swapaxes(-1, -2)[..., _] * JK[..., _, :, :]).sum(-2)
 
-  def is_valid(self, order=1) -> bool:
+  def is_valid(self, order: int = 1) -> bool:
+    """ Check if a mesh is valid. """
     points = self._local_ordinances(order)
     return (np.linalg.det(self.GK(points)) > 0).all()
 
-  @frozen_cached_property
-  def _pol_weights(self):
-    """
-      Polynomial weights of each element's map.
-      For `self.eval_local`.
-    """
-    basis_funcs = self._basis_funcs
-
-    # get the element-wise weights in tensorial layout
-    # shape: (2 ** self.ndims, nelems, 3)
-    elementwise_weights = self.points[self.elements.T]
-
-    # (1, ..., 1, 2 ** ndims, nelems, 3) and (2, ..., 2, 2 **ndims, 1, 1 )
-    # becomes (2, ..., 2, 2 ** ndims, nelems, 3).sum(-3) == (2, ..., 2, nelems, 3)
-    return (elementwise_weights[(_,) * self.ndims] * basis_funcs[..., _, _]).sum(-3)
-
-  @frozen_cached_property
-  def _basis_funcs(self):
-    """
-      The polynomial weights of the nodal basis functions in the reference
-      element.
-      Shape: (2,) * self.ndims + (nverts,)
-    """
-    ords = self._local_ordinances(1).astype(int)
-    # set up the matrix we need to solve
-    X = np.stack([ np.multiply.reduce([_x ** i for _x, i in zip(ords.T, multi_index)])
-                   for multi_index in ords ], axis=1)
-
-    # solve for the nodal basis function's polynomial weights
-    # and reshape them to tensorial (nfuncs, x, y, z, ...) shape
-
-    # shape: (2 ** self.ndims, *(2,) * self.ndims)
-    # (basis_f_index, 2, 2, ...)
-    basis_funcs = np.zeros((*(2,) * self.ndims, X.shape[0]), dtype=float)
-    basis_funcs[*ords.T] = np.linalg.solve(X, np.eye(X.shape[0]))
-    return basis_funcs
-
-  def eval_local(self, points: np.ndarray, dx=None) -> np.ndarray:
+  def eval_local(self, points: np.ndarray[float | int], dx=None) -> np.ndarray[float]:
     """ Evaluate each element map locally in `points`. """
-    pol_weights = self._pol_weights
 
-    # pol_weights.shape == (2, 2, ..., nelems, 3)
-    # _eval_nd_polynomial_local(pol_weights, points, dx=dx).shape == (nelems, 3, npoints)
+    # eval_nd_polynomial_local(self, points, dx=dx).shape == (nelems, 3, npoints)
     # we reshape to (nelems, npoints, 3)
-    # XXX: try to avoid swapaxes
-    return _eval_nd_polynomial_local(pol_weights, points, dx=dx).swapaxes(-1, -2)
+
+    # XXX: try to avoid swapaxes to maintain contiguous memory layout
+    return eval_nd_polynomial_local(self, points, dx=dx).swapaxes(-1, -2)
 
   @property
   def _submesh_indices(self) -> Tuple[np.ndarray]:
@@ -395,11 +287,11 @@ class Mesh(HashMixin):
   def _submesh(self):
     """
       Take the mesh's submesh, if applicable.
-      Requres `self._submesh_indices` to tbe implemented by the class.
+      Requres `self._submesh_indices` to be implemented by the class.
     """
     # XXX: jit-compile the element map
 
-    elements = np.concatenate([ self.elements[:, slce] for slce in self._submesh_indices ])
+    elements = np.concatenate([ self.elements[:, list(slce)] for slce in self._submesh_indices ])
 
     # iterate over all elements and map the sorted element indices to the element.
     sorted_elements = {}
@@ -418,13 +310,16 @@ class Mesh(HashMixin):
     """
 
     # get all facets
-    all_submesh_facets = np.concatenate([self.elements[:, indices] for indices in self._submesh_indices ])
+    all_submesh_facets = np.concatenate([ self.elements[:, indices]
+                                          for indices in self._submesh_indices ])
 
     # create a unique identifier by sorting the indices
     sorted_edges = np.sort(all_submesh_facets, axis=1)
 
     # get the unique sorted_edges, their corresponding unique indices and the number of occurences of each
-    _, unique_indices, counts = np.unique(sorted_edges, return_index=True, return_counts=True, axis=0)
+    _, unique_indices, counts = np.unique(sorted_edges, return_index=True,
+                                                        return_counts=True,
+                                                        axis=0)
 
     # keep the ones that have been counted only once
     one_mask = counts == 1
@@ -432,21 +327,19 @@ class Mesh(HashMixin):
     return tuple(map(frozen, (all_submesh_facets[unique_indices[mask]] for mask in (one_mask, ~one_mask))))
 
   @property
+  def _submesh_type(self):
+    raise HasNoSubMeshError(f"A mesh of type '{self.__class__.__name__}' has no submesh.")
+
+  @cached_property
+  def submesh(self):
+    return self._submesh_type(self._submesh(), self.points)
+
+  @property
   def boundary(self):
     boundary_elements, _ = self._boundary_nonboundary_elements
     if len(boundary_elements) == 0:
       raise HasNoBoundaryError("The mesh has no boundary.")
     return self._submesh_type(boundary_elements, self.points)
-
-  @cached_property
-  def interfaces(self):
-    try:
-      dself = self.boundary
-    except HasNoBoundaryError:
-      return self.submesh
-    if dself == self.submesh:
-      raise NotImplementedError("The mesh has no interfaces.")
-    return self.submesh - dself
 
   def subdivide_elements(self):
     """
@@ -476,13 +369,15 @@ class Mesh(HashMixin):
     assert self.__class__ is other.__class__, NotImplementedError
     return mesh_union(self, other)
 
-  @property
-  def _submesh_type(self):
-    raise HasNoSubMeshError("A mesh of type '{}' has no submesh.".format(self.__class__.__name__))
-
   @cached_property
-  def submesh(self):
-    return self._submesh_type(self._submesh(), self.points)
+  def interfaces(self):
+    try:
+      dself = self.boundary
+    except HasNoBoundaryError:
+      return self.submesh
+    if dself == self.submesh:
+      raise NotImplementedError("The mesh has no interfaces.")
+    return self.submesh - dself
 
   @property
   def pvelements(self):
@@ -523,21 +418,12 @@ class Mesh(HashMixin):
     grid = pv.UnstructuredGrid(elements, np.array([cell_type] * nelems), points)
     grid.plot(show_edges=True, line_width=1, color="tan")
 
-  @abstractmethod
-  def _local_ordinances(self, order):
-    # XXX: may potentially be removed
-    pass
+  def take(self, elemindices: Sequence[int] | np.ndarray[int]):
+    return self._edit(elements=self.elements[np.asarray(elemindices, dtype=int)])
 
-  def default_ordinances(self, order):
-    points = self._local_ordinances(order)
-    return tuple(_map(points) for _map in self.geometry_map_iter())
-
-  def take(self, elemindices):
-    return self._edit(elements=self.elements[elemindices])
-
-  def take_elements(self, selecter: Callable, complement=False):
+  def take_elements(self, selecter: Callable, complement: bool = False):
     """
-      Given a Callable `selecter` iterator over all of the mesh's elements
+      Given a Callable `selecter` iterate over all of the mesh's elements
       and keep only those elements for which selecter(*points) evaluates
       to `True`, where `points` are the element's points.
     """
@@ -553,13 +439,6 @@ class Mesh(HashMixin):
     return self.take(sorted(set(keep_elements)))
 
 
-@lru_cache(maxsize=32)
-def _refine_structured(self):
-  """ Refine a structured mesh (LineMesh, QuadMesh, HexMesh) """
-  elems, points = ref_structured(self.elements, self.points, self.ndims)
-  return self.__class__(elems, points)
-
-
 class HexMesh(BilinearMixin, Mesh):
 
   """
@@ -571,7 +450,7 @@ class HexMesh(BilinearMixin, Mesh):
            |/______|/
            0       4
 
-    `_refine` and `is_valid` are implemented via `BilinearMixin`.
+    `_refine` `_local_ordinances` are implemented via `BilinearMixin`.
   """
 
   simplex_type = 'hexahedron'
@@ -589,7 +468,7 @@ class HexMesh(BilinearMixin, Mesh):
                                [1, 3, 5, 7],
                                [2, 3, 6, 7], ]))
 
-  @cached_property
+  @frozen_cached_property
   def pvelements(self):
     return self.elements[:, [0, 4, 6, 2, 1, 5, 7, 3]]
 
@@ -607,7 +486,7 @@ class QuadMesh(BilinearMixin, Mesh):
       |_____|
      0       2
 
-    `_refine` and `is_valid` are implemented via `BilinearMixin`.
+    `_refine` `_local_ordinances` are implemented via `BilinearMixin`.
   """
 
   simplex_type = 'quadrilateral'
@@ -624,20 +503,18 @@ class QuadMesh(BilinearMixin, Mesh):
   def _submesh_type(self):
     return LineMesh
 
-  @cached_property
+  @frozen_cached_property
   def pvelements(self):
     return self.elements[:, [0, 2, 3, 1]]
 
   def subdivide_elements(self):
-    elements = self.elements[:, [[0, 2, 1], [2, 3, 1]]].reshape(-1, 3)
+    elements = self.elements[:, [[0, 1, 2], [2, 1, 3]]].reshape(-1, 3)
     return Triangulation(elements, self.points)
 
 
 class Triangulation(AffineMixin, Mesh):
 
   """
-    `is_valid` is implemented via `AffineMixin`.
-
       1
       |\
       |  \
@@ -646,6 +523,8 @@ class Triangulation(AffineMixin, Mesh):
       |        \
       |__________\
      0            2
+
+    `_local_ordinances` is implemented via `AffineMixin`
   """
 
   simplex_type = 'triangle'
@@ -667,7 +546,7 @@ class Triangulation(AffineMixin, Mesh):
   def _submesh_type(self):
     return LineMesh
 
-  @cached_property
+  @frozen_cached_property
   def pvelements(self):
     return self.elements[:, [0, 2, 1]]
 
@@ -675,66 +554,8 @@ class Triangulation(AffineMixin, Mesh):
     """ See `_refine_Triangulation`. """
     return _refine_Triangulation(self)
 
-  def default_ordinances(self, order):
-    loc_ords = self._local_ordinances(order)
-    return tuple( frozen(_round_array(loc_ords @ BK.T + a[_])) for (a, b, c), BK in zip(self.points_iter(), self.BK) )
 
-
-def abs_tuple(tpl):
-  """
-    [5, 6] -> (5, 6)
-    [6, 5] -> (5, 6)
-    (6, 5) -> (5, 6)
-  """
-  a, b = tpl
-  if a > b: return b, a
-  return tuple(tpl)
-
-
-@lru_cache
-def _refine_Triangulation(mesh: Triangulation) -> Triangulation:
-  """
-    Uniformly refine the entire mesh once.
-          i1                             i1
-          / \                            / \
-         /   \                          /   \
-        /     \         becomes      i10 ---- i21
-       /       \                      / \   /  \
-      /         \                    /   \ /    \
-    i0 --------- i2                i0 -- i02 --- i2
-
-    Returns
-    -------
-    The refined mesh of class `Triangulation`
-  """
-
-  # XXX: JIT compile
-
-  points = mesh.points
-  maxindex = len(points)
-  slices = np.array([[0, 2], [2, 1], [1, 0]])
-  all_edges = list(set(map(abs_tuple, np.concatenate(mesh.elements[:, slices]))))
-  newpoints = points[np.array(all_edges)].sum(1) / 2
-  map_edge_number = dict(zip(all_edges, count(maxindex)))
-
-  triangles = []
-  for tri in mesh.elements:
-    i02, i21, i10 = [map_edge_number[edge] for edge in map(abs_tuple, tri[slices])]
-    i0, i1, i2 = tri
-    triangles.extend([
-        [i0, i02, i10],
-        [i02, i2, i21],
-        [i02, i21, i10],
-        [i10, i21, i1]
-    ])
-
-  elements = np.array(triangles, dtype=int)
-  points = np.concatenate([points, newpoints])
-
-  return Triangulation(elements, points)
-
-
-def triangulation_from_polygon(points: np.ndarray, mesh_size=0.05) -> Triangulation:
+def triangulation_from_polygon(points: np.ndarray, mesh_size: float | int | Callable = 0.05) -> Triangulation:
   """
     create :class: ``Triangulation`` mesh from ordered set of boundary
     points.
@@ -774,6 +595,9 @@ def triangulation_from_polygon(points: np.ndarray, mesh_size=0.05) -> Triangulat
   return mesh.cells_dict['triangle'][:, [0, 2, 1]], mesh.points
 
 
+# XXX: TetMesh. Leave as an exercise for Fabio.
+
+
 class LineMesh(AffineMixin, Mesh):
 
   simplex_type = 'line'
@@ -783,7 +607,7 @@ class LineMesh(AffineMixin, Mesh):
   is_affine = True
 
   def _refine(self):
-    return _refine_structured(self)
+    return refine_structured(self)
 
   @cached_property
   def _submesh_indices(self):
@@ -792,14 +616,6 @@ class LineMesh(AffineMixin, Mesh):
   @property
   def _submesh_type(self):
     return PointMesh
-
-  def _local_ordinances(self, order):
-    return _round_array(np.linspace(0, 1, order+1)[:, _])
-
-  def default_ordinances(self, order):
-    loc_ords = self._local_ordinances(order)
-    a, b = self.points[self.elements.T]
-    return tuple(map(frozen, (_round_array(_a[_] * (1 - loc_ords[:, _]) + _b[_] * loc_ords[:, _]) for _a, _b in zip(a, b))))
 
 
 class PointMesh(Mesh):
@@ -816,28 +632,15 @@ class PointMesh(Mesh):
   def _local_ordinances(self, order):
     return np.zeros((1, 2))
 
-  def default_ordinances(self, order):
-    return self.points
-
   def plot(self):
     point_cloud = pv.PolyData(self.points[self.elements.ravel()])
     point_cloud.plot(eye_dome_lighting=True)
-
-  def geometry_map(self, ielem):
-    # XXX: this should not be implemented by hand but should simply follow from
-    #      a tri / tet - based abstraction
-    p0 = self.points[self.elements[ielem].ravel()][_]
-
-    def gmap(x, p0=p0):
-      return p0 + 0 * x
-
-    return gmap
 
   def is_valid(self, ischeme=None):
     return True
 
 
-def rectilinear(_points: Sequence[int | np.ndarray]):
+def rectilinear(_points: Sequence[int | np.ndarray]) -> Mesh:
   """
     Rectilinear mesh in one, two or three dimensions.
 
@@ -873,13 +676,13 @@ def rectilinear(_points: Sequence[int | np.ndarray]):
   lengths = list(map(len, points))
 
   # convert to meshgrid and augment by zeros if necessary
-  points = np.stack(list(map(np.ravel, np.meshgrid(*points, indexing='ij'))), axis=-1)
+  points = flat_meshgrid(*points, axis=1)
   if points.shape[1] != 3:
     points = np.concatenate([points, np.zeros((points.shape[0], 3 - points.shape[1]))], axis=-1)
 
   element = np.asarray(list(product(*map(range, (2,)*dim)))).T
   indices = np.arange(len(points)).reshape(*lengths)
-  ijk = np.stack(list(map(np.ravel, np.meshgrid(*(np.arange(n-1) for n in lengths), indexing='ij'))), axis=0)
+  ijk = flat_meshgrid(*(np.arange(n-1) for n in lengths), axis=0)
 
   # 3, nelems, 8
   ijk = ijk[:, :, _] + element[:, _]

@@ -2,7 +2,14 @@ from ..util import np, _
 
 from typing import Sequence, Optional
 
+from functools import lru_cache
+
 sl = slice(_)
+
+
+"""
+  Polynomial routines for evaluating the local element maps.
+"""
 
 
 def _nd_pol_derivative(weights: np.ndarray, dx: Sequence[int] | np.ndarray) -> np.ndarray:
@@ -41,12 +48,57 @@ def _nd_pol_derivative(weights: np.ndarray, dx: Sequence[int] | np.ndarray) -> n
     if _dx == 0: continue
     weights = weights * np.arange(dim).reshape((1,) * i + (dim,) + (1,) * (ntot - i - 1))
     weights = weights[(sl,) * i + (slice(1, _),)]
+
   return _nd_pol_derivative(weights, tuple(max(_dx - 1, 0) for _dx in dx))
 
 
-def _eval_nd_polynomial_local(weights: np.ndarray,
-                              points: np.ndarray,
-                              dx: Optional[Sequence[int] | np.ndarray | int] = None) -> np.ndarray:
+@lru_cache(maxsize=32)
+def _compute_basis_weights(mesh):
+  """
+    The polynomial weights of the nodal basis functions in the reference
+    element.
+    Shape: (2,) * self.ndims + (nverts,)
+  """
+  ords = mesh._local_ordinances(1).astype(int)
+  # set up the matrix we need to solve
+  X = np.stack([ np.multiply.reduce([_x ** i for _x, i in zip(ords.T, multi_index)])
+                 for multi_index in ords ], axis=1)
+
+  # solve for the nodal basis function's polynomial weights
+  # and reshape them to tensorial (nfuncs, x, y, z, ...) shape
+
+  # shape: (2 ** self.ndims, *(2,) * self.ndims)
+  # (basis_f_index, 2, 2, ...)
+  basis_funcs = np.zeros((*(2,) * mesh.ndims, X.shape[0]), dtype=float)
+  basis_funcs[*ords.T] = np.linalg.solve(X, np.eye(X.shape[0]))
+  return basis_funcs
+
+
+@lru_cache(maxsize=32)
+def _compute_pol_weights(mesh, dx) -> np.ndarray:
+  """
+    Polynomial weights of each element's map.
+    For `mesh.eval_local`.
+  """
+  # XXX: caching doesn't re-use for instance the result of dx = (1, 0, 0) if
+  #      dx = (2, 0, 0) is computed. Change the caching structure to improve this.
+
+  assert len(dx) == mesh.ndims
+  basis_funcs = _compute_basis_weights(mesh)
+
+  # get the element-wise weights in tensorial layout
+  # shape: (2 ** self.ndims, nelems, 3)
+  elementwise_weights = mesh.points[mesh.elements.T]
+
+  # (1, ..., 1, 2 ** ndims, nelems, 3) and (2, ..., 2, 2 **ndims, 1, 1 )
+  # becomes (2, ..., 2, 2 ** ndims, nelems, 3).sum(-3) == (2, ..., 2, nelems, 3)
+  ret = (elementwise_weights[(_,) * mesh.ndims] * basis_funcs[..., _, _]).sum(-3)
+  return _nd_pol_derivative(ret, dx)
+
+
+def eval_nd_polynomial_local(mesh,
+                             points: np.ndarray,
+                             dx: Optional[Sequence[int] | np.ndarray | int] = None) -> np.ndarray:
   """
     Evaluate `(x, y, z)` n-dependency polynomials or their derivatives in `points`.
 
@@ -79,7 +131,7 @@ def _eval_nd_polynomial_local(weights: np.ndarray,
   assert len(dx) == ndim
 
   # take derivative weights
-  weights = _nd_pol_derivative(weights, dx)
+  weights = _compute_pol_weights(mesh, tuple(dx))
 
   shape = weights.shape[:len(dx)]
 

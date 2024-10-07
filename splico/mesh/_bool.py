@@ -1,5 +1,3 @@
-# XXX: create module with jitted methods for use in `mesh.py` that improve performance
-
 from .mesh import Mesh
 from ..util import np
 
@@ -9,7 +7,12 @@ from numba import njit, prange
 import treelog as log
 
 
-""" Routines for normal mesh union / difference """
+"""
+  Module containing various JIT-compiled routines for use in `bool.py`
+"""
+
+
+""" JIT-compiled routines for normal mesh union / difference """
 
 
 @njit(cache=True)

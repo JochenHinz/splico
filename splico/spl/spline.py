@@ -329,6 +329,7 @@ class NDSpline(HashMixin, NDArrayOperatorsMixin):
       sampled_mesh: :class:`splico.mesh.Mesh`
           The sampled mesh. Has the same type as `mesh`.
     """
+    # XXX: find more elegant solution than `axes` argument.
     assert self.shape == (3,), 'Mesh export requires the target space to be R^3.'
     assert self.nvars == mesh.ndims <= 3
     if axes is None:
@@ -463,21 +464,3 @@ class SplineCollection(np.ndarray):
 
 
 del __NDSpline_implementations__
-
-
-def test_SplineCollection():
-  uknotvector = UnivariateKnotVector(np.linspace(0, 1, 21), 3)
-  knotvector = uknotvector * uknotvector
-
-  ndatapoints = 11
-  xi = np.linspace(0, 1, ndatapoints)
-  data = (xi[:, _, _, _] + .2 * np.random.randn(*(ndatapoints,)*2, 4, 3)).reshape(-1, 4, 3)
-  spline = knotvector.fit([xi, xi], data, lam0=1e-6)
-
-  collection = SplineCollection([spline, spline])
-
-  assert collection(xi, xi).shape == (11, 2, 4, 3)
-
-
-if __name__ == '__main__':
-  test_SplineCollection()

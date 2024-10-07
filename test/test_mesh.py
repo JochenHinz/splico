@@ -105,7 +105,7 @@ class TestBoundary(unittest.TestCase):
     self.assertTrue( dmesh.is_valid() )
 
   def test_boundary_structured(self):
-    """
+    r"""
       Here we test by checking if the boundary meshes points shifted
       by -0.5 in all directions have at least one entry that is
       \pm 0.5.
@@ -126,7 +126,7 @@ class TestSubMesh(unittest.TestCase):
     for i in range(3):
       mesh = mesh.submesh
       self.assertTrue(mesh.is_valid())
-    from splico.mesh import HasNoSubMeshError
+    from splico.mesh.aux import HasNoSubMeshError
     with self.assertRaises(HasNoSubMeshError):
       mesh.submesh
 

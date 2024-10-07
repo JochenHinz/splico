@@ -92,7 +92,9 @@ class UnivariateKnotVector(HashMixin):
     assert a <= abscissae.min() <= abscissae.max() <= b
 
     # XXX: obviously we need to find a better solution for this.
-    ret = _round_array(np.stack([_call1D(abscissae, self.repeat_knots(), self.degree, e, dx) for e in np.eye(self.dim)], axis=0))
+    ret = _round_array(np.stack([_call1D(abscissae,
+                                         self.repeat_knots(),
+                                         self.degree, e, dx) for e in np.eye(self.dim)], axis=0))
     return sparse.csr_matrix(ret)
 
   def integrate(self, dx=0):
@@ -125,8 +127,8 @@ class UnivariateKnotVector(HashMixin):
     return TensorKnotVector([*other, self])
 
 
-@lru_cache
-def univariate_integral(uknotvector: UnivariateKnotVector, dx: int = 0):
+@lru_cache(maxsize=32)
+def univariate_integral(uknotvector: UnivariateKnotVector, dx: int = 0) -> sparse.csr_matrix:
   """
     Compute the matrix with entries M_ij = \int_(a, b) phi_i^(dx) phi_j^(dx) dx,
     where uknotvector.knots == a, *ignore, b.
@@ -161,7 +163,7 @@ def as_UnivariateKnotVector(kv: UnivariateKnotVector | Any) -> UnivariateKnotVec
   return UnivariateKnotVector(*kv)
 
 
-def sparse_kron(*_mats: Sequence[sparse.spmatrix | np.ndarray]):
+def sparse_kron(*_mats: Sequence[sparse.spmatrix | np.ndarray]) -> sparse.csr_matrix:
   assert len(_mats) >= 1
   mats: List[sparse.spmatrix] = list(map(sparse.csr_matrix, _mats))
   if len(mats) == 1:
@@ -305,7 +307,7 @@ class TensorKnotVector(HashMixin):
 
     list_of_abscissae = list(map(np.asarray, list_of_abscissae))
     data = np.asarray(data)
-    assert data.shape[:1] == (np.prod(list(map(len, list_of_abscissae))),)
+    assert data.shape[:1] == (np.multiply.reduce(list(map(len, list_of_abscissae))),)
     assert all(lam >= 0 for lam in (lam0, lam1))
     X = self.collocate(*list_of_abscissae)
     M = X @ X.T

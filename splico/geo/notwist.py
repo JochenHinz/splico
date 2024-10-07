@@ -65,7 +65,7 @@ def _compute_notwistframe(T, n0, zero_thresh):
 
 def compute_notwistframe(tangents: np.ndarray,
                          n0: Optional[np.ndarray | Sequence[float]] = None,
-                         zero_thresh=1e-8):
+                         zero_thresh: float = 1e-8) -> np.ndarray:
   """
     Compute a discrete no-twist-frame.
     The docstring is the same as for `_compute_notwistframe` but `n0` and

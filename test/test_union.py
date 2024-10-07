@@ -1,5 +1,5 @@
 from splico.mesh import rectilinear, mesh_boundary_union
-from splico.mesh._jit import _make_matching
+from splico.mesh._bool import _make_matching
 
 import unittest
 

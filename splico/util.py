@@ -11,7 +11,7 @@ import sys
 from functools import wraps, cached_property
 from collections import namedtuple, ChainMap
 from collections.abc import Hashable
-from typing import Tuple, Sequence
+from typing import Tuple, Sequence, Optional, Callable, Any
 
 import treelog as log  # installed via the nutils dependency
 
@@ -34,7 +34,7 @@ GLOBAL_PRECISION = 12
 BAR_LENGTH = 100
 
 
-def _round_array(arr, precision=None):
+def _round_array(arr: np.ndarray, precision: Optional[int] = None) -> np.ndarray:
   """
     Round an array to `precision` which defaults to `GLOBAL_PRECISION`
     if not passed.
@@ -44,7 +44,7 @@ def _round_array(arr, precision=None):
   return np.round(arr, precision)
 
 
-def round_result(fn):
+def round_result(fn: Callable) -> Callable:
   @wraps(fn)
   def wrapper(*args, **kwargs):
     return _round_array(fn(*args, **kwargs))
@@ -74,7 +74,7 @@ class GlobalPrecision:
         [0, 0.3333, 0.6667, 1]
   """
 
-  def __init__(self, precision):
+  def __init__(self, precision: int):
     self.oldprecision = int(GLOBAL_PRECISION)
     self.precision = int(precision)
     assert 0 < self.precision < 16
@@ -88,7 +88,7 @@ class GlobalPrecision:
     GLOBAL_PRECISION = self.oldprecision
 
 
-def frozen_cached_property(fn):
+def frozen_cached_property(fn: Callable) -> Callable:
   """
     Combined decorator for `freeze` and `cached_property`.
     Equivalent to:
@@ -130,7 +130,7 @@ def frozen(array: np.ndarray, dtype=None) -> np.ndarray:
   return array
 
 
-def freeze(fn, dtype=None):
+def freeze(fn: Callable, dtype=None) -> Callable:
   """
     Decorator that freezes the returned array inplace.
 
@@ -169,18 +169,18 @@ def freeze(fn, dtype=None):
 serialized_array = namedtuple('serialized_array', ('shape', 'dtype', 'bytes'))
 
 
-# serialize and array for hashing
-def serialize_array(arr: np.ndarray):
+# serialize an array for hashing
+def serialize_array(arr: np.ndarray) -> serialized_array:
   return serialized_array(arr.shape, arr.dtype.str.encode(), arr.tobytes())
 
 
 # convert serialized array back to ordinary np.ndarray
-def deserialize_array(serial: serialized_array):
+def deserialize_array(serial: serialized_array) -> np.ndarray:
   shape, dtype, _bytes = serial
   return np.frombuffer(_bytes, dtype=np.dtype(dtype.decode())).reshape(shape)
 
 
-def serialize_input(fn):
+def serialize_input(fn: Callable) -> Callable:
   @wraps(fn)
   def wrapper(arr, *args, **kwargs):
     return fn(serialize_array(arr), *args, **kwargs)
@@ -239,10 +239,10 @@ class HashMixin(Hashable):
   _items: Tuple[str, ...]
 
   def _edit(self, **kwargs):
-    return self.__class__(**dict(ChainMap(kwargs, self._lib)))
+    return self.__class__(**ChainMap(kwargs, self._lib))
 
   @property
-  def _lib(self):
+  def _lib(self) -> dict:
     return {item: getattr(self, item) for item in self._items}
 
   @cached_property
@@ -250,22 +250,26 @@ class HashMixin(Hashable):
     ret = []
     for i, attr in enumerate(map(self.__getattribute__, self._items)):
       if isinstance(attr, np.ndarray):
+
         if attr.flags.writeable is True:
-          log.warning(f"Warning, attempting to hash the attribute `{self._items[i]}` which is a writeable `np.ndarray`."
-                       "Ensure that all `np.ndarray` attributes are non-writeable using `util.frozen` or `util.freeze`.")
+          log.warning(f"Warning, attempting to hash the attribute `{self._items[i]}`"
+                      " which is a writeable `np.ndarray`."
+                       "Ensure that all `np.ndarray` attributes are non-writeable"
+                       " using `util.frozen` or `util.freeze`.")
+
         ret.append(serialize_array(attr))
       elif isinstance(attr, Hashable):
         ret.append(attr)
       else:
-        raise AssertionError("Attribute of type '{}' cannot be hashed.".format(str(type(attr))))
+        raise AssertionError(f"Attribute of type '{str(type(attr))}' cannot be hashed.")
     return tuple(ret)
 
-  def __hash__(self):
+  def __hash__(self) -> int:
     if not hasattr(self, '_hash'):
       self._hash = hash(self.tobytes)
     return self._hash
 
-  def __eq__(self, other):
+  def __eq__(self, other: Any) -> bool:
     if self.__class__ is not other.__class__: return False
     for item0, item1 in zip(self.tobytes, other.tobytes):
       if item0 != item1: return False
@@ -370,7 +374,7 @@ class ProgressBar:
     sys.stdout.write('\n')
 
 
-def isincreasing(arr: Sequence | np.ndarray):
+def isincreasing(arr: Sequence | np.ndarray) -> bool:
   """
     Return True if an array-like is strictly increasing.
     Else return False.
@@ -408,7 +412,7 @@ def gauss_quadrature(a: int | float, b: int | float, order: int = 3) -> Tuple[np
   return (b - a) / 2 * weights, a + points * (b - a)
 
 
-def clparam(points: Sequence | np.ndarray):
+def clparam(points: Sequence | np.ndarray) -> np.ndarray:
   # XXX: docstring
   points = np.asarray(points)
   assert points.ndim
@@ -419,12 +423,12 @@ def clparam(points: Sequence | np.ndarray):
   return ret / ret[-1]
 
 
-def normalize(array: np.array) -> np.array:
+def normalize(array: np.ndarray) -> np.ndarray:
   array = np.asarray(array)
   return array / np.linalg.norm(array, axis=-1, ord=2, keepdims=True)
 
 
-def flat_meshgrid(*arrays, indexing='ij', axis=0):
+def flat_meshgrid(*arrays, indexing: str = 'ij', axis: int = 0) -> np.ndarray:
   ret = np.stack(list(map(np.ravel, np.meshgrid(*arrays, indexing=indexing))), axis=axis)
   if ret.ndim == 1:
     ret = ret[:, _]

@@ -4,6 +4,8 @@ import itertools
 from nutils import numeric, transform, transformseq, _util as util, topology
 
 
+# slightly adjusted from the original nutils function in that additionally
+# the local geometry map is returned.
 @log.withcontext
 def multipatch(patches, nelems, patchverts=None, space: str = 'X'):
   '''multipatch rectilinear mesh generator
@@ -121,6 +123,8 @@ def multipatch(patches, nelems, patchverts=None, space: str = 'X'):
   :class:`nutils.function.Array`:
       The geometry defined by the ``patchverts`` or a unit hypercube per patch
       if ``patchverts`` is not specified.
+  :class:`nutils.function.Array`:
+      The local geometry that maps each patch onto the unit hypercube.
   '''
 
   patches = numpy.array(patches)

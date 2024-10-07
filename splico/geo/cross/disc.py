@@ -10,11 +10,11 @@ from nutils import function
 
 
 @lru_cache(maxsize=32)
-def rot_matrix(rot):
+def rot_matrix(rot: float | int) -> np.ndarray:
   return np.array([[np.cos(rot), -np.sin(rot)], [np.sin(rot), np.cos(rot)]])
 
 
-def trampoline_template(inner_height=.5, inner_width=.5):
+def trampoline_template(inner_height: float = .5, inner_width: float = .5):
   """
     1 - - - - - 7
     | \   D   / |
@@ -62,7 +62,7 @@ def trampoline_template(inner_height=.5, inner_width=.5):
   return patches, patchverts
 
 
-def nutils_to_scipy(mat):
+def nutils_to_scipy(mat) -> sparse.csr_matrix:
   data = mat.export('csr')
   return sparse.csr_matrix(data, dtype=float)
 

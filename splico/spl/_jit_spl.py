@@ -18,6 +18,7 @@ config.NUMBA_NUM_THREADS = multiprocessing.cpu_count()
 #      Some functions' positional arguments are in a confusing order.
 #      Lastly, we need to write one function for N-D evaluation of splines
 #      rather than dedicated routines for 1, 2 and 3D.
+#      This can be accomplished by using the product routines from splico._jit.
 
 
 @njit(cache=True)
