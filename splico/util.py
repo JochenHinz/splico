@@ -408,8 +408,6 @@ def normalize(array: np.ndarray) -> np.ndarray:
 
 def flat_meshgrid(*arrays, indexing: Literal['xy', 'ij'] = 'ij', axis: int = 0) -> np.ndarray:
   ret = np.stack(list(map(np.ravel, np.meshgrid(*arrays, indexing=indexing))), axis=axis)
-  if ret.ndim == 1:
-    ret = ret[:, _]
   return ret
 
 
