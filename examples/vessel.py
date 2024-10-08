@@ -44,15 +44,17 @@ def main(nelems_centerline, nelems_cross_section, radii, centerline_points):
   # make the cross section of radius one
   disc = maker.make_disc(1, 1, 0)
 
-  # fit a spline to radius and frame information
+  # fit a spline to radius and rotational frame information
   rRs = kv.fit([xi], radii[:, _, _] * Rs)
 
   one = disc.__class__.one(disc.knotvector)
 
   # create the vessel spline using a tensor product
-  rRs = rRs[_]
-  vessel = (disc[:, _] * rRs).sum(-1)
-  vessel = vessel + (one * X)[_]
+  # disc.shape == (5, 3) 5 patches 3 coordinates
+  # rRs.shape == (3, 3) 3x3 matrix
+  # disc[:, _] * rRs[_] = (5, 1, 3) * (1, 3, 3)
+  # taking .sum(-1) => (5, 3), representing a matrix multiplication
+  vessel = (disc[:, _] * rRs[_]).sum(-1) + (one * X)[_]
 
   # create dense mesh
   eval_mesh = rectilinear([2 * nelems_cross_section + 1,
