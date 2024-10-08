@@ -10,6 +10,7 @@ from functools import wraps, cached_property
 from collections import namedtuple, ChainMap
 from collections.abc import Hashable
 from typing import Tuple, Sequence, Optional, Callable, Any, Literal
+import contextlib
 
 import treelog as log  # installed via the nutils dependency
 import numpy as np
@@ -50,7 +51,8 @@ def round_result(fn: Callable) -> Callable:
   return wrapper
 
 
-class GlobalPrecision:
+@contextlib.contextmanager
+def global_precision(precision: int):
   """
     Context manager for locally adjusting the machine precision.
     Applies to all attributes / arrays that are truncated using the
@@ -67,24 +69,19 @@ class GlobalPrecision:
     >>> A.a
         [0, 0.333333333333, 0.666666666667, 1]
 
-    >>> with GlobalPrecision(4):
+    >>> with global_precision(4):
     >>>   A = MyClass(np.linspace(0, 1, 4))
     >>> A.a
         [0, 0.3333, 0.6667, 1]
   """
-
-  def __init__(self, precision: int):
-    self.oldprecision = int(GLOBAL_PRECISION)
-    self.precision = int(precision)
-    assert 0 < self.precision < 16
-
-  def __enter__(self):
-    global GLOBAL_PRECISION
-    GLOBAL_PRECISION = self.precision
-
-  def __exit__(self, *args, **kwargs):
-    global GLOBAL_PRECISION
-    GLOBAL_PRECISION = self.oldprecision
+  global GLOBAL_PRECISION
+  old_precision = int(GLOBAL_PRECISION)
+  assert 0 < (precision := int(precision)) < 16
+  GLOBAL_PRECISION = precision
+  try:
+    yield
+  finally:
+    GLOBAL_PRECISION = old_precision
 
 
 def frozen_cached_property(fn: Callable) -> cached_property:

@@ -1,5 +1,5 @@
 from splico.mesh import Mesh, rectilinear, Triangulation, mesh_union
-from splico.util import GlobalPrecision, _round_array
+from splico.util import global_precision
 
 import unittest
 from itertools import product
@@ -30,7 +30,7 @@ class UnitSquare(unittest.TestCase):
       with self.subTest(f'Rectilinear of dimension {i}'):
         mesh = rectilinear(points[:i])
 
-        with GlobalPrecision(8):
+        with global_precision(8):
           element = np.asarray(list(product(*[range(2) for _ in range(i)]))).T
           indices = np.arange(np.multiply.reduce(lengths[:i])).reshape(*lengths[:i])
           ijk = np.stack(list(map(np.ravel, np.meshgrid(*(np.arange(n-1) for n in lengths[:i]), indexing='ij'))), axis=0)
@@ -69,7 +69,7 @@ class RefineAndGeometryMap(unittest.TestCase):
   def test_refine_triangulation(self):
     mesh = unit_disc_triangulation()
 
-    with GlobalPrecision(8):
+    with global_precision(8):
 
       rmesh = mesh.refine(1)
 
@@ -116,7 +116,7 @@ class TestBoundary(unittest.TestCase):
     for i in range(1, 4):
       with self.subTest(f'Taking boundary of {i}-dimensional rectilinear mesh.'):
         mesh = rectilinear((npoints,) * i)
-        with GlobalPrecision(8):
+        with global_precision(8):
           dmesh = mesh.boundary.drop_points_and_renumber()
           points_c = dmesh.points - np.array([.5] * dmesh.points.shape[1])[_]
           self.assertTrue( np.allclose(np.abs(points_c).max(axis=1), .5) )
@@ -144,7 +144,7 @@ class TestUnion(unittest.TestCase):
     npoints = (3, 3, 4)
     for i in range(1, 4):
       with self.subTest('Testing the mesh union in {i} spatial dimensions.'):
-        with GlobalPrecision(8):
+        with global_precision(8):
           meshes = [ rectilinear(points) for points in product(*([np.linspace(0, .5, n),
                                                                   np.linspace(.5, 1, n)] for n in npoints[:i])) ]
           mesh0 = order_mesh(rectilinear([2 * n - 1 for n in npoints[:i]]))
