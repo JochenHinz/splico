@@ -1,9 +1,9 @@
 from .util import np
 
 from typing import Sequence
+import math
 
 from numba import njit
-import math
 
 
 """ Routines for use in JIT-compiled functions. """

@@ -1,7 +1,7 @@
 from ..util import _round_array, isincreasing, np, HashMixin, frozen_cached_property, gauss_quadrature, _
 from ._jit_spl import _call1D, nonzero_bsplines_deriv_vectorized
 
-from itertools import chain, starmap
+from itertools import starmap
 from functools import partial, lru_cache, reduce
 from typing import List, Sequence, Self, Any
 
@@ -31,7 +31,7 @@ class UnivariateKnotVector(HashMixin):
 
   @frozen_cached_property
   def knots(self) -> np.ndarray:
-    return np.asarray(self.knotvalues)
+    return np.asarray(self.knotvalues, dtype=float)
 
   @property
   def nelems(self) -> int:
@@ -45,7 +45,7 @@ class UnivariateKnotVector(HashMixin):
 
   def repeat_knots(self) -> np.ndarray:
     """ Repeat knots by their knotmultiplicity. """
-    return np.fromiter(chain.from_iterable([[i] * j for i, j in zip(self.knots, self.knotmultiplicities)]), float)
+    return np.repeat(self.knots, self.knotmultiplicities)
 
   @frozen_cached_property
   def dx(self) -> np.ndarray:
@@ -96,6 +96,19 @@ class UnivariateKnotVector(HashMixin):
                                          self.repeat_knots(),
                                          self.degree, e, dx) for e in np.eye(self.dim)], axis=0))
     return sparse.csr_matrix(ret)
+
+  def _refine(self):
+    nknots = len(self.knots)
+    knots = np.insert(self.knots, range(1, nknots), (self.knots[:-1] + self.knots[1:])/2.0)
+    knotmultiplicities = np.insert(self.knotmultiplicities, range(1, nknots), [1]*(nknots-1))
+    return UnivariateKnotVector(knots, degree=self.degree,
+                                       knotmultiplicities=knotmultiplicities)
+
+  def refine(self, n=1):
+    assert (n := int(n)) >= 0
+    if n == 0:
+      return self
+    return self._refine().refine(n-1)
 
   def integrate(self, dx=0):
     """ See `univariate_integral`. """
@@ -228,6 +241,7 @@ class TensorKnotVector(HashMixin):
   dim = _prop_wrapper('dim')
   repeat_knots = _vectorize('repeat_knots', tuple)
   flip = _vectorize('flip')
+  refine = _vectorize('refine')
 
   ###
 

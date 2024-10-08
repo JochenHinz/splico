@@ -3,9 +3,10 @@ from .mul import multipatch
 from splico.spl import UnivariateKnotVector, NDSpline
 from splico.util import np, frozen, NanVec
 
+from functools import lru_cache
+
 from scipy.sparse import linalg as splinalg
 from scipy import sparse
-from functools import lru_cache
 from nutils import function
 
 

@@ -1,13 +1,13 @@
-from ..util import _round_array, np, HashMixin, frozen, _
+from ..util import _round_array, np, HashMixin, frozen, _, augment_by_zeros
 from ._jit_spl import call, tensor_call
 from ..mesh.mesh import Mesh
 from .kv import UnivariateKnotVector, TensorKnotVector, as_TensorKnotVector
 
 from typing import List, Sequence, Callable, Tuple, Any
+from functools import reduce
+
 from scipy import interpolate
 from numpy.lib.mixins import NDArrayOperatorsMixin
-
-from functools import reduce
 
 
 IMPLEMENTED_UFUNCS = (np.add, np.subtract, np.multiply, np.divide)
@@ -307,7 +307,7 @@ class NDSpline(HashMixin, NDArrayOperatorsMixin):
     """
     return NDSpline(self.knotvector, np.moveaxis(self.controlpoints.T, -1, 0))
 
-  def sample_mesh(self, mesh: Mesh, axes: Sequence[int] | None = None):
+  def sample_mesh(self, mesh: Mesh):
     """
       Sample a mesh from `self`.
 
@@ -317,12 +317,9 @@ class NDSpline(HashMixin, NDArrayOperatorsMixin):
           The mesh's points serve as the evaluation points to `self` for sampling
           a mesh from a spline with target space R^3. The connectivity, elements
           and element types of the sampled mesh follow directly from `mesh`.
-      axes : Sequence[int] or None
-          The axes a mesh is sampled from. Only applicable if self.nvars < 3.
-          For instance, if `mesh` has points [ [a0, b0, 0], [a1, b1, 0], ... ]
-          it would make sense to disregard the z-coordinates of the points for
-          the sampling.
-          If None, defaults to (0, 1, ..., self.nvars).
+          Must satisfy mesh.ndims == len(self). If mesh.ndims < 3, only the first
+          mesh.ndims columns of mesh.points are utilized for sampling and augmented
+          by zeros to be a manifold in R^3.
 
       Returns
       -------
@@ -332,10 +329,9 @@ class NDSpline(HashMixin, NDArrayOperatorsMixin):
     # XXX: find more elegant solution than `axes` argument.
     assert self.shape == (3,), 'Mesh export requires the target space to be R^3.'
     assert self.nvars == mesh.ndims <= 3
-    if axes is None:
-      axes = tuple(range(self.nvars))
-    assert len(axes) == self.nvars and 0 <= min(axes) <= max(axes) < self.nvars
-    points = _round_array( self(*mesh.points.T[list(axes)]) )
+    points = _round_array( self(*mesh.points.T[:self.nvars]) )
+    if points.shape[1:] != (3,):
+      points = augment_by_zeros(points, axis=1)
     return mesh._edit(points=points)
 
   def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):

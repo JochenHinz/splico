@@ -1,7 +1,6 @@
 from ..util import np, _
 
-from typing import Sequence, Optional
-
+from typing import Sequence, Optional, cast
 from functools import lru_cache
 
 sl = slice(_)
@@ -96,9 +95,7 @@ def _compute_pol_weights(mesh, dx) -> np.ndarray:
   return _nd_pol_derivative(ret, dx)
 
 
-def eval_nd_polynomial_local(mesh,
-                             points: np.ndarray,
-                             dx: Optional[Sequence[int] | np.ndarray | int] = None) -> np.ndarray:
+def eval_nd_polynomial_local(mesh, points, dx=None) -> np.ndarray:
   """
     Evaluate `(x, y, z)` n-dependency polynomials or their derivatives in `points`.
 
@@ -126,7 +123,7 @@ def eval_nd_polynomial_local(mesh,
   if dx is None:
     dx = 0
   if np.isscalar(dx):
-    dx = (dx,) * ndim
+    dx = cast(Sequence[int], (dx,) * ndim)
 
   assert len(dx) == ndim
 

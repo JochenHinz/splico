@@ -37,6 +37,10 @@ class TestNoTwist(unittest.TestCase):
 
     mesh.plot()
 
+    # XXX: currently the test passes or fails by the `measure of eye`.
+    #      Find a way to test whether the boundary union etc succeeds without
+    #      having to look at it manually.
+
 
 if __name__ == '__main__':
   unittest.main()

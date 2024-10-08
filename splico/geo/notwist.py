@@ -1,8 +1,9 @@
 from splico.util import np, normalize, isincreasing
 from splico.spl import NDSpline
 
-from numba import njit
 from typing import Optional, Sequence
+
+from numba import njit
 import treelog as log
 
 

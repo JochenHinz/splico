@@ -5,15 +5,14 @@
 @author: Jochen Hinz
 """
 
-import numpy as np
 import sys
-
 from functools import wraps, cached_property
 from collections import namedtuple, ChainMap
 from collections.abc import Hashable
-from typing import Tuple, Sequence, Optional, Callable, Any
+from typing import Tuple, Sequence, Optional, Callable, Any, Literal
 
 import treelog as log  # installed via the nutils dependency
+import numpy as np
 
 
 # alias for vectorisation.
@@ -88,7 +87,7 @@ class GlobalPrecision:
     GLOBAL_PRECISION = self.oldprecision
 
 
-def frozen_cached_property(fn: Callable) -> Callable:
+def frozen_cached_property(fn: Callable) -> cached_property:
   """
     Combined decorator for `freeze` and `cached_property`.
     Equivalent to:
@@ -98,10 +97,10 @@ def frozen_cached_property(fn: Callable) -> Callable:
     >>> def myfunc(self):
           return np.arange(self.n)
   """
-  return wraps(fn)(cached_property(freeze(fn)))
+  return cached_property(freeze(fn))
 
 
-def frozen(array: np.ndarray, dtype=None) -> np.ndarray:
+def frozen(array: np.ndarray | Sequence[Any], dtype=None) -> np.ndarray:
   """
     Freeze a vector inplace and return it.
 
@@ -276,27 +275,6 @@ class HashMixin(Hashable):
     return True
 
 
-class FrozenDict(dict):
-  """
-    Frozen dictionary. Once instantiated, cannot be changed.
-  """
-
-  # XXX: find more elegant solution using collections.abc.mapping
-
-  def _immutable(self, *args, **kwargs):
-    raise TypeError('Cannot change object - object is immutable')
-
-  __setitem__ = _immutable
-  __delitem__ = _immutable
-  pop = _immutable
-  popitem = _immutable
-  clear = _immutable
-  update = _immutable
-  setdefault = _immutable
-
-  del _immutable
-
-
 class NanVec(np.ndarray):
   """
      Vector of dtype float initilized to np.nan.
@@ -374,7 +352,7 @@ class ProgressBar:
     sys.stdout.write('\n')
 
 
-def isincreasing(arr: Sequence | np.ndarray) -> bool:
+def isincreasing(arr: Sequence | np.ndarray) -> np.bool_:
   """
     Return True if an array-like is strictly increasing.
     Else return False.
@@ -419,7 +397,7 @@ def clparam(points: Sequence | np.ndarray) -> np.ndarray:
   if points.ndim == 1:
     points = points[:, _]
 
-  ret = np.array([0, *np.linalg.norm(points, axis=1).cumsum()])
+  ret = np.array([0, *np.linalg.norm(np.diff(points, axis=0), axis=1).cumsum()])
   return ret / ret[-1]
 
 
@@ -428,8 +406,19 @@ def normalize(array: np.ndarray) -> np.ndarray:
   return array / np.linalg.norm(array, axis=-1, ord=2, keepdims=True)
 
 
-def flat_meshgrid(*arrays, indexing: str = 'ij', axis: int = 0) -> np.ndarray:
+def flat_meshgrid(*arrays, indexing: Literal['xy', 'ij'] = 'ij', axis: int = 0) -> np.ndarray:
   ret = np.stack(list(map(np.ravel, np.meshgrid(*arrays, indexing=indexing))), axis=axis)
   if ret.ndim == 1:
     ret = ret[:, _]
   return ret
+
+
+def augment_by_zeros(points: np.ndarray, axis_target=3, axis=1):
+  n = (points := np.asarray(points)).shape[axis]
+  if n > axis_target:
+    raise AssertionError('Cannot augment zeros to axis whose length exceeds `axis_target`.')
+  if n == axis_target:
+    return points
+  zeros_shape = tuple(dim if i != axis else axis_target - n
+                      for i, dim in enumerate(points.shape))
+  return np.concatenate([points, np.zeros(zeros_shape, dtype=points.dtype)], axis=axis)

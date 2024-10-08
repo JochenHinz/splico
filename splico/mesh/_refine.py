@@ -1,10 +1,10 @@
 from ..util import np
 from .._jit import product, arange_product, ravel_multi_index, mul_reduce, float2str
 
-from numba import njit
-
 from functools import lru_cache
 from itertools import count
+
+from numba import njit
 
 
 """

@@ -11,15 +11,16 @@ class TestDisc(unittest.TestCase):
     sol = dmaker.make_disc(4, 4, 0)
 
     for n in (3, 5, 7, 11, 13, 17, 19):
-      rmesh = rectilinear([n, n])
+      with self.subTest('Evaluating in {n} x {n} points'):
+        rmesh = rectilinear([n, n])
 
-      all_meshes = [spl.sample_mesh(rmesh) for spl in sol]
-      mesh = mesh_boundary_union(*all_meshes)
+        all_meshes = [spl.sample_mesh(rmesh) for spl in sol]
+        mesh = mesh_boundary_union(*all_meshes)
 
-      # 5 faces, 12 edges, 8 vertices
-      npoints = 5 * (n-2)**2 + 12 * (n-2) + 8
+        # 5 faces, 12 edges, 8 vertices
+        npoints = 5 * (n-2)**2 + 12 * (n-2) + 8
 
-      self.assertEqual(len(mesh.points), npoints)
+        self.assertEqual(len(mesh.points), npoints)
 
 
 if __name__ == '__main__':

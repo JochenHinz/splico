@@ -1,6 +1,7 @@
+import itertools
+
 import treelog as log
 import numpy
-import itertools
 from nutils import numeric, transform, transformseq, _util as util, topology
 
 
