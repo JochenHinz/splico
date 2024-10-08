@@ -143,7 +143,7 @@ class Mesh(HashMixin):
     with open(filename, 'rb') as file:
       elements, points = pickle.load(file)
     return cls( np.frombuffer(elements, dtype=int).reshape(-1, cls.nverts),
-                np.frombuffer(points, dtype=int).reshape(-1, 2) )
+                np.frombuffer(points, dtype=int).reshape(-1, 3) )
 
   def __init__(self, elements: NDArray[np.int_] | Sequence[Sequence[int]], points: NDArray[np.float_]):
     assert hasattr(self, 'simplex_type') and hasattr(self, 'nverts') and hasattr(self, 'nref'), \
@@ -160,9 +160,6 @@ class Mesh(HashMixin):
     assert self.elements.shape[1:] == (self.nverts,)
     assert 0 <= self.elements.min() <= self.elements.max() < len(self.points), 'Hanging node detected.'
     assert np.unique(self.elements, axis=0).shape == self.elements.shape, "Duplicate element detected."
-
-    # an array containing the indices of all vertices in self.elements (in sorted order).
-    self.vertex_indices = frozen(np.unique(self.elements), dtype=int)
 
   @abstractmethod
   def _refine(self):
