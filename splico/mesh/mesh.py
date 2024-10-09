@@ -161,7 +161,7 @@ class BilinearMixin:
     Furthermore provides an implementation of `is_valid` using the elementwise
     Jacobian evaluated in the vertices.
     Finally provides a standard implementation of `_refine`.
-  """
+  """ 
 
   # XXX: some routines may have to be jitted for acceptable performance in large
   #      meshes.
@@ -183,7 +183,7 @@ class BilinearMixin:
 
   def Jmap(self, ielem: int) -> Callable:
     """ Jacobian matrix per element that works for general bilinear meshes. """
-    mypoints = list(map(lambda x: x[_], self.points[self.elements[ielem]]))
+    mypoints = list(map( lambda x:x[_], self.points[self.elements[ielem]]))
 
     def gmap(x: np.ndarray, mypoints=mypoints) -> np.ndarray:
       assert x.shape[1:] == (self.ndims,)

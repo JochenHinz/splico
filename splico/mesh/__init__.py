@@ -3,4 +3,4 @@ from .mesh import MissingVertexError, HasNoSubMeshError, HasNoBoundaryError,\
                   unitsquare, mesh_union, mesh_boundary_union, mesh_difference
                       
                       
-from .qual import aspectratio_unstruct, aspectratio_2D_struct, skewness_quality_2D_unstruct
+from .qual import vectorized_aspect_ratio
