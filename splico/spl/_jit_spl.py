@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from ..util import np
+from ..util import np, flat_meshgrid
 from .._jit import arange_product, ravel_multi_index
 
 from numba import njit, float64, int64, prange, config
@@ -531,7 +531,7 @@ def evaluate_multipatch(npoints, knotvector, degree, list_of_controlpoints, dx=0
   assert shape[1:] == (2,)
   assert all( cp.shape == shape for cp in list_of_controlpoints )
 
-  Xi = list(map(np.ravel, np.meshgrid(*[np.linspace(0, 1, npoints)]*2)), axis=1)
+  Xi = flat_meshgrid(*[np.linspace(0, 1, npoints)]*2, axis=1)
 
   return list(map(lambda cp: np.stack([_callND(Xi,
                                                [knotvector, knotvector],

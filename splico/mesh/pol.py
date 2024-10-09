@@ -43,9 +43,14 @@ def _nd_pol_derivative(weights: np.ndarray, dx: Sequence[int] | np.ndarray) -> n
 
   ntot = weights.ndim
 
-  for i, (_dx, dim) in enumerate(zip(dx, weights.shape)):
+  derivative_weights = np.meshgrid(*map(np.arange, weights.shape[:nder]),
+                                   copy=False,
+                                   sparse=True,
+                                   indexing='ij')
+
+  for i, (_dx, myweights) in enumerate(zip(dx, derivative_weights)):
     if _dx == 0: continue
-    weights = weights * np.arange(dim).reshape((1,) * i + (dim,) + (1,) * (ntot - i - 1))
+    weights = weights * myweights[(...,) + (_,)*(ntot - nder)]
     weights = weights[(sl,) * i + (slice(1, _),)]
 
   return _nd_pol_derivative(weights, tuple(max(_dx - 1, 0) for _dx in dx))

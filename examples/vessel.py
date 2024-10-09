@@ -47,7 +47,7 @@ def main(nelems_centerline, nelems_cross_section, radii, centerline_points):
   # fit a spline to radius and rotational frame information
   rRs = kv.fit([xi], radii[:, _, _] * Rs)
 
-  one = disc.__class__.one(disc.knotvector)
+  one = disc.one(disc.knotvector)
 
   # create the vessel spline using a tensor product
   # disc.shape == (5, 3) 5 patches 3 coordinates

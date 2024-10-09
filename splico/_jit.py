@@ -156,6 +156,14 @@ def mul_reduce(tpl):
   return ret
 
 
+@njit(cache=True)
+def add_reduce(tpl):
+  ret = 0
+  for item in tpl:
+    ret += item
+  return ret
+
+
 """
   Various custom implementations of numpy functions not yet supported
   in Numba

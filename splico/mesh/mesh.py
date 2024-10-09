@@ -177,7 +177,7 @@ class Mesh(HashMixin):
       Abstract method of the mesh's local ordinances.
       Given `order >= 1`, the local ordinances refer to the nodal points inside
       the mesh's reference element of a Lagrangian basis of order `order`.
-      For `order == 1` this should default to the referece element's vertices.
+      For `order == 1` this should default to the reference element's vertices.
     """
     pass
 
@@ -191,7 +191,7 @@ class Mesh(HashMixin):
     """
     return _issubmesh(self, other)
 
-  @cached_property
+  @frozen_cached_property
   def active_indices(self) -> NDArray[np.int_]:
     """ The indices of the points in self.points that are used in self.elements """
     return np.unique(self.elements)
@@ -215,7 +215,7 @@ class Mesh(HashMixin):
       that are not in self.elements.
     """
     vertex_indices = np.asarray(vertex_indices, dtype=int)
-    diff = np.setdiff1d(vertex_indices, self.elements.ravel())
+    diff = np.setdiff1d(vertex_indices, self.active_indices)
     if len(diff) != 0:
       raise MissingVertexError("Failed to locate the vertices with indices '{}'.".format(diff))
     return self.points[vertex_indices]
@@ -236,7 +236,7 @@ class Mesh(HashMixin):
       Drop all points that are not used by `self.elements` and renumber
       `self.elements` to reflect the renumbering of the points from 0 to npoints-1.
     """
-    unique_vertices = np.unique(self.elements)
+    unique_vertices = self.active_indices
     if len(unique_vertices) == unique_vertices[-1] + 1 == len(self.points):
       return self
     points = self.points[unique_vertices]
@@ -317,7 +317,8 @@ class Mesh(HashMixin):
     # create a unique identifier by sorting the indices
     sorted_edges = np.sort(all_submesh_facets, axis=1)
 
-    # get the unique sorted_edges, their corresponding unique indices and the number of occurences of each
+    # get the unique sorted_edges, their corresponding unique indices and the
+    # number of occurences of each
     _, unique_indices, counts = np.unique(sorted_edges, return_index=True,
                                                         return_counts=True,
                                                         axis=0)
@@ -382,10 +383,11 @@ class Mesh(HashMixin):
 
   def points_iter(self):
     """
-      An iterator that returns the three vertices of each element.
+      An iterator that returns the vertices of each element.
 
       Example
       -------
+      For a triangulation:
 
       for (a, b, c) in mesh.points_iter():
         # do stuff with vertices a, b and c
@@ -405,7 +407,7 @@ class Mesh(HashMixin):
     self = self.drop_points_and_renumber()
 
     points = self.points
-    elements = np.concatenate([np.full((nelems, 1), self.nverts, dtype=int), self.pvelements], axis=1).astype(int).copy()
+    elements = np.concatenate([np.full((nelems, 1), self.nverts, dtype=int), self.pvelements], axis=1).astype(int)
 
     # for some reason I get segfaults sometimes if I don't copy self.points
     grid = pv.UnstructuredGrid(elements, np.array([cell_type] * nelems), points)
@@ -533,7 +535,7 @@ class Triangulation(AffineMixin, Mesh):
 
   @cached_property
   def _submesh_indices(self):
-    return tuple(map(frozen, [[0, 1], [1, 2], [0, 2]]))
+    return tuple(map(frozen, [[0, 2], [2, 1], [1, 0]]))
 
   @property
   def _submesh_type(self):
@@ -553,23 +555,36 @@ def triangulation_from_polygon(points: NDArray[np.int_ | np.float_], mesh_size: 
     create :class: ``Triangulation`` mesh from ordered set of boundary
     points.
 
-    parameters
+    Parameters
     ----------
-    points: Array-like of shape points.shape == (npoints, 2) of boundary
-            points ordered in counter-clockwise direction.
-            The first point need not be repeated.
-    mesh_size: Numeric value determining the density of cells.
-               Smaller values => denser mesh.
-      Can alternatively be a function of the form
-        mesh_size = lambda dim, tag, x, y, z, _: target mesh size as function of x and y.
-      For instance, mesh_size = lambda ... : 0.1 - 0.05 * np.exp(-20 * ((x - .5)**2 + (y - .5)**2))
-      creates a denser mesh close to the point (x, y) = (.5, .5).
-  """
+    points : Array-like of shape (npoints, 2)
+        boundary points ordered in counter-clockwise direction.
+        The first point need not be repeated.
+    mesh_size : :class:`float` or :class:`int` or Callable
+        Numeric value determining the density of cells.
+        Smaller values => denser mesh.
+        Can alternatively be a function of the form
+        mesh_size = lambda dim, tag, x, y, z, _: target mesh size as a
+        function of x and y.
 
+        For instance,
+
+        >>> mesh_size = lambda ... : 1-0.5*np.exp(-20*((x-.5)**2+(y-.5)**2))
+
+        creates a denser mesh close to the point (x, y) = (.5, .5).
+
+    Returns
+    -------
+    elements : :class:`np.ndarray[int, 3]`
+        The mesh's element indices.
+    points : :class:`np.ndarray[float, 3]`
+        The mesh's points.
+  """
   try:
     import pygmsh
   except ModuleNotFoundError as ex:
-    log.warning("The pygmsh library has not been found. Please install it via 'pip install pygmsh'.")
+    log.warning("The pygmsh library has not been found. "
+                "Please install it via 'pip install pygmsh'.")
     raise ModuleNotFoundError from ex
 
   if np.isscalar((_mesh_size := mesh_size)):
