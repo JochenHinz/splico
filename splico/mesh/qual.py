@@ -20,62 +20,77 @@ import pickle
 from .mesh import Mesh 
 
 
-def vectorized_aspect_ratio(mesh: Mesh) -> Tuple[np.ndarray[np.float_, 1], 3]:
-    '''
-    Given an unstructred (2D or 3D) mesh (defined by its elements and points), compute the aspect
+@lru_cache
+def invalid_edges(mesh: Mesh):
+  
+  non_valid_edges = 0
+  
+  if mesh.simplex_type in ['triangle','tetrahedron']:
+     non_valid_edges = 1
+  
+  if mesh.simplex_type == 'quadrilateral':
+     non_valid_edges = 2   
+  
+  if mesh.simplex_type == 'hexahedron':
+     non_valid_edges = 5
+  
+  
+  assert non_valid_edges != 0, "Aspect ratio for the input mesh has not been implemented"
+
+  
+  return non_valid_edges
+
+@lru_cache
+def clean_distances(mesh: Mesh) -> int :
+  
+  # eliminate self-distances
+  mask_self = np.eye(mesh.nverts)
+  
+  # eliminate non valid edges in the quad
+  mask_quad = np.array(([0, 0, 0, 1], [0,0,1,0],[0,1,0,0],[1,0,0,0]), dtype= bool)
+  
+  # eliminate non valid edges in the hex
+  mask_quad_to_quad = np.array(([0, 1, 1, 1], [1,0,1,1],[1,1,0,1],[1,1,1,0]), dtype= bool)
+  
+  if mesh.simplex_type in ['triangle','tetrahedron']:
+     mask = np.copy(mask_self)
+     
+  if mesh.simplex_type in 'quadrilateral':
+     mask = mask_self + mask_quad 
+    
+  if mesh.simplex_type in 'hexahedron':
+     mask = mask_self + np.block([[mask_quad, mask_quad_to_quad], [mask_quad_to_quad, mask_quad]])
+       
+
+  return mask
+
+
+# Tuple[np.ndarray[np.float_, 1], 3] means returns a tuple containing 3 elements of the type np.float.
+def aspect_ratio(mesh: Mesh) -> Tuple[np.ndarray[np.float_, 1], 3]:
+  '''
+    Given a general mesh (defined by its elements and points), compute the aspect
     ratio (AR) of its edges defined by the ratio between the longest and shortest edge in a given element.
     AR close to 1 -> good mesh
     AR >> 1 -> stretched mesh 
-    '''  
-    
-    # Check for the mesh validity
-    mesh.is_valid()
-
-    # Use advanced indexing to get all points for all elements at once
-    element_points = mesh.points[mesh.elements]
-
-    # Calculate pairwise distances for all elements
-    distances = linalg.norm(element_points[:, :, np.newaxis] - element_points[:, np.newaxis, :], axis=-1)
-    
-    # Create a mask to ignore self-distances (diagonal)
-    mask = np.eye(mesh.nverts, dtype=bool)
-    mask_vect = np.bool_(mask[np.newaxis,:,:] * np.ones((1,distances.shape[0]))[np.newaxis,:].T)
-
-    
-    valid_distances = distances[~mask_vect].reshape(distances.shape[0], mesh.nverts**2 - mesh.nverts)
-
-    dist_min = np.min(valid_distances, axis = 1)
-    dist_max = np.max(valid_distances, axis = 1)
-    
-    # Calculate aspect ratios for each element
-    aspect_ratios = dist_max / dist_min
-
-    # Freeze stats & making a tuple
-    stats = np.stack( (frozen(np.mean(aspect_ratios)), frozen(np.max(aspect_ratios)), frozen(np.min(aspect_ratios))), axis = -1) 
-
-    return (stats)
- 
-def vectorized_aspectratio_2D_struct(mesh: Mesh):
-  '''
-  Efficiency problem. Some edges are checked 2 times because they are shared between elements.
-  Not important the order (both in 2D and 3D) of the indeces in the elements, since the grid is unstructured.
   '''
   
   # Check for the mesh validity
-  mesh.is_valid()
+  assert mesh.is_valid(), "mesh is not valid"
 
-  # Use advanced indexing to get all points for all elements at once
   element_points = mesh.points[mesh.elements]
 
   # Calculate pairwise distances for all elements
-  distances = linalg.norm(element_points[:, :, np.newaxis] - element_points[:, np.newaxis, :], axis=-1)
+  distances = linalg.norm(element_points[:, :, _] - element_points[:, _, :], axis=-1)
   
-  mask = np.array(([1, 0, 0, 1], [1,1,1,0],[1,1,1,0],[1,1,1,1]), dtype= bool)
+  # Depending on the mesh type, mask cut the invalid distances
+  mask = clean_distances(mesh)
+  mask_vect = np.bool_(mask[_,:,:] * np.ones((distances.shape[0],1,1)))
+    
+  # Number of invalid edges considering that the distance is computed with respect all the points
+  n_non_valid_edges = invalid_edges(mesh)
+    
+  valid_distances = distances[~mask_vect].reshape(distances.shape[0], mesh.nverts**2 - n_non_valid_edges*mesh.nverts )
   
-  mask_vect = np.bool_(mask[np.newaxis,:,:] * np.ones((1,distances.shape[0]))[np.newaxis,:].T)
-
-  valid_distances = distances[~mask_vect].reshape(distances.shape[0], mesh.nverts)
-
   dist_min = np.min(valid_distances, axis = 1)
   dist_max = np.max(valid_distances, axis = 1)
     
@@ -83,47 +98,6 @@ def vectorized_aspectratio_2D_struct(mesh: Mesh):
   aspect_ratios = dist_max / dist_min
 
   # Freeze stats & making a tuple
-  stats = np.stack( (frozen(np.mean(aspect_ratios)), frozen(np.max(aspect_ratios)), frozen(np.min(aspect_ratios))), axis = -1) 
-
-  return (stats)
-
-def vectorized_aspectratio_3D_struct(mesh: Mesh):
-  '''
-  Efficiency problem. Some edges are checked 2 times because they are shared between elements.
-  Not important the order (both in 2D and 3D) of the indeces in the elements, since the grid is unstructured.
-  '''
-  
-  # Check for the mesh validity
-  mesh.is_valid()
-
-  # Use advanced indexing to get all points for all elements at once
-  element_points = mesh.points[mesh.elements]
-
-  # Calculate pairwise distances for all elements
-  distances = linalg.norm(element_points[:, :, np.newaxis] - element_points[:, np.newaxis, :], axis=-1)
-  
-  
-  mask_1 = np.array(([1, 0, 0, 1], [1,1,1,0],[1,1,1,0],[1,1,1,1]), dtype= bool)
-  mask_2 = np.array(([0, 1, 1, 1], [1,0,1,1],[1,1,0,1],[1,1,1,0]), dtype= bool)
-  
-  # In the left-bottom block I use a ones matrix since the connetivity with the other square has already been solved
-  # in the right-upper block.
-  mask_block = np.block([ [mask_1, mask_2], [np.ones((4,4)), mask_1 ]])
-  
-  mask_vect = np.bool_(mask_block[np.newaxis,:,:] * np.ones((1,distances.shape[0]))[np.newaxis,:].T)
-
-  import pdb
-  pdb.set_trace()
-  
-  valid_distances = distances[~mask_vect].reshape(distances.shape[0], mesh.nverts+4)
-
-  dist_min = np.min(valid_distances, axis = 1)
-  dist_max = np.max(valid_distances, axis = 1)
-    
-  # Calculate aspect ratios for each element
-  aspect_ratios = dist_max / dist_min
-
-  # Freeze stats & making a tuple
-  stats = np.stack( (frozen(np.mean(aspect_ratios)), frozen(np.max(aspect_ratios)), frozen(np.min(aspect_ratios))), axis = -1) 
+  stats = np.stack(( np.mean(aspect_ratios), np.max(aspect_ratios), np.min(aspect_ratios)), axis = -1) 
 
   return (stats)
