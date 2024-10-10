@@ -51,6 +51,79 @@ def vectorized_aspect_ratio(mesh: Mesh) -> Tuple[np.ndarray[np.float_, 1], 3]:
     aspect_ratios = dist_max / dist_min
 
     # Freeze stats & making a tuple
-    stats = np.stack( (frozen(np.mean(aspect_ratios)), frozen(np.max(aspect_ratios)), frozen(np.min(aspect_ratios))) , axis = -1) 
+    stats = np.stack( (frozen(np.mean(aspect_ratios)), frozen(np.max(aspect_ratios)), frozen(np.min(aspect_ratios))), axis = -1) 
 
     return (stats)
+ 
+def vectorized_aspectratio_2D_struct(mesh: Mesh):
+  '''
+  Efficiency problem. Some edges are checked 2 times because they are shared between elements.
+  Not important the order (both in 2D and 3D) of the indeces in the elements, since the grid is unstructured.
+  '''
+  
+  # Check for the mesh validity
+  mesh.is_valid()
+
+  # Use advanced indexing to get all points for all elements at once
+  element_points = mesh.points[mesh.elements]
+
+  # Calculate pairwise distances for all elements
+  distances = linalg.norm(element_points[:, :, np.newaxis] - element_points[:, np.newaxis, :], axis=-1)
+  
+  mask = np.array(([1, 0, 0, 1], [1,1,1,0],[1,1,1,0],[1,1,1,1]), dtype= bool)
+  
+  mask_vect = np.bool_(mask[np.newaxis,:,:] * np.ones((1,distances.shape[0]))[np.newaxis,:].T)
+
+  valid_distances = distances[~mask_vect].reshape(distances.shape[0], mesh.nverts)
+
+  dist_min = np.min(valid_distances, axis = 1)
+  dist_max = np.max(valid_distances, axis = 1)
+    
+  # Calculate aspect ratios for each element
+  aspect_ratios = dist_max / dist_min
+
+  # Freeze stats & making a tuple
+  stats = np.stack( (frozen(np.mean(aspect_ratios)), frozen(np.max(aspect_ratios)), frozen(np.min(aspect_ratios))), axis = -1) 
+
+  return (stats)
+
+def vectorized_aspectratio_3D_struct(mesh: Mesh):
+  '''
+  Efficiency problem. Some edges are checked 2 times because they are shared between elements.
+  Not important the order (both in 2D and 3D) of the indeces in the elements, since the grid is unstructured.
+  '''
+  
+  # Check for the mesh validity
+  mesh.is_valid()
+
+  # Use advanced indexing to get all points for all elements at once
+  element_points = mesh.points[mesh.elements]
+
+  # Calculate pairwise distances for all elements
+  distances = linalg.norm(element_points[:, :, np.newaxis] - element_points[:, np.newaxis, :], axis=-1)
+  
+  
+  mask_1 = np.array(([1, 0, 0, 1], [1,1,1,0],[1,1,1,0],[1,1,1,1]), dtype= bool)
+  mask_2 = np.array(([0, 1, 1, 1], [1,0,1,1],[1,1,0,1],[1,1,1,0]), dtype= bool)
+  
+  # In the left-bottom block I use a ones matrix since the connetivity with the other square has already been solved
+  # in the right-upper block.
+  mask_block = np.block([ [mask_1, mask_2], [np.ones((4,4)), mask_1 ]])
+  
+  mask_vect = np.bool_(mask_block[np.newaxis,:,:] * np.ones((1,distances.shape[0]))[np.newaxis,:].T)
+
+  import pdb
+  pdb.set_trace()
+  
+  valid_distances = distances[~mask_vect].reshape(distances.shape[0], mesh.nverts+4)
+
+  dist_min = np.min(valid_distances, axis = 1)
+  dist_max = np.max(valid_distances, axis = 1)
+    
+  # Calculate aspect ratios for each element
+  aspect_ratios = dist_max / dist_min
+
+  # Freeze stats & making a tuple
+  stats = np.stack( (frozen(np.mean(aspect_ratios)), frozen(np.max(aspect_ratios)), frozen(np.min(aspect_ratios))), axis = -1) 
+
+  return (stats)
