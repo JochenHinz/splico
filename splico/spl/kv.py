@@ -30,6 +30,9 @@ class UnivariateKnotVector(HashMixin):
     assert all(i <= self.degree + 1 for i in self.knotmultiplicities)
     assert len(self.knotvalues) == len(self.knotmultiplicities)
 
+  def __repr__(self):
+    return f"{self.__class__.__name__}[degree: {self.degree}, nknots: {len(self.knots)}]"
+
   @frozen_cached_property
   def knots(self) -> np.ndarray:
     return np.asarray(self.knotvalues, dtype=float)
@@ -205,6 +208,9 @@ class TensorKnotVector(HashMixin):
   def __iter__(self):
     """ By default we iterate over `self.knotvectors`. """
     yield from self.knotvectors
+
+  def __repr__(self):
+    return f"{self.__class__.__name__}[degree: {self.degree}, nknots: {tuple(map(len, self.knots))}]"
 
   # XXX: We may want to find a prettier solution for the following
 
