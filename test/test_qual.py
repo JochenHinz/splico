@@ -1,6 +1,6 @@
 from test_mesh import unit_disc_triangulation
 import numpy as np
-from splico.mesh.qual import vectorized_aspect_ratio, vectorized_aspectratio_2D_struct, vectorized_aspectratio_3D_struct, aspect_ratio
+from splico.mesh.qual import aspect_ratio
 from splico.mesh import unitsquare
 
 
