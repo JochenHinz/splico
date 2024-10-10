@@ -140,6 +140,9 @@ class NDSpline(HashMixin, NDArrayOperatorsMixin):
     self.controlpoints = frozen(_round_array(controlpoints))
     assert self.controlpoints.shape[0] == self.knotvector.ndofs
 
+  def __repr__(self):
+    return f"{self.__class__.__name__}<{','.join(map(str, self.shape))}>"
+
   @property
   def shape(self):
     """ The shape of the vectorial spline. """

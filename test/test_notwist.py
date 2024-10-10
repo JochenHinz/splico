@@ -23,6 +23,12 @@ class TestNoTwist(unittest.TestCase):
     maker = CrossSectionMaker(4)
 
     disc = maker.make_disc(1, 1, 0)
+    print(disc)
+    points = disc.controlpoints.reshape(-1, 3)[:, :2]
+    print(points.max())
+    from matplotlib import pyplot as plt
+    plt.scatter(*points.T)
+    plt.show()
     rRs = kv.fit([xi_notwist], radii[:, _, _] * Rs)
 
     one = disc.__class__.one(disc.knotvector)

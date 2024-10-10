@@ -1,4 +1,4 @@
-from splico.geo import CrossSectionMaker, notwist
+from splico.geo import CrossSectionMaker, compute_notwistframe_from_spline
 from splico.mesh import rectilinear, mesh_boundary_union
 from splico.spl import UnivariateKnotVector, TensorKnotVector
 from splico.util import np, _, clparam
@@ -37,7 +37,7 @@ def main(nelems_centerline, nelems_cross_section, radii, centerline_points):
   X = kv.fit([xi], centerline_points)
 
   # compute the notwistframe rotation matrices
-  Rs = notwist.compute_notwistframe_from_spline(X, xi)
+  Rs = compute_notwistframe_from_spline(X, xi)
 
   maker = CrossSectionMaker(nelems_cross_section)
 
