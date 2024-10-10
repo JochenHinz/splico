@@ -29,8 +29,6 @@ _ = np.newaxis
 
 # the mesh's points are rounded to this number of significant digits
 GLOBAL_PRECISION = 12
-
-
 BAR_LENGTH = 100
 
 
@@ -82,19 +80,6 @@ def global_precision(precision: int):
     yield
   finally:
     GLOBAL_PRECISION = old_precision
-
-
-def frozen_cached_property(fn: Callable) -> cached_property:
-  """
-    Combined decorator for `freeze` and `cached_property`.
-    Equivalent to:
-
-    >>> @cached_property
-    >>> @freeze
-    >>> def myfunc(self):
-          return np.arange(self.n)
-  """
-  return cached_property(freeze(fn))
 
 
 def frozen(array: np.ndarray | Sequence[Any], dtype=None) -> np.ndarray:
@@ -159,6 +144,19 @@ def freeze(fn: Callable, dtype=None) -> Callable:
   def wrapper(*args, **kwargs):
     return frozen(fn(*args, **kwargs), dtype=dtype)
   return wrapper
+
+
+def frozen_cached_property(fn: Callable) -> cached_property:
+  """
+    Combined decorator for `freeze` and `cached_property`.
+    Equivalent to:
+
+    >>> @cached_property
+    >>> @freeze
+    >>> def myfunc(self):
+          return np.arange(self.n)
+  """
+  return cached_property(freeze(fn))
 
 
 # named tuple with fields corresponding to a serialized array (for hashing)
@@ -242,7 +240,7 @@ class HashMixin(Hashable):
     return {item: getattr(self, item) for item in self._items}
 
   @cached_property
-  def tobytes(self):
+  def tobytes(self) -> Tuple[Hashable, ...]:
     ret = []
     for i, attr in enumerate(map(self.__getattribute__, self._items)):
       if isinstance(attr, np.ndarray):

@@ -1,7 +1,7 @@
 from ..util import np
 from .aux import HasNoSubMeshError
-from ._bool import make_numba_indexmap, renumber_elements_from_indexmap, \
-                   _remap_elements, _match_active
+from ._bool import make_numba_indexmap, _remap_elements, \
+                   _match_active, renumber_elements_from_indexmap as renumber_elements
 
 from functools import lru_cache
 from itertools import product
@@ -10,8 +10,7 @@ import treelog as log
 
 
 """
- This module's purpose is performing various boolean operations
- on meshes.
+ This module's purpose is performing various boolean operations on meshes.
 """
 
 
@@ -97,9 +96,9 @@ def mesh_union(*meshes):
   indexmap = make_numba_indexmap(allpoints)
 
   # create all new elements (counting different orderings twice) by mapping element indices to new indices
-  newelems = np.concatenate([renumber_elements_from_indexmap(mesh.elements,
-                                                             mesh.points,
-                                                             indexmap) for mesh in meshes])
+  newelems = np.concatenate([renumber_elements(mesh.elements,
+                                               mesh.points,
+                                               indexmap) for mesh in meshes])
 
   # keep get the indices of the unique elements, not counting different orderings twice
   _, unique_indices = np.unique(np.sort(newelems, axis=1), return_index=True, axis=0)
@@ -117,8 +116,8 @@ def mesh_difference(mesh0, mesh1):
 
   indexmap = make_numba_indexmap(allpoints)
 
-  elems0 = renumber_elements_from_indexmap(mesh0.elements, mesh0.points, indexmap)
-  elems1 = renumber_elements_from_indexmap(mesh1.elements, mesh1.points, indexmap)
+  elems0 = renumber_elements(mesh0.elements, mesh0.points, indexmap)
+  elems1 = renumber_elements(mesh1.elements, mesh1.points, indexmap)
 
   identifiers0 = np.sort(elems0, axis=1)
   identifiers1 = np.sort(elems1, axis=1)
@@ -199,4 +198,5 @@ def mesh_boundary_union(*meshes, eps=1e-8, return_matches=False):
 
   if return_matches:
     return ret, all_matches
+
   return ret

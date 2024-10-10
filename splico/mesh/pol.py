@@ -67,7 +67,10 @@ def _compute_basis_weights(mesh):
     element.
     Shape: (2,) * self.ndims + (nverts,)
   """
-  ords = mesh._local_ordinances(1).astype(int)
+
+  # PointMesh ords have shape (1,) so we need to reshape to two dimensions
+  ords = np.atleast_2d(mesh._local_ordinances(1).astype(int))
+
   # set up the matrix we need to solve
   X = np.stack([ np.multiply.reduce([_x ** i for _x, i in zip(ords.T, multi_index)])
                  for multi_index in ords ], axis=1)
@@ -104,7 +107,7 @@ def _compute_pol_weights(mesh, dx) -> np.ndarray:
   return _nd_pol_derivative(ret, dx)
 
 
-def eval_nd_polynomial_local(mesh, points, dx=None) -> np.ndarray:
+def eval_nd_polynomial_local(mesh, points: np.ndarray, dx=None) -> np.ndarray:
   """
     Evaluate `(x, y, z)` n-dependency polynomials or their derivatives in `points`.
 
@@ -126,8 +129,12 @@ def eval_nd_polynomial_local(mesh, points, dx=None) -> np.ndarray:
     evaluations : :class:`np.ndarray`
         Polynomial (derivative) evaluations of shape (x, y, z, npoints).
   """
-  ndim = points.shape[1]
-  assert points.shape[1:] == (ndim,)
+
+  # in case points is one-dimensional (PointMesh)
+  ndim, = (points := np.asarray(points)).shape[1:] or (0,)
+
+  assert mesh.ndims == ndim, "The point array's shape doesn't match the mesh's" \
+                             " dimensionality."
 
   if dx is None:
     dx = 0

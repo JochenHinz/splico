@@ -8,7 +8,12 @@ from numba import njit, prange
 """
 
 
+# TODO: Make use of Numba parallelization
+
+
 """ JIT-compiled routines for normal mesh union / difference """
+
+# In Numba, tuples of differing length are differing types
 
 
 @njit(cache=True)
@@ -238,7 +243,7 @@ def _remap_elements(all_elements, all_points, all_matches):
     # iterate over all pairs and always assign the lower index of the
     # two to the corresponding position in `merge`
     for pair in all_matches:
-      # normally this would be a one-liner but numba doesn't accept the necessary
+      # normally this would be a one-liner but numba doesn't support the necessary
       # syntax.
       a, b = merge[pair[0]], merge[pair[1]]
       _min = min((a, b))

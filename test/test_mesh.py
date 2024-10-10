@@ -1,4 +1,4 @@
-from splico.mesh import Mesh, rectilinear, Triangulation, mesh_union
+from splico.mesh import Mesh, rectilinear, Triangulation, mesh_union, PointMesh
 from splico.util import global_precision
 
 import unittest
@@ -157,12 +157,21 @@ class TestUnion(unittest.TestCase):
 class TestEval(unittest.TestCase):
 
   def test_eval(self):
-    for i in range(2, 4):
+    for i in range(1, 4):
       with self.subTest('Testing mesh.eval in {i} spatial dimensions.'):
         mesh = rectilinear([np.linspace(0, 1, 6) for j in range(i)])
         points = np.stack(list(map(np.ravel, np.meshgrid(*[np.linspace(0, 1, 2)] * i, indexing='ij'))), axis=1)
 
         self.assertTrue(np.allclose(mesh.eval_local(points), mesh.points[mesh.elements]))
+
+    with self.subTest('Testing PointMesh'):
+      # This one is important to test because PointMesh's local ordinances
+      # have dimension 1, not 2.
+      points = np.random.randn(20, 3)
+      elements = np.arange(20)[:, None]
+      mesh = PointMesh(elements, points)
+
+      self.assertTrue(np.allclose(mesh.eval_local(mesh._local_ordinances(1)), mesh.points[mesh.elements]))
 
 
 if __name__ == '__main__':
