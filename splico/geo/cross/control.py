@@ -70,7 +70,8 @@ def make_unit_disc(domain, basis, geom, localgeom, patches, reparam=False, **kwa
   if reparam is False and kwargs:
     log.warning('reparam is False so the keyword arguments will be ignored.')
 
-  func = function.normalized(geom - np.array([.5, .5])) / np.sqrt(2) + np.array([.5, .5])
+  geom = geom - np.array([.5, .5])
+  func = function.normalized(geom)
   cons = domain.boundary.project(func, geometry=geom, onto=basis.vector(2), ischeme='gauss6')
   for i, patch in enumerate(domain._topos):
     for side in ('left', 'right', 'bottom', 'top'):

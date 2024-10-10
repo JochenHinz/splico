@@ -1,6 +1,6 @@
 from ..util import np, _
 
-from typing import Sequence, Optional, cast
+from typing import Sequence
 from functools import lru_cache
 
 sl = slice(_)
@@ -9,6 +9,10 @@ sl = slice(_)
 """
   Polynomial routines for evaluating the local element maps.
 """
+
+# While numpy provides routines for polynomial evaluation, they are not easily
+# generalizable to N dimensions. In the long run, we would like to support
+# meshes of higher dimensionality, hence the custom implementation.
 
 
 def _nd_pol_derivative(weights: np.ndarray, dx: Sequence[int] | np.ndarray) -> np.ndarray:
@@ -128,7 +132,7 @@ def eval_nd_polynomial_local(mesh, points, dx=None) -> np.ndarray:
   if dx is None:
     dx = 0
   if np.isscalar(dx):
-    dx = cast(Sequence[int], (dx,) * ndim)
+    dx = (dx,) * ndim
 
   assert len(dx) == ndim
 
@@ -139,15 +143,16 @@ def eval_nd_polynomial_local(mesh, points, dx=None) -> np.ndarray:
 
   # compute all x, y, z, ... points raised to all powers
   # shape: (mydim, len(points))
-  powers = [ mypoints[_] ** np.arange(dim)[:, _] for mypoints, dim in zip(points.T, shape) ]
+  powers = [ mypoints[_] ** np.arange(dim)[:, _]
+                            for mypoints, dim in zip(points.T, shape) ]
 
   # all powers are broadcast to this shape
   array_shape = weights.shape + (len(points),)
 
   # broadcast to the following shapes:
-  # suppose weight.shape == (p, q, r, ..., x, y, z), and len(points) == n. We create
-  # arrays of shape (p, 1, 1, ..., 1), (1, q, 1, ..., 1) and (1, 1, r, 1, .., 1) which are
-  # all broadcast to shape (p, q, r, ..., x, y, z, n)
+  # suppose weight.shape == (p, q, r, ..., x, y, z), and len(points) == n.
+  # We create arrays of shape (p, 1, 1, ..., 1), (1, q, 1, ..., 1) and
+  # (1, 1, r, 1, .., 1) which are all broadcast to shape (p, q, r, ..., x, y, z, n)
   myshape = lambda j: (_,) * j + (sl,) + (_,) * (len(array_shape) - j - 2) + (sl,)
   reshaped_arrays = [ np.broadcast_to(mypower[myshape(i)], array_shape)
                       for i, mypower in enumerate(powers) ]

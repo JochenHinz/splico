@@ -1,4 +1,4 @@
-from splico.geo import CrossSectionMaker, notwist
+from splico.geo import CrossSectionMaker, compute_notwistframe_from_spline
 from splico.mesh import rectilinear, mesh_boundary_union
 from splico.spl import UnivariateKnotVector, TensorKnotVector
 from splico.util import np, _
@@ -18,7 +18,7 @@ class TestNoTwist(unittest.TestCase):
     X = kv.fit([xi], centerline_points)
 
     xi_notwist = np.linspace(0, 1, 51)
-    Rs = notwist.compute_notwistframe_from_spline(X, xi_notwist)
+    Rs = compute_notwistframe_from_spline(X, xi_notwist)
 
     maker = CrossSectionMaker(4)
 

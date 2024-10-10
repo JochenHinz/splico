@@ -1,4 +1,5 @@
-from ..util import _round_array, isincreasing, np, HashMixin, frozen_cached_property, gauss_quadrature, _
+from ..util import _round_array, isincreasing, np, HashMixin, _, \
+                   frozen_cached_property, gauss_quadrature
 from ._jit_spl import _call1D, nonzero_bsplines_deriv_vectorized
 
 from itertools import starmap
@@ -32,6 +33,13 @@ class UnivariateKnotVector(HashMixin):
   @frozen_cached_property
   def knots(self) -> np.ndarray:
     return np.asarray(self.knotvalues, dtype=float)
+
+  @frozen_cached_property
+  def greville(self):
+    """ Compute the Greville points. """
+    knots = self.repeat_knots()
+    return knots[np.arange(self.degree, dtype=int)[_] +
+                 np.arange(1, self.dim+1, dtype=int)[:, _]].sum(1) / self.degree
 
   @property
   def nelems(self) -> int:
@@ -239,6 +247,7 @@ class TensorKnotVector(HashMixin):
   knotmultiplicities = _prop_wrapper('knotmultiplicities')
   nelems = _prop_wrapper('nelems')
   dim = _prop_wrapper('dim')
+  greville = _prop_wrapper('greville')
   repeat_knots = _vectorize('repeat_knots', tuple)
   flip = _vectorize('flip')
   refine = _vectorize('refine')

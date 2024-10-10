@@ -30,47 +30,9 @@ simplex_types = ('point', 'line', 'triangle',
                  'quadrilateral', 'tetrahedron', 'hexahedron')
 
 
-# xxx: write another parent class that allows for mixed element types.
+# XXX: write another parent class that allows for mixed element types.
 #      the meshes that have already been implemented are then special cases
 #      with only one element type.
-
-
-class BilinearMixin:
-  """
-    mixin providing implementations for the `_local_ordinances` which is an
-    abstract method of the `mesh` base class.
-    additionally, provides an implementation of the `_refine` abstract method
-    which is accomplished using the _refine_structured routine, which works
-    for bilinear mesh types of any dimensionality.
-  """
-
-  @freeze
-  @round_result
-  def _local_ordinances(self, order: int) -> NDArray[np.float_]:
-    assert (order := int(order)) > 0
-    x = np.linspace(0, 1, order+1)
-    return flat_meshgrid(*[x] * self.ndims, axis=1)
-
-  def _refine(self) -> Self:
-    return refine_structured(self)
-
-
-class AffineMixin:
-  """
-    Mixin for affine mesh types.
-    Provides an implementation for the _local_ordinances abstract method.
-  """
-  # XXX: currently affine meshes require special-tailored refinement methods.
-  #      Write a method that can refine any affine mesh type, similar to
-  #      _refine_structured. This should be possible by taking the same approach
-  #      as in `BilinearMixin` while restricting the attention to the plane
-  #      x + y + z <= 1
-
-  @freeze
-  @round_result
-  def _local_ordinances(self, order: int) -> NDArray[np.float_]:
-    ret = BilinearMixin._local_ordinances(self, order)
-    return ret[ ret.sum(1) < 1 + 1e-8 ]
 
 
 class Mesh(HashMixin):
@@ -113,7 +75,7 @@ class Mesh(HashMixin):
   # For instance, 'triangle'.
   simplex_type: str
 
-  # spatial dimensionality of the local reference element
+  # Spatial dimensionality of the local reference element
   ndims: int
 
   # Number of vertices per simplex.
@@ -160,6 +122,9 @@ class Mesh(HashMixin):
     assert self.elements.shape[1:] == (self.nverts,)
     assert 0 <= self.elements.min() <= self.elements.max() < len(self.points), 'Hanging node detected.'
     assert np.unique(self.elements, axis=0).shape == self.elements.shape, "Duplicate element detected."
+
+  def __repr__(self):
+    return f"{self.__class__.__name__}[nelems: {len(self.elements)}, npoints: {len(self.points)}]"
 
   @abstractmethod
   def _refine(self):
@@ -245,16 +210,40 @@ class Mesh(HashMixin):
 
   def JK(self, points: NDArray[np.float_]) -> NDArray[np.float_]:
     """ Evaluation of the jacobian per element. """
-    return np.stack([self.eval_local(points, dx=_dx) for _dx in np.eye(self.ndims, dtype=int)], axis=-1)
+    return np.stack([self.eval_local(points, dx=_dx)
+                     for _dx in np.eye(self.ndims, dtype=int)], axis=-1)
 
   def GK(self, points: NDArray[np.float_]) -> NDArray[np.float_]:
     """ Evaluation of the metric tensor per element. """
     JK = self.JK(points)
     return (JK.swapaxes(-1, -2)[..., _] * JK[..., _, :, :]).sum(-2)
 
-  def is_valid(self, order: int = 1) -> bool:
-    """ Check if a mesh is valid. """
+  def is_valid(self, order: int = 1, thresh=1e-8) -> bool:
+    """
+      Check if a mesh is valid.
+      These are some standard checks that work for all mesh types.
+      Can be overwritten for mesh-type specific validty checks.
+    """
     points = self._local_ordinances(order)
+    if self.ndims == 3:
+      return (np.linalg.det(self.JK(points)) > 0).all()
+    if self.ndims == 2:
+      JK = self.JK(points)
+      # shape (nelems, npoints, 3)
+      crosses = np.cross(JK[..., 0], JK[..., 1])
+      # first check if there are zeros
+      if (np.linalg.norm(crosses, axis=-1) < thresh).any():
+        return False
+      if self.is_affine:
+        # No ? Then check if the orientation of an element changes
+        roots = crosses[:, :1]  # (nelems, 1, 3)
+        # inner product negative ? => orientation change detected
+        return ((crosses[:, 1:] * roots).sum(-1) > 0).all()
+      else:
+        # XXX: add another validity check for multilinear meshes here
+        #      for now just do the metric tensor check
+        pass
+    # for a 1D mesh it's enough to check if the metric tensor is SPD
     return (np.linalg.det(self.GK(points)) > 0).all()
 
   def eval_local(self, points: NDArray[np.float_], dx=None) -> NDArray[np.float_]:
@@ -311,22 +300,22 @@ class Mesh(HashMixin):
     """
 
     # get all facets
-    all_submesh_facets = np.concatenate([ self.elements[:, indices]
-                                          for indices in self._submesh_indices ])
+    all_facets = np.concatenate([ self.elements[:, indices]
+                                   for indices in self._submesh_indices ])
 
     # create a unique identifier by sorting the indices
-    sorted_edges = np.sort(all_submesh_facets, axis=1)
+    sorted_facets = np.sort(all_facets, axis=1)
 
     # get the unique sorted_edges, their corresponding unique indices and the
     # number of occurences of each
-    _, unique_indices, counts = np.unique(sorted_edges, return_index=True,
-                                                        return_counts=True,
-                                                        axis=0)
+    _, unique_indices, counts = np.unique(sorted_facets, return_index=True,
+                                                         return_counts=True,
+                                                         axis=0)
 
     # keep the ones that have been counted only once
     one_mask = counts == 1
 
-    return tuple(map(frozen, (all_submesh_facets[unique_indices[mask]] for mask in (one_mask, ~one_mask))))
+    return tuple(map(frozen, (all_facets[unique_indices[mask]] for mask in (one_mask, ~one_mask))))
 
   @property
   def boundary(self):
@@ -340,6 +329,7 @@ class Mesh(HashMixin):
       This function converts a mesh of one type to a mesh of another type
       through element subdivision. For instance a quadmesh to a triangulation.
       This function should be overwritten, if applicable.
+      Note that subdivision may not preserve the geometry exactly.
     """
     raise NotImplementedError
 
@@ -434,7 +424,51 @@ class Mesh(HashMixin):
     return self.take(sorted(set(keep_elements)))
 
 
-class HexMesh(BilinearMixin, Mesh):
+class MultilinearMesh(Mesh):
+  """
+    Derived class providing implementations for the `_local_ordinances` which is an
+    abstract method of the `mesh` base class.
+    Additionally, provides an implementation of the `_refine` abstract method
+    which is accomplished using the _refine_structured routine, which works
+    for multilinear mesh types of any dimensionality.
+    Note that a one-dimensional multilinear mesh is simultaneously affine.
+  """
+
+  @freeze
+  @round_result
+  def _local_ordinances(self, order: int) -> NDArray[np.float_]:
+    assert (order := int(order)) > 0
+    x = np.linspace(0, 1, order+1)
+    return flat_meshgrid(*[x] * self.ndims, axis=1)
+
+  def _refine(self) -> Self:
+    return refine_structured(self)
+
+
+class AffineMesh(Mesh):
+  """
+    Mixin for affine mesh types.
+    Provides an implementation for the _local_ordinances abstract method.
+  """
+  # XXX: currently affine meshes require special-tailored refinement methods.
+  #      Write a method that can refine any affine mesh type, similar to
+  #      _refine_structured. This should be possible by taking the same approach
+  #      as in `MultilinearMixin` while restricting the attention to the plane
+  #      x + y + z <= 1
+
+  @freeze
+  @round_result
+  def _local_ordinances(self, order: int) -> NDArray[np.float_]:
+    active_indices = \
+        [i for i, mi in enumerate(product(*[range(2)]*self.ndims)) if sum(mi) <= 1]
+    return MultilinearMesh._local_ordinances(self, order)[active_indices]
+
+  def _refine(self) -> Self:
+    raise NotImplementedError('Every affine mesh type needs to implement its own'
+                              ' refinement method.')
+
+
+class HexMesh(MultilinearMesh):
 
   """
               3_______ 7
@@ -445,7 +479,7 @@ class HexMesh(BilinearMixin, Mesh):
            |/______|/
            0       4
 
-    `_refine` `_local_ordinances` are implemented via `BilinearMixin`.
+    `_refine` `_local_ordinances` are implemented via `MultilinearMixin`.
   """
 
   simplex_type = 'hexahedron'
@@ -472,7 +506,7 @@ class HexMesh(BilinearMixin, Mesh):
     return QuadMesh
 
 
-class QuadMesh(BilinearMixin, Mesh):
+class QuadMesh(MultilinearMesh):
 
   """
      1 _____ 3
@@ -481,7 +515,7 @@ class QuadMesh(BilinearMixin, Mesh):
       |_____|
      0       2
 
-    `_refine` `_local_ordinances` are implemented via `BilinearMixin`.
+    `_refine` `_local_ordinances` are implemented via `MultilinearMixin`.
   """
 
   simplex_type = 'quadrilateral'
@@ -507,7 +541,7 @@ class QuadMesh(BilinearMixin, Mesh):
     return Triangulation(elements, self.points)
 
 
-class Triangulation(AffineMixin, Mesh):
+class Triangulation(AffineMesh):
 
   """
       1
@@ -604,7 +638,7 @@ def triangulation_from_polygon(points: NDArray[np.int_ | np.float_], mesh_size: 
 # XXX: TetMesh. Leave as an exercise for Fabio.
 
 
-class LineMesh(AffineMixin, Mesh):
+class LineMesh(AffineMesh):
 
   simplex_type = 'line'
   ndims = 1
