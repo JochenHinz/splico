@@ -25,7 +25,7 @@ class UnivariateKnotVector(HashMixin):
     self.degree = int(degree)
     if knotmultiplicities is None:
       start = self.degree + 1
-      knotmultiplicities = [start] + [1]*(len(self.knotvalues) - 2) + [start]
+      knotmultiplicities = (start,) + (1,)*(len(self.knotvalues) - 2) + (start,)
     self.knotmultiplicities = tuple(map(int, knotmultiplicities))
     assert all(i <= self.degree + 1 for i in self.knotmultiplicities)
     assert len(self.knotvalues) == len(self.knotmultiplicities)
@@ -166,10 +166,13 @@ def univariate_integral(uknotvector: UnivariateKnotVector, dx: int = 0) -> spars
       The derivative order.
   """
 
-  # XXX: jit-compile with Numba
+  # XXX: jit-compile with Numba using COO-format instead of lil.
 
-  assert uknotvector.degree >= dx and np.asarray(uknotvector.knotmultiplicities, dtype=int)[1:-1].max() <= uknotvector.degree + 1 - dx
+  maxrep = np.asarray(uknotvector.knotmultiplicities, dtype=int)[1:-1].max()
+  assert uknotvector.degree >= dx and maxrep <= uknotvector.degree + 1 - dx
+
   knots, ext_knots = uknotvector.knots, uknotvector.repeat_knots()
+
   gauss = partial(gauss_quadrature, order=uknotvector.degree + 1)
   M = sparse.lil_matrix((uknotvector.dim,) * 2)
 
@@ -198,6 +201,8 @@ def sparse_kron(*_mats: Sequence[sparse.spmatrix | np.ndarray]) -> sparse.csr_ma
 class TensorKnotVector(HashMixin):
 
   # XXX: Maybe indirectly subclass np.ndarray via the __array_ufunc__ protocol.
+  # XXX: In the long run, UnivariateKnotVector, TensorKnotVector should be
+  #      replaced by a more general NDKnotVector class.
   # XXX: docstring
 
   _items = 'knotvectors',
@@ -221,7 +226,6 @@ class TensorKnotVector(HashMixin):
 
       Parameters
       ----------
-
       name: `str` the name of the method of `UnivariateKnotVector` that is to
             be applied to all `UnivariateKnotVector`'s in `self`.
       return_type: Container-type to iterate the result of the vectorization
@@ -229,12 +233,13 @@ class TensorKnotVector(HashMixin):
 
       Returns
       -------
-
       func: `Callable` bound method that is added to the catalogue of functionality.
     """
     def wrapper(self, *args, **kwargs):
       rt = self.__class__ if return_type is None else return_type
-      return rt([ getattr(e, name)(*(a[i] for a in args), **{k: v[i] for k, v in kwargs.items()}) for i, e in enumerate(self) ])
+      return rt([ getattr(e, name)( *(a[i] for a in args),
+                                    **{k: v[i] for k, v in kwargs.items()} )
+                                                  for i, e in enumerate(self) ])
     return wrapper
 
   def _prop_wrapper(name: str, return_type=tuple):
@@ -273,7 +278,7 @@ class TensorKnotVector(HashMixin):
   def __len__(self):
     return self.ndim
 
-  def collocate(self, *list_of_abscissae: Sequence | np.ndarray, dx: int | np.int_ | Sequence[int] | None = None):
+  def collocate(self, *list_of_abscissae: np.ndarray, dx: int | np.int_ | Sequence[int] | None = None):
     """
       Tensor-product version of UnivariateKnotVector.collocate.
     """
@@ -282,18 +287,21 @@ class TensorKnotVector(HashMixin):
     if dx is None:
       dx = (0,) * len(self)
     assert len( (dx := tuple(dx)) ) == len(list_of_abscissae) == len(self)
-    mats = [ kv.collocate(absc, dx=_dx) for kv, absc, _dx, in zip(self, list_of_abscissae, dx) ]
+    mats = [ kv.collocate(absc, dx=_dx)
+                      for kv, absc, _dx, in zip(self, list_of_abscissae, dx) ]
     return sparse_kron(*mats)
 
   @property
   def A(self):
     """ Tensor-product version of UnivariateKnotVector.A """
-    return sum( sparse_kron(*(kv.integrate(dx=i) for kv, i in zip(self, row))) for row in np.eye(len(self)).astype(int) )
+    return sum( sparse_kron(*(kv.integrate(dx=i) for kv, i in zip(self, row)))
+                for row in np.eye(len(self)).astype(int) )
 
   @property
   def D(self):
     """ Tensor-product version of UnivariateKnotVector.D """
-    return sum( sparse_kron(*(kv.integrate(dx=i) for kv, i in zip(self, row))) for row in (2 * np.eye(len(self))).astype(int) )
+    return sum( sparse_kron(*(kv.integrate(dx=i) for kv, i in zip(self, row)))
+                for row in (2 * np.eye(len(self))).astype(int) )
 
   def fit(self, list_of_abscissae: Sequence[np.ndarray | Sequence[int | float]],
                 data: Sequence | np.ndarray,
@@ -336,15 +344,20 @@ class TensorKnotVector(HashMixin):
 
     list_of_abscissae = list(map(np.asarray, list_of_abscissae))
     data = np.asarray(data)
+
     assert data.shape[:1] == (np.multiply.reduce(list(map(len, list_of_abscissae))),)
     assert all(lam >= 0 for lam in (lam0, lam1))
+
     X = self.collocate(*list_of_abscissae)
     M = X @ X.T
+
     if lam0 != 0:
       M += lam0 * self.A
     if lam1 != 0:
       M += lam1 * self.D
+
     rhs = X @ data.reshape((-1,) + (data.shape[1:] and (np.prod(data.shape[1:]),)))
+
     from .spline import NDSpline
     return NDSpline(self, splinalg.spsolve(M, rhs).reshape((-1,) + data.shape[1:]))
 
@@ -365,7 +378,11 @@ class TensorKnotVector(HashMixin):
   del _prop_wrapper
 
 
-def as_TensorKnotVector(kv: TensorKnotVector | UnivariateKnotVector | Sequence[UnivariateKnotVector]) -> TensorKnotVector:
+KnotVectorType = UnivariateKnotVector | TensorKnotVector | \
+                 Sequence[UnivariateKnotVector]
+
+
+def as_TensorKnotVector(kv: KnotVectorType) -> TensorKnotVector:
   if isinstance(kv, TensorKnotVector):
     return kv
   if isinstance(kv, UnivariateKnotVector):
