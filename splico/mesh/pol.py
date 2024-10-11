@@ -60,7 +60,7 @@ def _nd_pol_derivative(weights: np.ndarray, dx: Sequence[int] | np.ndarray) -> n
   return _nd_pol_derivative(weights, tuple(max(_dx - 1, 0) for _dx in dx))
 
 
-@lru_cache(maxsize=32)
+@lru_cache(maxsize=8)
 def _compute_basis_weights(mesh):
   """
     The polynomial weights of the nodal basis functions in the reference
@@ -85,7 +85,7 @@ def _compute_basis_weights(mesh):
   return basis_funcs
 
 
-@lru_cache(maxsize=32)
+@lru_cache(maxsize=8)
 def _compute_pol_weights(mesh, dx) -> np.ndarray:
   """
     Polynomial weights of each element's map.

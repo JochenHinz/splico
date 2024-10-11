@@ -15,10 +15,11 @@ from numba import njit
 @njit(cache=True)
 def _product(arr0: np.ndarray, list_of_linspaces: Sequence[np.ndarray]):
   """
-  Given :class:`np.ndarray` `arr0` and list of `np.ndarray`s `list_of_linspaces`,
-  create a column tensor product with `arr` and all arrays in `list_of_linspaces`.
-  The input `arr0` is assumed to be two-dimensional, i.e., in the case of a
-  single array, the shape needs to be `(npoints, 1)`.
+    Given :class:`np.ndarray` `arr0` and :class:`list` of :class:`np.ndarray`s
+    ``list_of_linspaces``,  create a column tensor product with ``arr0`` and
+    all arrays in ``list_of_linspaces``.
+    The input ``arr0`` is assumed to be two-dimensional, i.e., in the case of a
+    single array, the shape needs to be ``(npoints, 1)``.
   """
   while True:
     lin0, list_of_linspaces = list_of_linspaces[0], list_of_linspaces[1:]
@@ -43,7 +44,7 @@ def _product(arr0: np.ndarray, list_of_linspaces: Sequence[np.ndarray]):
 @njit(cache=True)
 def product(list_of_arrays):
   """
-    Numba equivalent of the `itertools.product` iterator with the difference
+    Numba equivalent of the ``itertools.product`` iterator with the difference
     that it can be used inside of Numba, works only with array inputs and
     creates all products at once.
   >>> linspaces = [np.linspace(0, 1, i) for i in (4, 5, 6)]
@@ -165,8 +166,7 @@ def add_reduce(tpl):
 
 
 """
-  Various custom implementations of numpy functions not yet supported
-  in Numba
+  Various custom implementations of numpy functions not yet supported in Numba
 """
 
 
