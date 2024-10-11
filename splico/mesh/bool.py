@@ -17,10 +17,11 @@ import treelog as log
 @lru_cache(maxsize=32)
 def _issubmesh(mesh0, mesh1):
   """
-    Check if `mesh0` is a submesh of `mesh1`.
+    Check if ``mesh0`` is a submesh of ``mesh1``.
     A submesh is defined as a mesh that contains the same or a subset of the
-    other mesh's points and elements. Alternatively, `mesh0` is also considered
-    a submesh of `mesh1` if it is a submesh of `mesh1.submesh` or its submeshes.
+    other mesh's points and elements. Alternatively, ``mesh0`` is also
+    considered a submesh of ``mesh1`` if it is a submesh of ``mesh1.submesh``
+    or its submeshes.
 
     Parameters
     ----------
@@ -31,7 +32,7 @@ def _issubmesh(mesh0, mesh1):
 
     Returns
     -------
-    A boolean indicating whether `mesh0` is a submesh of `mesh1`.
+    A boolean indicating whether ``mesh0`` is a submesh of ``mesh1``.
   """
 
   # mesh0 mesh has more vertices per element than mesh1 => False
@@ -78,9 +79,9 @@ def mesh_union(*meshes):
   """
     Take the union of several meshes.
     Duplicate points and elements are detected using a hashmap. Therefore only
-    points that match exactly are treated as equal. Very sensitive to numerical
-    round-off errors. To reduce sensitivity, use in combination with the
-    `splico.util.global_precision` context manager.
+    points that match exactly are treated as equal.
+    Very sensitive to numerical round-off errors. To reduce sensitivity,
+    use in combination with the ``splico.util.global_precision`` context manager.
   """
   assert meshes
 
@@ -135,7 +136,7 @@ def mesh_boundary_union(*meshes, eps=1e-8, return_matches=False):
     boundary. Optionally return the computed matched vertex pairs for re-use
     in other meshes with the same mutual conncetivity. Note that the matched
     vertex pairs are based on a global index which is the local index plus
-    and offset that depends on the position in `meshes`.
+    and offset that depends on the position in ``meshes``.
 
     Parameters
     ----------
@@ -143,9 +144,9 @@ def mesh_boundary_union(*meshes, eps=1e-8, return_matches=False):
         The input meshes. All need to be of the same type and need to possess
         a boundary mesh.
     eps: :class:`float`
-        Matching tolerance that is forwarded to `_match_active`.
+        Matching tolerance that is forwarded to ``_match_active``.
     return_matches : :class:`bool`
-        Boolean indicating whether the integer array of shape (nmatches, 2)
+        Boolean indicating whether the integer array of shape ``(nmatches, 2)``
         containing matching pairs should be returned. This enables its re-use
         in case many meshes with the same topology need to be unified.
 
@@ -153,7 +154,7 @@ def mesh_boundary_union(*meshes, eps=1e-8, return_matches=False):
     -------
     union_mesh : :class:`splico.mesh.Mesh`
         The mesh union.
-    all_matches : :class:`np.ndarray[int, 2]
+    all_matches : :class:`np.ndarray[int, 2]`
         Optionally return the matching integer array.
   """
 

@@ -41,16 +41,17 @@ def array_to_tuple5(arr):
   return (arr[0], arr[1], arr[2], arr[3], arr[4])
 
 
-def array_to_tuple_str(nelems):
+def array_to_tupleN(nelems: int):
   """
     Dynamic code generator allowing for numba tuple conversion with an arbitrary
     number of entries.
   """
   # XXX: add unit test
-  assert nelems >= 1
-  funcstr = """def func(arr): return ({})""".format(', '.join(map('arr[{}]'.format, range(nelems))) + ',')
-  local_namespace = {}
+  assert nelems >= 6
+  funcstr = """def func(arr): return ({})""".\
+            format(', '.join(map('arr[{}]'.format, range(nelems))) + ',')
 
+  local_namespace = {}
   # Execute the code in the given namespace
   exec(funcstr, globals(), local_namespace)
 
@@ -60,12 +61,48 @@ def array_to_tuple_str(nelems):
   return njit(func)
 
 
-@njit(cache=True)
+def default_converter(nelems):
+  if 1 <= nelems <= 5:
+     return {i: globals().get(f'array_to_tuple{i}') for i in range(1, 6)}[nelems]
+
+  # dynamically create converter
+  return array_to_tupleN(nelems)
+
+
 def make_numba_indexmap(points):
+  assert points.ndim == 2
+  nargs = points.shape[1]
+  if nargs == 3:
+    return _make_numba_indexmap3(points)
+
+  converter = default_converter(points.shape[1])
+  return _make_numba_indexmap(points, converter)
+
+
+@njit(cache=True)
+def _make_numba_indexmap(points, point_converter):
   """
     Create a hashmap that maps each point in `points` to a unique running index.
     Assumes the points in `points` to already be unique.
   """
+  map_coord_index = {}
+  i = 0
+  for point in points:
+    map_coord_index[point_converter(point)] = i
+    i += 1
+
+  return map_coord_index
+
+
+# XXX: Defining this function as
+#      ``partial(_make_numba_indexmap, point_converter=array_to_tuple3)``
+#      prevents function caching. Find way to write cached version of this function
+#      without code copy.
+#      This may be possible by dynamically creating the function string when
+#      loading the script.
+@njit(cache=True)
+def _make_numba_indexmap3(points):
+  """ ``partial(_make_numba_indexmap, point_converter=array_to_tuple3)`` """
   map_coord_index = {}
   i = 0
   for point in points:
@@ -75,14 +112,49 @@ def make_numba_indexmap(points):
   return map_coord_index
 
 
-@njit(cache=True, parallel=True)
 def renumber_elements_from_indexmap(elements, points, map_coord_index):
   """
-    Given an element array `elements` and corresponding points `points`
-    create a new element array wherein each entry newelements[i, j] is given
-    by map_coord_index[points[elements[i, j]]]. The indexmap must take 3-tuples
-    of coordinates and return a new index. If an entry is not contained, undefined
-    behavior results.
+    Given an element array `elements` and corresponding points ``points``
+    create a new element array wherein each entry ``newelements[i, j]`` is given
+    by ``map_coord_index[points[elements[i, j]]]``.
+    The indexmap must take ``points.shape[1]``-tuples of coordinates and return
+    a new index.
+    If an entry is not contained, undefined behavior results.
+  """
+  nargs = len(list(map_coord_index.keys())[0])
+  assert points.shape[1:] == (nargs,)
+
+  # more efficient non-dynamical routine
+  if nargs == 3:
+    return _renumber_elements_from_indexmap3(elements, points, map_coord_index)
+
+  converter = default_converter(len(list(map_coord_index.keys())[0]))
+
+  return _renumber_elements_from_indexmap(elements,
+                                          points,
+                                          map_coord_index,
+                                          converter)
+
+
+@njit(cache=True, parallel=True)
+def _renumber_elements_from_indexmap(elements, points,
+                                     map_coord_index, point_converter):
+  newelems = np.empty(elements.shape, dtype=np.int64)
+  for i in prange(len(elements)):
+    myvertices = elements[i]
+    for j, point in enumerate(points[myvertices]):
+      newelems[i, j] = map_coord_index[point_converter(point)]
+  return newelems
+
+
+# XXX: Defining this function as
+#      ``partial(_renumber_elements_from_indexmap, point_converter=array_to_tuple3)``
+#      prevents function caching. Find way to write cached version of this function
+#      without code copy.
+@njit(cache=True, parallel=True)
+def _renumber_elements_from_indexmap3(elements, points, map_coord_index):
+  """
+    ``partial(_renumber_elements_from_indexmap, point_converter=array_to_tuple3)``
   """
   newelems = np.empty(elements.shape, dtype=np.int64)
   for i in prange(len(elements)):
@@ -98,9 +170,9 @@ def renumber_elements_from_indexmap(elements, points, map_coord_index):
 @njit(cache=True)
 def _make_matching(points0, points1, eps):
   """
-    Given two sets of points and a threshold `eps`, create a correspondence
+    Given two sets of points and a threshold ``eps``, create a correspondence
     between points in pairs if they are sufficiently close, i.e., if their
-    Euclidean distance is below `eps`.
+    Euclidean distance is below ``eps``.
     If two points have been matched their indices will be removed from the
     set of indices that are still eligible for matching to avoid duplicate
     matching.
@@ -117,7 +189,7 @@ def _make_matching(points0, points1, eps):
     Returns
     -------
     matching : :class:`np.ndarray` of integers
-        An (nmatchings, 2) - shaped integer array containing the matches
+        An `(nmatchings, 2)` - shaped integer array containing the matches
         as rows.
   """
   # XXX: the efficiency of this routine would benefit greatly from parallelization.
@@ -196,7 +268,7 @@ def _make_matching(points0, points1, eps):
 def _match_active(mesh0, mesh1, eps=1e-8):
   """
     Match a matching of two meshs' points based on proximity.
-    As opposed to `_make_matching`, only the mesh's active points are matched
+    As opposed to ``_make_matching``, only the mesh's active points are matched
     and the global rather than local matching indices are returned.
   """
   active0, active1 = mesh0.active_indices, mesh1.active_indices
@@ -212,25 +284,25 @@ def _remap_elements(all_elements, all_points, all_matches):
     Given an array of elements, an array of corresponding points and an array
     of matched point pairs, create a new element array wherein the two distinct
     indices of pairs are replaced by a single index for both while only the
-    corresponding point in `all_points` that corresponds to the lower of
+    corresponding point in ``all_points`` that corresponds to the lower of
     the two indices is kept.
 
     Parameters
     ----------
-    all_elements : :class:`np.ndarray[int]`
+    all_elements : :class:`np.ndarray[int, 2]`
         The element array containing all element indices before re-indexing.
-    all_points : :class:`np.ndarray[float]`
+    all_points : :class:`np.ndarray[float, 2]`
         The point array. Is assumed to be exhaustive, i.e., there are exact
         as many points as there are unique element indices.
-    all_matches : :class:`np.ndarray[int]`
+    all_matches : :class:`np.ndarray[int, 2]`
         An (nmatches, 2) integer array containing matched point indices which
         are then coupled.
 
     Returns
     -------
-    elements : :class:`np.ndarray[int]`
+    elements : :class:`np.ndarray[int, 2]`
         The renumbered element array.
-    points : :class:`np.ndarray[float]`
+    points : :class:`np.ndarray[float, 2]`
         The corresponding point array that no longer contains two distinct
         points for matched pairs.
   """

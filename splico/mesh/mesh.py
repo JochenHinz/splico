@@ -704,7 +704,8 @@ def rectilinear(_points: Sequence) -> LineMesh | QuadMesh | HexMesh:
   """
 
   if (0 < (dim := len(_points)) <= 3) is False:
-    raise NotImplementedError
+    raise NotImplementedError("Expected between one and three vertex point"
+                              f" arrays, found {len(_points)}.")
 
   # format to linspace if not already and make sure strictly monotone
   points = []
