@@ -34,7 +34,7 @@ BAR_LENGTH = 100
 
 def _round_array(arr: np.ndarray, precision: Optional[int] = None) -> np.ndarray:
   """
-    Round an array to `precision` which defaults to `GLOBAL_PRECISION`
+    Round an array to ``precision`` which defaults to ``GLOBAL_PRECISION``
     if not passed.
   """
   if precision is None:
@@ -54,7 +54,7 @@ def global_precision(precision: int):
   """
     Context manager for locally adjusting the machine precision.
     Applies to all attributes / arrays that are truncated using the
-    `_round_array` method.
+    ``_round_array`` method.
 
     Example
     -------
@@ -184,29 +184,29 @@ def serialize_input(fn: Callable) -> Callable:
 class HashMixin(Hashable):
   """
     Generic Mixin for hashability.
-    Requires each derived class to implement the `_items` class attribute.
-    The `_item` attribute is a tuple of strings where each string represents
-    the name of a class attribute (typically set in __init__) that contributes
+    Requires each derived class to implement the ``_items`` class attribute.
+    The ``_items`` attribute is a tuple of strings where each string represents
+    the name of a class attribute (typically set in ``__init__``) that contributes
     to the class's hash.
-    Each element in `_items` needs to refer to a hashable type with the exception
-    of `np.ndarray` which is serialized using `serialize_array`.
+    Each element in ``_items`` needs to refer to a hashable type with the exception
+    of :class:`np.ndarray` which is serialized using ``serialize_array``.
 
-    The Mixin then implements the `__hash__` and the `__eq__` dunder methods in
-    the obvious way. For this, the `__hash__` and `__eq__` dunder methods
-    make use of the `tobytes` cached property which serializes all relevant
+    The Mixin then implements the ``__hash__`` and the ``__eq__`` dunder methods
+    in the obvious way. For this, the ``__hash__` and ``__eq__`` dunder methods
+    make use of the ``tobytes`` cached property which serializes all relevant
     attributes and returns them as a tuple.
 
-    The same Mixin implements the `_lib` method that returns a dictionary of
-    all (relevant) attributes implemented by `_items`, i.e.,
+    The same Mixin implements the ``_lib`` method that returns a dictionary of
+    all (relevant) attributes implemented by ``_items``, i.e.,
         {item: getattr(self, item) for item in self._items}.
-    The `_edit` method then allows for editing single or several attributes
+    The ``_edit`` method then allows for editing single or several attributes
     while keeping all others intact and instantiates a new instance of the
     same class with the updated attributes.
 
     It is of paramount importance that the derived class is immutable.
     This means that all relevant attributes are immutable and hashable with
-    the exception of `np.ndarray`s which need to be frozen using `frozen` or
-    `freeze`.
+    the exception of :class:`np.ndarray`s which need to be frozen using
+    ``frozen`` or ``freeze``.
 
     >>> class MyClass(HashMixin):
           _items = 'a', 'b'
@@ -239,7 +239,7 @@ class HashMixin(Hashable):
   def _lib(self) -> dict:
     return {item: getattr(self, item) for item in self._items}
 
-  @cached_property
+  @property
   def tobytes(self) -> Tuple[Hashable, ...]:
     ret = []
     for i, attr in enumerate(map(self.__getattribute__, self._items)):
@@ -258,6 +258,17 @@ class HashMixin(Hashable):
         raise AssertionError(f"Attribute of type '{str(type(attr))}' cannot be hashed.")
     return tuple(ret)
 
+  def __getstate__(self):
+    return self.tobytes
+
+  def __setstate__(self, state):
+    args = {}
+    for key, item in zip(self._items, state):
+      if isinstance(item, serialized_array):
+        item = deserialize_array(item)
+      args[key] = item
+    self.__init__(**args)
+
   def __hash__(self) -> int:
     if not hasattr(self, '_hash'):
       self._hash = hash(self.tobytes)
@@ -273,7 +284,6 @@ class HashMixin(Hashable):
 class NanVec(np.ndarray):
   """
      Vector of dtype float initilized to np.nan.
-     Used in `solve_with_dirichlet_data`.
   """
 
   @classmethod
@@ -360,8 +370,8 @@ def isincreasing(arr: Sequence | np.ndarray) -> np.bool_:
 
 def gauss_quadrature(a: int | float, b: int | float, order: int = 3) -> Tuple[np.ndarray, np.ndarray]:
   """
-   Given the element boundaries `(a, b)`, return the weights and evaluation points
-   corresponding to a gaussian quadrature scheme of order `order`.
+   Given the element boundaries ``(a, b)``, return the weights and evaluation points
+   corresponding to a gaussian quadrature scheme of order ``order``.
 
     Parameters
     ----------
