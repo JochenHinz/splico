@@ -217,7 +217,7 @@ class NDSpline(HashMixin, NDArrayOperatorsMixin):
     controlpoints = np.atleast_2d(self.controlpoints)
 
     function = {False: call, True: tensor_call}[tensor]
-    ret = [function(positions, self.knotvector.repeat_knots(), self.knotvector.degree, x, dx)
+    ret = [function(positions, self.knotvector.repeated_knots, self.knotvector.degree, x, dx)
                     for x in controlpoints.reshape(-1, np.prod(controlpoints.shape[1:])).T]
 
     # XXX: np.stack makes a copy, find better solution (possibly do this in numba)

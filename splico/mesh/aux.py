@@ -8,3 +8,7 @@ class HasNoSubMeshError(Exception):
 
 class HasNoBoundaryError(Exception):
   pass
+
+
+class EmptyMeshError(Exception):
+  pass

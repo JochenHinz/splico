@@ -11,7 +11,8 @@ from ..util import np, _, frozen, HashMixin, _round_array, round_result, \
 from ._refine import refine_structured, _refine_Triangulation
 from .pol import eval_nd_polynomial_local
 from .bool import _issubmesh, mesh_boundary_union, mesh_union, mesh_difference
-from .aux import MissingVertexError, HasNoSubMeshError, HasNoBoundaryError
+from .aux import MissingVertexError, HasNoSubMeshError, HasNoBoundaryError, \
+                 EmptyMeshError
 
 from abc import abstractmethod
 from typing import Callable, Sequence, Self, Tuple, Dict, List
@@ -112,7 +113,8 @@ class Mesh(HashMixin):
 
     # sanity checks
     # XXX: instead raising an error, find a more graceful way of empty mesh handling
-    assert self.elements.shape[0], 'Found empty mesh.'
+    if not self.elements.shape[0]:
+      raise EmptyMeshError('Found an empty mesh.')
     assert self.points.shape[1:] == (3,), \
       NotImplementedError("Meshes are assumed to be manifolds in R^3 by default.")
     assert self.elements.shape[1:] == (self.nverts,)
@@ -336,7 +338,7 @@ class Mesh(HashMixin):
       Subtract `other` from `self` creating a new (usually smaller) mesh.
     """
     # XXX: avoid for loops using numpy
-    assert other.__class__ is self.__class__, NotImplementedError()
+    assert other.__class__ is self.__class__
     other_elems = set(map(lambda x: tuple(sorted(x)), other.elements))
 
     keep_elems = []
@@ -348,7 +350,7 @@ class Mesh(HashMixin):
     return self.take(keep_elems)
 
   def __or__(self, other):
-    assert self.__class__ is other.__class__, NotImplementedError
+    assert self.__class__ is other.__class__
     return mesh_union(self, other)
 
   @cached_property
@@ -701,7 +703,8 @@ def rectilinear(_points: Sequence) -> LineMesh | QuadMesh | HexMesh:
         by the conversion of `_points`.
   """
 
-  assert (dim := len(_points)) <= 3, NotImplementedError
+  if (0 < (dim := len(_points)) <= 3) is False:
+    raise NotImplementedError
 
   # format to linspace if not already and make sure strictly monotone
   points = []
