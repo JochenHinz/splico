@@ -14,7 +14,7 @@ import treelog as log
 """
 
 
-@lru_cache(maxsize=32)
+@lru_cache(maxsize=8)
 def _issubmesh(mesh0, mesh1):
   """
     Check if ``mesh0`` is a submesh of ``mesh1``.

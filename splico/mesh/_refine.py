@@ -94,7 +94,6 @@ def _refine_structured(elements: np.ndarray, points: np.ndarray, ndims: int):
         elems[k, j] = map_format_index[_format_indices_weights(indices, myweights)]
       k += 1
 
-  # for some reason I sometimes get segfaults when plotting if I don't copy the points
   newpoints = np.empty((len(map_index_coord), 3), dtype=np.float64)
   for i in range(len(map_index_coord)):
     newpoints[i] = map_index_coord[i]
@@ -102,7 +101,7 @@ def _refine_structured(elements: np.ndarray, points: np.ndarray, ndims: int):
   return elems, newpoints
 
 
-@lru_cache(maxsize=32)
+@lru_cache(maxsize=8)
 def refine_structured(mesh):
   return mesh.__class__(*_refine_structured(mesh.elements, mesh.points, mesh.ndims))
 
@@ -118,7 +117,7 @@ def abs_tuple(tpl):
   return tuple(tpl)
 
 
-@lru_cache(maxsize=32)
+@lru_cache(maxsize=8)
 def _refine_Triangulation(mesh):
   """
     Uniformly refine the entire mesh once.
