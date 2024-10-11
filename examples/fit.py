@@ -30,7 +30,7 @@ def main(nelems: Sequence[int], verts: Sequence[np.ndarray], data: np.ndarray, *
 
   spline = knotvector.fit(verts, data, **fitkwargs)
 
-  mesh = spline.sample_mesh(rectilinear(knotvector.refine().knots))
+  mesh = spline.sample_mesh(rectilinear(knotvector.refine(...).knots))
 
   mesh.plot()
 
