@@ -1,21 +1,10 @@
 from numpy import linalg
-from gc import freeze
-from turtle import end_fill
-from ..util import np, _, frozen, HashMixin, frozen_cached_property, _round_array, isincreasing
 
-from ._ref_structured import _refine_structured as ref_structured
+from ..util import np, _, frozen
 
-import pyvista as pv
-import vtk
+from typing import Tuple
 
-from abc import abstractmethod
-
-from typing import Callable, Sequence, Self, Tuple
-
-from functools import cached_property, lru_cache
-from itertools import count, product
-
-import pickle
+from functools import  lru_cache
 
 from .mesh import Mesh 
 
@@ -67,8 +56,8 @@ def clean_distances(mesh: Mesh) -> np.ndarray :
        that identifies which componenet in the distance tensor represent valid 
        distances. It filters out invalid distances (inserting 1), such as those between a point
        and itself (on the diagonal of the distance tensor), and other non-edge distances
-       specific to the mesh type. For all the mesh types, the diagonal of bolean matrix (mask)
-       if filled with ones.
+       specific to the mesh type. For all the mesh types, the diagonal of boolean matrix (mask)
+       is filled with ones.
      """   
   
    assert mesh.simplex_type in IMPLEMENTED_MESH_TYPES, NotImplementedError
@@ -89,7 +78,7 @@ def clean_distances(mesh: Mesh) -> np.ndarray :
    elif mesh.simplex_type in 'hexahedron':
       mask = mask_self + np.block([[mask_quad, mask_quad_to_quad], [mask_quad_to_quad, mask_quad]])
          
-   return mask
+   return frozen(mask)
 
 
 # Tuple[np.ndarray[np.float_, 1], 3] means returns a tuple containing 3 elements of the type np.float.
@@ -116,7 +105,6 @@ def aspect_ratio(mesh: Mesh) -> Tuple[np.ndarray[np.float_, 1], 3]:
       
    """      
   
-  
    # Check for the mesh validity
    assert mesh.is_valid(), "mesh is not valid"
 
@@ -127,7 +115,7 @@ def aspect_ratio(mesh: Mesh) -> Tuple[np.ndarray[np.float_, 1], 3]:
    
    # Depending on the mesh type, mask cut the invalid distances
    mask = clean_distances(mesh)
-   mask_vect = np.bool_(mask[_,:,:] * np.ones((distances.shape[0],1,1)))
+   mask_vect = np.bool_(np.tile(mask , (distances.shape[0],1,1)))
       
    # Number of invalid edges considering that the distance is computed with respect all the points
    n_non_valid_edges = invalid_edges(mesh)

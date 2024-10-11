@@ -1,8 +1,6 @@
 from test_mesh import unit_disc_triangulation
-import numpy as np
 from splico.mesh.qual import aspect_ratio
 from splico.mesh import unitsquare
-
 
 import unittest
 
