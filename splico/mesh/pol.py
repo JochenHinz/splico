@@ -1,3 +1,7 @@
+"""
+Polynomial routines for evaluating the local element maps.
+"""
+
 from ..util import np, _
 
 from typing import Sequence
@@ -6,10 +10,6 @@ from functools import lru_cache
 sl = slice(_)
 
 
-"""
-  Polynomial routines for evaluating the local element maps.
-"""
-
 # While numpy provides routines for polynomial evaluation, they are not easily
 # generalizable to N dimensions. In the long run, we would like to support
 # meshes of higher dimensionality, hence the custom implementation.
@@ -17,24 +17,24 @@ sl = slice(_)
 
 def _nd_pol_derivative(weights: np.ndarray, dx: Sequence[int] | np.ndarray) -> np.ndarray:
   """
-    Given a :class:`np.ndarray` of shape (p, q, r, ..., x, y, z) respresening
-    `(x, y, z)` n-dependency polynomials of order (p, q, r, ...) and a length n
-    array-like `dx` of positive integers representing partial derivative orders,
-    return the polynomial weights of shape (p-dx[0], q-dx[1], r-dx[2], ..., x, y, z)
-    representing the derivatives of the input polynomials.
+  Given a :class:`np.ndarray` of shape (p, q, r, ..., x, y, z) respresening
+  `(x, y, z)` n-dependency polynomials of order (p, q, r, ...) and a length n
+  array-like `dx` of positive integers representing partial derivative orders,
+  return the polynomial weights of shape (p-dx[0], q-dx[1], r-dx[2], ..., x, y, z)
+  representing the derivatives of the input polynomials.
 
-    Parameters
-    ----------
-    weights : :class:`np.ndarray`
-        The polynomial weights of len(weights) polynomials, all of the same order.
-    dx : :class:`np.ndarray` or Sequence of integers.
-        The derivative orders. Must be (non-strictly) positive. The first
-        len(dx) axes of `weights` are interpreted as polynomial weight axes.
+  Parameters
+  ----------
+  weights : :class:`np.ndarray`
+      The polynomial weights of len(weights) polynomials, all of the same order.
+  dx : :class:`np.ndarray` or Sequence of integers.
+      The derivative orders. Must be (non-strictly) positive. The first
+      len(dx) axes of `weights` are interpreted as polynomial weight axes.
 
-    Returns
-    -------
-    derivative_weights : :class:`np.ndarray`
-        The polynomial weights of the derivative.
+  Returns
+  -------
+  derivative_weights : :class:`np.ndarray`
+      The polynomial weights of the derivative.
   """
   dx = np.asarray(dx, dtype=int)
   # get the number of derivative axes
@@ -63,9 +63,9 @@ def _nd_pol_derivative(weights: np.ndarray, dx: Sequence[int] | np.ndarray) -> n
 @lru_cache(maxsize=8)
 def _compute_basis_weights(mesh):
   """
-    The polynomial weights of the nodal basis functions in the reference
-    element.
-    Shape: (2,) * self.ndims + (nverts,)
+  The polynomial weights of the nodal basis functions in the reference
+  element.
+  Shape: (2,) * self.ndims + (nverts,)
   """
 
   # PointMesh ords have shape (1,) so we need to reshape to two dimensions
@@ -88,8 +88,8 @@ def _compute_basis_weights(mesh):
 @lru_cache(maxsize=8)
 def _compute_pol_weights(mesh, dx) -> np.ndarray:
   """
-    Polynomial weights of each element's map.
-    For `mesh.eval_local`.
+  Polynomial weights of each element's map.
+  For `mesh.eval_local`.
   """
   # XXX: caching doesn't re-use for instance the result of dx = (1, 0, 0) if
   #      dx = (2, 0, 0) is computed. Change the caching structure to improve this.
@@ -109,25 +109,25 @@ def _compute_pol_weights(mesh, dx) -> np.ndarray:
 
 def eval_nd_polynomial_local(mesh, points: np.ndarray, dx=None) -> np.ndarray:
   """
-    Evaluate `(x, y, z)` n-dependency polynomials or their derivatives in `points`.
+  Evaluate `(x, y, z)` n-dependency polynomials or their derivatives in `points`.
 
-    Parameters
-    ----------
-    weights: :class:`np.ndarray`
-        Array of shape (p, q, r, ..., x, y, z) representing `(x, y, z)` n-dimensional
-        polynomials, all of the same order (p, q, r, ...).
-    points : :class:`np.ndarray`
-        Array of points. Must have shape (npoints, n), where n is the number
-        of polynomial dependencies (x, y, z, ...).
-    dx : :class:`np.ndarray[int]` or Sequence[int] or :class:`int` or None
-        Derivative orders in each direction. If not array-like, assumed to be
-        integer or None. If integer, the value is repeated n times. If None,
-        defaults to zeros of appropriate length.
+  Parameters
+  ----------
+  weights: :class:`np.ndarray`
+      Array of shape (p, q, r, ..., x, y, z) representing `(x, y, z)` n-dimensional
+      polynomials, all of the same order (p, q, r, ...).
+  points : :class:`np.ndarray`
+      Array of points. Must have shape (npoints, n), where n is the number
+      of polynomial dependencies (x, y, z, ...).
+  dx : :class:`np.ndarray[int]` or Sequence[int] or :class:`int` or None
+      Derivative orders in each direction. If not array-like, assumed to be
+      integer or None. If integer, the value is repeated n times. If None,
+      defaults to zeros of appropriate length.
 
-    Returns
-    -------
-    evaluations : :class:`np.ndarray`
-        Polynomial (derivative) evaluations of shape (x, y, z, npoints).
+  Returns
+  -------
+  evaluations : :class:`np.ndarray`
+      Polynomial (derivative) evaluations of shape (x, y, z, npoints).
   """
 
   # in case points is one-dimensional (PointMesh)

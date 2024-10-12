@@ -1,6 +1,11 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+"""
+Various jit-compiled routines for spline evaluation.
+"""
+
+
 from ..util import np, flat_meshgrid
 from .._jit import arange_product, ravel_multi_index
 
@@ -8,11 +13,6 @@ from numba import njit, float64, int64, prange, config
 import multiprocessing
 
 config.NUMBA_NUM_THREADS = multiprocessing.cpu_count()
-
-
-"""
-  Various jit-compiled routines for spline evaluation.
-"""
 
 
 # XXX: this scipt requires a formatting overhaul and some docstrings need
@@ -68,24 +68,24 @@ def position_in_knotvector(t, x):
 @njit(cache=True)
 def nonzero_bsplines(mu, x, t, d):
   """
-    Return the value of the d+1 nonzero basis
-    functions at position ``x``.
+  Return the value of the d+1 nonzero basis
+  functions at position ``x``.
 
-    Parameters
-    ----------
-    mu : :class:`int`
-        The position in `t` that contains `x`,
-    x: :class:`float`
-        The position,
-    t: :class:`np.ndarray`
-        The knotvector.
-    d: :class:`int`
-        The degree of the B-spline basis.
+  Parameters
+  ----------
+  mu : :class:`int`
+      The position in `t` that contains `x`,
+  x: :class:`float`
+      The position,
+  t: :class:`np.ndarray`
+      The knotvector.
+  d: :class:`int`
+      The degree of the B-spline basis.
 
-    Returns
-    -------
-    b : :class:`np.ndarray`
-        The nonzero bsplines evalated in `x`
+  Returns
+  -------
+  b : :class:`np.ndarray`
+      The nonzero bsplines evalated in `x`
   """
 
   b = np.zeros(d + 1, dtype=float64)
@@ -114,15 +114,15 @@ def nonzero_bsplines(mu, x, t, d):
 @njit(cache=True)
 def nonzero_bsplines_deriv(kv, p, x, dx):
   """
-    Return the value of the d+1 nonzero basis
-    functions and their derivatives up to order `dx` at position `x`.
+  Return the value of the d+1 nonzero basis
+  functions and their derivatives up to order `dx` at position `x`.
 
-    Parameters
-    ----------
-    x: position
-    kv: knotvector
-    p: degree of B-spline basis
-    dx: max order of the derivative
+  Parameters
+  ----------
+  x: position
+  kv: knotvector
+  p: degree of B-spline basis
+  dx: max order of the derivative
   """
   # Initialize variables
   span = position_in_knotvector(kv, np.array([x], dtype=np.float64))[0]
@@ -202,8 +202,8 @@ def nonzero_bsplines_deriv(kv, p, x, dx):
 @njit(cache=True)
 def nonzero_bsplines_deriv_vectorized(kv, p, x, dx):
   """
-    Vectorized (in x) version of `nonzero_bsplines_deriv`
-    only returns the dx-th derivative though.
+  Vectorized (in x) version of `nonzero_bsplines_deriv`
+  only returns the dx-th derivative though.
   """
   ret = np.empty((len(x), p+1), dtype=np.float64)
   for i in prange(len(ret)):
@@ -213,19 +213,18 @@ def nonzero_bsplines_deriv_vectorized(kv, p, x, dx):
 
 @njit(cache=True)
 def der_ith_basis_fun( kv, p, i, x, dx ):  # based on algorithm A2.5 from the NURBS-book
-
   """
-    Return the N_ip(x) and its derivatives up to ``dx``,
-    where N denotes the ``i``-th basis function of order
-    ``p`` resulting from knotvector ``kv`` and x the position.
+  Return the N_ip(x) and its derivatives up to ``dx``,
+  where N denotes the ``i``-th basis function of order
+  ``p`` resulting from knotvector ``kv`` and x the position.
 
-    Parameters
-    ----------
-    kv: knotvector
-    p: degree of the basis
-    i: index of the basis function
-    x: position
-    dx: highest-order derivative
+  Parameters
+  ----------
+  kv: knotvector
+  p: degree of the basis
+  i: index of the basis function
+  x: position
+  dx: highest-order derivative
   """
 
   if x == kv[-1]:
@@ -297,15 +296,15 @@ def der_ith_basis_fun( kv, p, i, x, dx ):  # based on algorithm A2.5 from the NU
 @njit(cache=True, parallel=True)
 def _call1D(xi, kv0, p0, x, dx):
   """
-    Return function evaluations at positions xi.
+  Return function evaluations at positions xi.
 
-    Parameters
-    ----------
-    xi: Vector of xi-values
-    kv0: knotvector in xi-direction
-    p0: degree in xi-direction
-    x: vector of control points
-    dx: derivative order
+  Parameters
+  ----------
+  xi: Vector of xi-values
+  kv0: knotvector in xi-direction
+  p0: degree in xi-direction
+  x: vector of control points
+  dx: derivative order
   """
   ret = np.zeros(xi.shape, dtype=float64)
   assert ret.ndim == 1
@@ -323,6 +322,7 @@ def _call1D(xi, kv0, p0, x, dx):
 
 @njit(cache=True, parallel=True)
 def _callND(Xi, list_of_knotvectors, degrees, x, derivatives):
+  # XXX: docstring
   assert Xi.shape[1:] == (len(list_of_knotvectors),)
 
   # make len(list_of_knotvectors) - shaped integer array with the ndofs per direction
@@ -390,24 +390,24 @@ def call(list_of_abscissae,
 @njit(cache=True, parallel=True)
 def _tensor_call2D( xi, eta, kv0, kv1, p0, p1, x, dx, dy ):
   """
-    Return function evaluations at all positions
-    (xi_i, eta_i) in the outer product of univariate
-    positions ``xi`` and ``eta``.
-    Optimized because the bases are only evaluated in
-    ``xi`` and ``eta`` once.
-    Returns a matrix instead of a flat vector.
+  Return function evaluations at all positions
+  (xi_i, eta_i) in the outer product of univariate
+  positions ``xi`` and ``eta``.
+  Optimized because the bases are only evaluated in
+  ``xi`` and ``eta`` once.
+  Returns a matrix instead of a flat vector.
 
-    Parameters
-    ----------
-    xi: Vector of xi-values
-    eta: Vector of eta-values
-    kv0: knotvector in xi-direction
-    kv1: knotvector in eta-direction
-    p0: degree in xi-direction
-    p1: degree in eta-direction
-    x: vector of control points
-    dx: order of the derivative in the xi-direction
-    dy: order of the derivative ins the eta-direction
+  Parameters
+  ----------
+  xi: Vector of xi-values
+  eta: Vector of eta-values
+  kv0: knotvector in xi-direction
+  kv1: knotvector in eta-direction
+  p0: degree in xi-direction
+  p1: degree in eta-direction
+  x: vector of control points
+  dx: order of the derivative in the xi-direction
+  dy: order of the derivative ins the eta-direction
   """
 
   mu0 = position_in_knotvector(kv0, xi)

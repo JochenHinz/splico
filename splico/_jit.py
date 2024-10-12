@@ -1,3 +1,6 @@
+""" Routines for use in general JIT-compiled functions. """
+
+
 from .util import np
 
 from typing import Sequence
@@ -6,20 +9,17 @@ import math
 from numba import njit
 
 
-""" Routines for use in JIT-compiled functions. """
-
-
 """ itertools-equivalent Numba implementations. """
 
 
 @njit(cache=True)
 def _product(arr0: np.ndarray, list_of_linspaces: Sequence[np.ndarray]):
   """
-    Given :class:`np.ndarray` `arr0` and :class:`list` of :class:`np.ndarray`s
-    ``list_of_linspaces``,  create a column tensor product with ``arr0`` and
-    all arrays in ``list_of_linspaces``.
-    The input ``arr0`` is assumed to be two-dimensional, i.e., in the case of a
-    single array, the shape needs to be ``(npoints, 1)``.
+  Given :class:`np.ndarray` `arr0` and :class:`list` of :class:`np.ndarray`s
+  ``list_of_linspaces``,  create a column tensor product with ``arr0`` and
+  all arrays in ``list_of_linspaces``.
+  The input ``arr0`` is assumed to be two-dimensional, i.e., in the case of a
+  single array, the shape needs to be ``(npoints, 1)``.
   """
   while True:
     lin0, list_of_linspaces = list_of_linspaces[0], list_of_linspaces[1:]
@@ -44,9 +44,9 @@ def _product(arr0: np.ndarray, list_of_linspaces: Sequence[np.ndarray]):
 @njit(cache=True)
 def product(list_of_arrays):
   """
-    Numba equivalent of the ``itertools.product`` iterator with the difference
-    that it can be used inside of Numba, works only with array inputs and
-    creates all products at once.
+  Numba equivalent of the ``itertools.product`` iterator with the difference
+  that it can be used inside of Numba, works only with array inputs and
+  creates all products at once.
   >>> linspaces = [np.linspace(0, 1, i) for i in (4, 5, 6)]
   >>> X = np.stack(list(map(np.ravel, np,meshgrid(*linspaces))), axis=1)
   >>> Y = _product(linspaces)
@@ -64,8 +64,8 @@ def product(list_of_arrays):
 @njit(cache=True)
 def linspace_product(array_of_steps):
   """
-    Convenience function for creating a product of linspaces
-    over [0, 1] from an array of integers representing the steps.
+  Convenience function for creating a product of linspaces
+  over [0, 1] from an array of integers representing the steps.
   """
   list_of_arrays = []
   for i in array_of_steps:
@@ -76,8 +76,8 @@ def linspace_product(array_of_steps):
 @njit(cache=True)
 def arange_product(array_of_integers):
   """
-    Convenience function for creating a product of aranges
-    from [0, i) from an array of integers containing the `i`.
+  Convenience function for creating a product of aranges
+  from [0, i) from an array of integers containing the `i`.
   """
   list_of_arrays = []
   for i in array_of_integers:
@@ -86,7 +86,7 @@ def arange_product(array_of_integers):
 
 
 """
-  Formatting to strings for homogeneous string-based Numba hashing.
+Formatting to strings for homogeneous string-based Numba hashing.
 """
 
 
@@ -166,7 +166,7 @@ def add_reduce(tpl):
 
 
 """
-  Various custom implementations of numpy functions not yet supported in Numba
+Various custom implementations of numpy functions not yet supported in Numba
 """
 
 

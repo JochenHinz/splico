@@ -1,3 +1,8 @@
+"""
+Routines dedicated to refining various mesh types.
+"""
+
+
 from ..util import np
 from .._jit import product, arange_product, ravel_multi_index, mul_reduce, float2str
 
@@ -7,20 +12,15 @@ from itertools import count
 from numba import njit
 
 
-"""
-  Routines dedicated to refining various mesh types.
-"""
-
-
 @njit(cache=True)
 def _format_indices_weights(indices, weights):
   """
-    Given a container of vertex indices and
-    an equally-sized container of weights with respect to these indices,
-    remove indices with weight 0 and argsort both remaining containers
-    according to the remaining indices.
-    >>> _format_indices_weights([5, 4, 1, 7], [.5, .5, 0, 0])
-        (4, 5), (.5, .5)
+  Given a container of vertex indices and
+  an equally-sized container of weights with respect to these indices,
+  remove indices with weight 0 and argsort both remaining containers
+  according to the remaining indices.
+  >>> _format_indices_weights([5, 4, 1, 7], [.5, .5, 0, 0])
+      (4, 5), (.5, .5)
   """
   mask = weights != 0
   indices, weights = indices[mask], weights[mask]
@@ -40,7 +40,7 @@ def _formatter(point: np.ndarray):
 @njit(cache=True)
 def _refine_structured(elements: np.ndarray, points: np.ndarray, ndims: int):
   """
-    Refine any structured mesh type (LineMesh, QuadMesh, HexMesh).
+  Refine any structured mesh type (LineMesh, QuadMesh, HexMesh).
   """
   # XXX: this routine works but is a bit difficult to read and therefore
   #      difficult to maintain. Find better solution.
@@ -108,9 +108,9 @@ def refine_structured(mesh):
 
 def abs_tuple(tpl):
   """
-    [5, 6] -> (5, 6)
-    [6, 5] -> (5, 6)
-    (6, 5) -> (5, 6)
+  [5, 6] -> (5, 6)
+  [6, 5] -> (5, 6)
+  (6, 5) -> (5, 6)
   """
   a, b = tpl
   if a > b: return b, a
@@ -120,18 +120,18 @@ def abs_tuple(tpl):
 @lru_cache(maxsize=8)
 def _refine_Triangulation(mesh):
   """
-    Uniformly refine the entire mesh once.
-          i1                             i1
-          / \                            / \
-         /   \                          /   \
-        /     \         becomes      i10 ---- i21
-       /       \                      / \   /  \
-      /         \                    /   \ /    \
-    i0 --------- i2                i0 -- i02 --- i2
+  Uniformly refine the entire mesh once.
+        i1                             i1
+        / \                            / \
+       /   \                          /   \
+      /     \         becomes      i10 ---- i21
+     /       \                      / \   /  \
+    /         \                    /   \ /    \
+  i0 --------- i2                i0 -- i02 --- i2
 
-    Returns
-    -------
-    The refined mesh of class `Triangulation`
+  Returns
+  -------
+  The refined mesh of class `Triangulation`
   """
 
   # XXX: JIT compile

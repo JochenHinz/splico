@@ -27,11 +27,11 @@ def get_all_vertices(domain, geom, patches):
 def multipatch_trace_penalty_stab(domain, basis, geom, localgeom, patches, stabmat=None, mu=800):
 
   """
-    Nutils implementation for reparameterizing the default covering
-    of the unit disc toward more interface regularity.
+  Nutils implementation for reparameterizing the default covering
+  of the unit disc toward more interface regularity.
 
-    The stabilization for avoiding singularities at the vertices is tuned by
-    `mu`.
+  The stabilization for avoiding singularities at the vertices is tuned by
+  `mu`.
   """
 
   assert mu >= 0
@@ -64,7 +64,7 @@ def multipatch_trace_penalty_stab(domain, basis, geom, localgeom, patches, stabm
 def make_unit_disc(domain, basis, geom, localgeom, patches, reparam=False, **kwargs):
 
   """
-    Create a multipatch covering of the unit disc from the topology.
+  Create a multipatch covering of the unit disc from the topology.
   """
 
   if reparam is False and kwargs:

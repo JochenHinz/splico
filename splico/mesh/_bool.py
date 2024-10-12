@@ -1,11 +1,11 @@
+"""
+Module containing various JIT-compiled helper routines for use in `bool.py`
+"""
+
+
 from ..util import np
 
 from numba import njit, prange
-
-
-"""
-  Module containing various JIT-compiled helper routines for use in `bool.py`
-"""
 
 
 # TODO: Make use of Numba parallelization
@@ -43,8 +43,8 @@ def array_to_tuple5(arr):
 
 def array_to_tupleN(nelems: int):
   """
-    Dynamic code generator allowing for numba tuple conversion with an arbitrary
-    number of entries.
+  Dynamic code generator allowing for numba tuple conversion with an arbitrary
+  number of entries.
   """
   # XXX: add unit test
   assert nelems >= 6
@@ -82,8 +82,8 @@ def make_numba_indexmap(points):
 @njit(cache=True)
 def _make_numba_indexmap(points, point_converter):
   """
-    Create a hashmap that maps each point in `points` to a unique running index.
-    Assumes the points in `points` to already be unique.
+  Create a hashmap that maps each point in `points` to a unique running index.
+  Assumes the points in `points` to already be unique.
   """
   map_coord_index = {}
   i = 0
@@ -114,12 +114,12 @@ def _make_numba_indexmap3(points):
 
 def renumber_elements_from_indexmap(elements, points, map_coord_index):
   """
-    Given an element array `elements` and corresponding points ``points``
-    create a new element array wherein each entry ``newelements[i, j]`` is given
-    by ``map_coord_index[points[elements[i, j]]]``.
-    The indexmap must take ``points.shape[1]``-tuples of coordinates and return
-    a new index.
-    If an entry is not contained, undefined behavior results.
+  Given an element array `elements` and corresponding points ``points``
+  create a new element array wherein each entry ``newelements[i, j]`` is given
+  by ``map_coord_index[points[elements[i, j]]]``.
+  The indexmap must take ``points.shape[1]``-tuples of coordinates and return
+  a new index.
+  If an entry is not contained, undefined behavior results.
   """
   nargs = len(list(map_coord_index.keys())[0])
   assert points.shape[1:] == (nargs,)
@@ -154,7 +154,7 @@ def _renumber_elements_from_indexmap(elements, points,
 @njit(cache=True, parallel=True)
 def _renumber_elements_from_indexmap3(elements, points, map_coord_index):
   """
-    ``partial(_renumber_elements_from_indexmap, point_converter=array_to_tuple3)``
+  ``partial(_renumber_elements_from_indexmap, point_converter=array_to_tuple3)``
   """
   newelems = np.empty(elements.shape, dtype=np.int64)
   for i in prange(len(elements)):
@@ -170,27 +170,27 @@ def _renumber_elements_from_indexmap3(elements, points, map_coord_index):
 @njit(cache=True)
 def _make_matching(points0, points1, eps):
   """
-    Given two sets of points and a threshold ``eps``, create a correspondence
-    between points in pairs if they are sufficiently close, i.e., if their
-    Euclidean distance is below ``eps``.
-    If two points have been matched their indices will be removed from the
-    set of indices that are still eligible for matching to avoid duplicate
-    matching.
+  Given two sets of points and a threshold ``eps``, create a correspondence
+  between points in pairs if they are sufficiently close, i.e., if their
+  Euclidean distance is below ``eps``.
+  If two points have been matched their indices will be removed from the
+  set of indices that are still eligible for matching to avoid duplicate
+  matching.
 
-    Parameters
-    ----------
-    points0 : :class:`np.ndarray`
-        The array containing the first mesh's points.
-    points1 : :class:`np.ndarray`
-        The array containing the second mesh's points.
-    eps : :class:`float`
-        The matching tolerance.
+  Parameters
+  ----------
+  points0 : :class:`np.ndarray`
+      The array containing the first mesh's points.
+  points1 : :class:`np.ndarray`
+      The array containing the second mesh's points.
+  eps : :class:`float`
+      The matching tolerance.
 
-    Returns
-    -------
-    matching : :class:`np.ndarray` of integers
-        An `(nmatchings, 2)` - shaped integer array containing the matches
-        as rows.
+  Returns
+  -------
+  matching : :class:`np.ndarray` of integers
+      An `(nmatchings, 2)` - shaped integer array containing the matches
+      as rows.
   """
   # XXX: the efficiency of this routine would benefit greatly from parallelization.
 
@@ -267,9 +267,9 @@ def _make_matching(points0, points1, eps):
 
 def _match_active(mesh0, mesh1, eps=1e-8):
   """
-    Match a matching of two meshs' points based on proximity.
-    As opposed to ``_make_matching``, only the mesh's active points are matched
-    and the global rather than local matching indices are returned.
+  Match a matching of two meshs' points based on proximity.
+  As opposed to ``_make_matching``, only the mesh's active points are matched
+  and the global rather than local matching indices are returned.
   """
   active0, active1 = mesh0.active_indices, mesh1.active_indices
   return np.stack([active[ind] for active, ind
@@ -281,30 +281,30 @@ def _match_active(mesh0, mesh1, eps=1e-8):
 @njit(cache=True)
 def _remap_elements(all_elements, all_points, all_matches):
   """
-    Given an array of elements, an array of corresponding points and an array
-    of matched point pairs, create a new element array wherein the two distinct
-    indices of pairs are replaced by a single index for both while only the
-    corresponding point in ``all_points`` that corresponds to the lower of
-    the two indices is kept.
+  Given an array of elements, an array of corresponding points and an array
+  of matched point pairs, create a new element array wherein the two distinct
+  indices of pairs are replaced by a single index for both while only the
+  corresponding point in ``all_points`` that corresponds to the lower of
+  the two indices is kept.
 
-    Parameters
-    ----------
-    all_elements : :class:`np.ndarray[int, 2]`
-        The element array containing all element indices before re-indexing.
-    all_points : :class:`np.ndarray[float, 2]`
-        The point array. Is assumed to be exhaustive, i.e., there are exact
-        as many points as there are unique element indices.
-    all_matches : :class:`np.ndarray[int, 2]`
-        An (nmatches, 2) integer array containing matched point indices which
-        are then coupled.
+  Parameters
+  ----------
+  all_elements : :class:`np.ndarray[int, 2]`
+      The element array containing all element indices before re-indexing.
+  all_points : :class:`np.ndarray[float, 2]`
+      The point array. Is assumed to be exhaustive, i.e., there are exact
+      as many points as there are unique element indices.
+  all_matches : :class:`np.ndarray[int, 2]`
+      An (nmatches, 2) integer array containing matched point indices which
+      are then coupled.
 
-    Returns
-    -------
-    elements : :class:`np.ndarray[int, 2]`
-        The renumbered element array.
-    points : :class:`np.ndarray[float, 2]`
-        The corresponding point array that no longer contains two distinct
-        points for matched pairs.
+  Returns
+  -------
+  elements : :class:`np.ndarray[int, 2]`
+      The renumbered element array.
+  points : :class:`np.ndarray[float, 2]`
+      The corresponding point array that no longer contains two distinct
+      points for matched pairs.
   """
 
   # ascending index array

@@ -129,7 +129,7 @@ class TestSubMesh(unittest.TestCase):
     for i in range(3):
       mesh = mesh.submesh
       self.assertTrue(mesh.is_valid())
-    from splico.mesh.aux import HasNoSubMeshError
+    from splico.err import HasNoSubMeshError
     with self.assertRaises(HasNoSubMeshError):
       mesh.submesh
 

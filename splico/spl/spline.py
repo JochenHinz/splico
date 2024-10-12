@@ -1,4 +1,5 @@
-from ..util import _round_array, np, HashMixin, frozen, _, augment_by_zeros
+from ..util import _round_array, np, frozen, augment_by_zeros
+from ..types import HashMixin
 from ._jit_spl import call, tensor_call
 from ..mesh.mesh import Mesh
 from .kv import UnivariateKnotVector, TensorKnotVector, as_TensorKnotVector, \
@@ -19,9 +20,9 @@ HANDLED_NDSPLINE_FUNCTIONS = {}
 
 class __NDSpline_implementations__:
   """
-    Dummy class for implementing various `NDSpline` ufuncs.
-    They are added to `HANDLED_NDSPLINE_FUNCTIONS` to be used in the `NDSpline`
-    __array_ufunc__ protocol.
+  Dummy class for implementing various `NDSpline` ufuncs.
+  They are added to `HANDLED_NDSPLINE_FUNCTIONS` to be used in the `NDSpline`
+  __array_ufunc__ protocol.
   """
 
   def implements(np_function):
@@ -65,29 +66,29 @@ class __NDSpline_implementations__:
 class NDSpline(HashMixin, NDArrayOperatorsMixin):
 
   """
-    Class representing an N-dimensional spline.
+  Class representing an N-dimensional spline.
 
-    Parameters
-    ----------
-    knotvector : :class:`splico.spl.kv.TensorKnotVector` or
-                 :class:`splico.spl.kv.UnivariateKnotVector`
-        The (tensorial) knotvector associated with the spline. If not yet
-        tensorial, will be converted to tensorial.
-    controlpoints : :class:`np.ndarray` or any array-like
-        Numpy array or any array-like that can be converted to Numpy array
-        representing the controlpoints. Upon conversion, self.controlpoints
-        must satisfy self.controlpoints.shape[0] == self.knotvector.ndofs.
-        Is rounded to the current precision as set by `splico.util.GlobalPrecision`
-        and then frozen.
-        self.controlpoints.shape[1:] can be anything and then simply represents
-        a vectorial / tensorial set of splines all with the same knotvector.
+  Parameters
+  ----------
+  knotvector : :class:`splico.spl.kv.TensorKnotVector` or
+               :class:`splico.spl.kv.UnivariateKnotVector`
+      The (tensorial) knotvector associated with the spline. If not yet
+      tensorial, will be converted to tensorial.
+  controlpoints : :class:`np.ndarray` or any array-like
+      Numpy array or any array-like that can be converted to Numpy array
+      representing the controlpoints. Upon conversion, self.controlpoints
+      must satisfy self.controlpoints.shape[0] == self.knotvector.ndofs.
+      Is rounded to the current precision as set by `splico.util.GlobalPrecision`
+      and then frozen.
+      self.controlpoints.shape[1:] can be anything and then simply represents
+      a vectorial / tensorial set of splines all with the same knotvector.
 
-    Attributes
-    ----------
-    knotvector: :class:`splico.spl.kv.TensorKnotVector`
-        The knotvector.
-    controlpoints: :class:`np.ndarray`
-        The controlpoints.
+  Attributes
+  ----------
+  knotvector: :class:`splico.spl.kv.TensorKnotVector`
+      The knotvector.
+  controlpoints: :class:`np.ndarray`
+      The controlpoints.
   """
 
   _items = 'knotvector', 'controlpoints'
@@ -95,8 +96,8 @@ class NDSpline(HashMixin, NDArrayOperatorsMixin):
   @classmethod
   def one(cls, knotvector):
     """
-      Constant one function. Helpful when a function of one variable
-      has to be made a function of the other variables as well.
+    Constant one function. Helpful when a function of one variable
+    has to be made a function of the other variables as well.
     """
     return cls(as_TensorKnotVector(knotvector), np.ones(knotvector.ndofs))
 
@@ -104,8 +105,8 @@ class NDSpline(HashMixin, NDArrayOperatorsMixin):
   def from_exact_interpolation(cls, verts: Sequence | np.ndarray,
                                      data: Sequence | np.ndarray, **scipyargs):
     """
-      Classmethod for creating a an exact interpolation of a verts, data pair
-      using scipy. It is then wrapped as a NDSpline.
+    Classmethod for creating a an exact interpolation of a verts, data pair
+    using scipy. It is then wrapped as a NDSpline.
     """
 
     # XXX: parameters
@@ -125,7 +126,7 @@ class NDSpline(HashMixin, NDArrayOperatorsMixin):
   @staticmethod
   def from_least_squares(knotvector: KnotVectorType, *args, **kwargs):
     """
-      Docstring: see `splico.spl.kv.TensorKnotVector.fit`.
+    Docstring: see `splico.spl.kv.TensorKnotVector.fit`.
     """
     # convert to TensorKnotVector if not alreay
     knotvector = as_TensorKnotVector(knotvector)
@@ -162,13 +163,13 @@ class NDSpline(HashMixin, NDArrayOperatorsMixin):
   @property
   def tcontrolpoints(self):
     """
-      Represent the controlpoints tensorially.
-      >>> spline.controlpoints.shape
-      >>> (36, 2, 3)
-      >>> spline.knotvector.dim
-      >>> (3, 3, 4)
-      >>> spline.tcontrolpoints.shape
-      >>> (3, 3, 4, 2, 3)
+    Represent the controlpoints tensorially.
+    >>> spline.controlpoints.shape
+    >>> (36, 2, 3)
+    >>> spline.knotvector.dim
+    >>> (3, 3, 4)
+    >>> spline.tcontrolpoints.shape
+    >>> (3, 3, 4, 2, 3)
     """
     return self.controlpoints.reshape(self.knotvector.dim + self.shape)
 
@@ -176,31 +177,31 @@ class NDSpline(HashMixin, NDArrayOperatorsMixin):
                      tensor: bool = False,
                      dx: Sequence[int] | int | np.int_ | None = None):
     """
-      Evaluate the spline in a set of points.
+    Evaluate the spline in a set of points.
 
-      Parameters
-      ----------
-      positions : :class:`tuple` of :class:`np.ndarray` or any array-like
-          Positional arguments of the x, y, z, ... coordinates all represented
-          by a flat array-like, such as :class:`np.ndarray`.
-          Must satisfy all(len(pos) == len(positions[0]) for pos in positions)
-          and len(positions) == len(self.knotvector)
-      dx : :class:`Sequence[int]` or :class:`int`
-          Derivative order of the evaluation. Must satisfy len(dx) == len(self.knotvector).
-          If given by a :class:`int` it is repeated len(self.knotvector) times.
-      tensor : :class:`bool`
-          If true, the spline is evaluated over a meshgrid of the positions, i.e.,
-          positions is converted to tuple(map(np.ravel, np.meshgrid(*positions))).
+    Parameters
+    ----------
+    positions : :class:`tuple` of :class:`np.ndarray` or any array-like
+        Positional arguments of the x, y, z, ... coordinates all represented
+        by a flat array-like, such as :class:`np.ndarray`.
+        Must satisfy all(len(pos) == len(positions[0]) for pos in positions)
+        and len(positions) == len(self.knotvector)
+    dx : :class:`Sequence[int]` or :class:`int`
+        Derivative order of the evaluation. Must satisfy len(dx) == len(self.knotvector).
+        If given by a :class:`int` it is repeated len(self.knotvector) times.
+    tensor : :class:`bool`
+        If true, the spline is evaluated over a meshgrid of the positions, i.e.,
+        positions is converted to tuple(map(np.ravel, np.meshgrid(*positions))).
 
-      Returns
-      -------
+    Returns
+    -------
 
-      ret : :class:`np.ndarray``
-          The evaluation array. Has shape
-            (len(positions[0]),) + self.controlpoints.shape[1:]
-          if tensor is False and
-            (np.prod([len(po) for pos in positions]),) + self.controlpoints.shape[1:]
-          else.
+    ret : :class:`np.ndarray``
+        The evaluation array. Has shape
+          (len(positions[0]),) + self.controlpoints.shape[1:]
+        if tensor is False and
+          (np.prod([len(po) for pos in positions]),) + self.controlpoints.shape[1:]
+        else.
     """
     if dx is None:
       dx = 0
@@ -229,12 +230,12 @@ class NDSpline(HashMixin, NDArrayOperatorsMixin):
 
   def __getitem__(self, item: int | List[int] | slice | None | Tuple[int | List[int] | slice | None]):
     """
-      Same as np.ndarray.__getitem__ with the difference that the zeroth axis
-      is ignored and the broadcasting etc. is applied to all axes with index > 0.
-      >>> spline.controlpoints.shape
-      >>> (54, 2, 3)
-      >>> spline[_].controlpoints.shape
-      >>> (54, 1, 2, 3)
+    Same as np.ndarray.__getitem__ with the difference that the zeroth axis
+    is ignored and the broadcasting etc. is applied to all axes with index > 0.
+    >>> spline.controlpoints.shape
+    >>> (54, 2, 3)
+    >>> spline[_].controlpoints.shape
+    >>> (54, 1, 2, 3)
     """
     if not isinstance(item, tuple):
       item = item,
@@ -271,18 +272,18 @@ class NDSpline(HashMixin, NDArrayOperatorsMixin):
 
   def sum(self, *args, axis=None):
     """
-      Same as np.sum but applied to the tail of self.controlpoints.
-      >>> type(spl0)
-          splico.spl.spline.NDSpline
-      >>> spl0.shape
-          (2, 3)
-      >>> spl0.controlpoints.shape
-          (54, 2, 3)
-      >>> spl1 = spl0.sum(1)
-      >>> spl1.shape
-          (2,)
-      >>> spl1.controlpoints.shape
-          (54, 2)
+    Same as np.sum but applied to the tail of self.controlpoints.
+    >>> type(spl0)
+        splico.spl.spline.NDSpline
+    >>> spl0.shape
+        (2, 3)
+    >>> spl0.controlpoints.shape
+        (54, 2, 3)
+    >>> spl1 = spl0.sum(1)
+    >>> spl1.shape
+        (2,)
+    >>> spl1.controlpoints.shape
+        (54, 2)
     """
     if args:
       assert axis is None
@@ -308,36 +309,36 @@ class NDSpline(HashMixin, NDArrayOperatorsMixin):
   @property
   def T(self):
     """
-      >>> spl0.shape
-          (2, 3, 4)
-      >>> spl0.controlpoints.shape
-          (54, 2, 3, 4)
-      >>> spl1 = spl0.T
-      >>> spl1.shape
-          (4, 3, 2)
-      >>> spl1.controlpoints.shape
-          (54, 4, 3, 2)
+    >>> spl0.shape
+        (2, 3, 4)
+    >>> spl0.controlpoints.shape
+        (54, 2, 3, 4)
+    >>> spl1 = spl0.T
+    >>> spl1.shape
+        (4, 3, 2)
+    >>> spl1.controlpoints.shape
+        (54, 4, 3, 2)
     """
     return NDSpline(self.knotvector, np.moveaxis(self.controlpoints.T, -1, 0))
 
   def sample_mesh(self, mesh: Mesh):
     """
-      Sample a mesh from `self`.
+    Sample a mesh from `self`.
 
-      Parameters
-      ----------
-      mesh : :class:`splico.mesh.Mesh`
-          The mesh's points serve as the evaluation points to `self` for sampling
-          a mesh from a spline with target space R^3. The connectivity, elements
-          and element types of the sampled mesh follow directly from `mesh`.
-          Must satisfy mesh.ndims == len(self). If mesh.ndims < 3, only the first
-          mesh.ndims columns of mesh.points are utilized for sampling and augmented
-          by zeros to be a manifold in R^3.
+    Parameters
+    ----------
+    mesh : :class:`splico.mesh.Mesh`
+        The mesh's points serve as the evaluation points to `self` for sampling
+        a mesh from a spline with target space R^3. The connectivity, elements
+        and element types of the sampled mesh follow directly from `mesh`.
+        Must satisfy mesh.ndims == len(self). If mesh.ndims < 3, only the first
+        mesh.ndims columns of mesh.points are utilized for sampling and augmented
+        by zeros to be a manifold in R^3.
 
-      Returns
-      -------
-      sampled_mesh: :class:`splico.mesh.Mesh`
-          The sampled mesh. Has the same type as `mesh`.
+    Returns
+    -------
+    sampled_mesh: :class:`splico.mesh.Mesh`
+        The sampled mesh. Has the same type as `mesh`.
     """
     assert self.shape == (3,), 'Mesh export requires the target space to be R^3.'
     assert self.nvars == mesh.ndims <= 3
@@ -348,8 +349,8 @@ class NDSpline(HashMixin, NDArrayOperatorsMixin):
 
   def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
     """
-      All other numpy methods are implemented using the `__array_ufunc__`
-      protocol in combination with a for loop for now.
+    All other numpy methods are implemented using the `__array_ufunc__`
+    protocol in combination with a for loop for now.
     """
     if method != '__call__':
       return NotImplemented
@@ -403,7 +404,7 @@ def _vectorize_numpy_operation(op: Callable, input_arr: np.ndarray, *args: Seque
 
 def as_NDSpline(spln) -> NDSpline:
   """
-    Convert to NDSpline if not already.
+  Convert to NDSpline if not already.
   """
   if isinstance(spln, NDSpline):
     return spln
@@ -421,16 +422,16 @@ def as_NDSpline(spln) -> NDSpline:
 class SplineCollection(np.ndarray):
 
   """
-    Array of splines.
-    Differs from a tensorial instantiation of `NDSpline` in that the knotvectors
-    of the splines may differ.
+  Array of splines.
+  Differs from a tensorial instantiation of `NDSpline` in that the knotvectors
+  of the splines may differ.
 
-    Parameters
-    ----------
-    array_of_splines : Array-like of `NDSpline`s or just a single `NDSpline`.
-        Input array-like containing `NDSpline`s.
+  Parameters
+  ----------
+  array_of_splines : Array-like of `NDSpline`s or just a single `NDSpline`.
+      Input array-like containing `NDSpline`s.
 
-    NOTE THAT THIS CLASS IS AN EXPERIMENTAL FEATURE STILL.
+  NOTE THAT THIS CLASS IS AN EXPERIMENTAL FEATURE STILL.
   """
 
   # XXX: potentially make this an indirect ndarray subclass using the __array_ufunc__ protocol

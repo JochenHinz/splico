@@ -1,7 +1,8 @@
 from .control import make_unit_disc
 from .mul import multipatch
 from splico.spl import UnivariateKnotVector, NDSpline
-from splico.util import np, frozen, NanVec
+from splico.util import np, frozen
+from splico.types import NanVec
 
 from functools import lru_cache
 
@@ -25,7 +26,6 @@ def trampoline_template(inner_height: float = .5, inner_width: float = .5):
     |  2-----4  |
     | /   B   \ |
     0 - - - - - 6
-
   """
   assert 0 < inner_height < 1
   assert 0 < inner_width < 1
