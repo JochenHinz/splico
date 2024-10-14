@@ -1,5 +1,5 @@
-from splico.mesh import unitsquare
-from splico.mesh._jit import _make_matching, mesh_boundary_union
+from splico.mesh import rectilinear, mesh_boundary_union
+from splico.mesh._bool import _make_matching
 
 import unittest
 
@@ -10,8 +10,8 @@ class TestUnivariateKnotVector(unittest.TestCase):
 
   def test_boundary_union(self):
     xi = np.linspace(0, 1, 11)
-    mesh0 = unitsquare([np.linspace(0, .5, 11), xi, xi])
-    mesh1 = unitsquare([np.linspace(.5, 1, 11), xi, xi])
+    mesh0 = rectilinear([np.linspace(0, .5, 11), xi, xi])
+    mesh1 = rectilinear([np.linspace(.5, 1, 11), xi, xi])
 
     points0 = mesh0.boundary.drop_points_and_renumber().points.copy()
     points1 = mesh1.boundary.drop_points_and_renumber().points.copy()
@@ -22,6 +22,7 @@ class TestUnivariateKnotVector(unittest.TestCase):
     self.assertEqual(len(matching), 121)
 
     mesh = mesh_boundary_union(mesh0, mesh1)
+    mesh.plot()
 
     # XXX: test to make sure the boundary union gives the correct result
 
