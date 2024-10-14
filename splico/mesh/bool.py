@@ -4,9 +4,9 @@ This module's purpose is performing various boolean operations on meshes.
 
 
 from ..util import np
-from .aux import HasNoSubMeshError
-from ._bool import make_numba_indexmap, _remap_elements, \
-                   _match_active, renumber_elements_from_indexmap as renumber_elements
+from ..err import HasNoSubMeshError
+from ._bool import make_numba_indexmap, _remap_elements, _match_active, \
+                   renumber_elements_from_indexmap as renumber_elements
 
 from functools import lru_cache
 from itertools import product

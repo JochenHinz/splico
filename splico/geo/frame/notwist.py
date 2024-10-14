@@ -79,13 +79,13 @@ def compute_notwistframe(tangents: np.ndarray,
   if n0 is None:
     n0 = np.array([-tangents[0, 2], 0, tangents[0, 0]])
 
-  assert n0.shape == (3,)
+  assert (n0 := np.asarray(n0)).shape == (3,)
 
   return _compute_notwistframe(tangents, n0, zero_thresh)
 
 
 def compute_notwistframe_from_spline(spline: NDSpline,
-                                     abscissae: np.ndarray | Sequence[float ] | int,
+                                     abscissae: np.ndarray | Sequence[float] | int,
                                      refit=False,
                                      framekwargs=None,
                                      refitkwargs=None) -> np.ndarray | NDSpline:
@@ -126,7 +126,10 @@ def compute_notwistframe_from_spline(spline: NDSpline,
   (a, *ignore, b), = spline.knotvector.knots
 
   if np.isscalar(abscissae):
+    assert isinstance(abscissae, (int, np.int_))
     abscissae = np.linspace(a, b, abscissae)
+
+  abscissae = np.asarray(abscissae, dtype=float)
 
   assert a <= abscissae.min() < abscissae.max() <= b
   assert isincreasing(abscissae)

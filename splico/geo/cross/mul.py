@@ -1,7 +1,9 @@
+from splico.util import np as numpy
+
 import itertools
+from typing import List, Any
 
 import treelog as log
-import numpy
 from nutils import numeric, transform, transformseq, _util as util, topology
 
 
@@ -176,7 +178,7 @@ def multipatch(patches, nelems, patchverts=None, space: str = 'X'):
     shape = []
     for dim in range(ndims):
       nelems_sides = []
-      sides = [(0, 1)]*ndims
+      sides: List[Any] = [(0, 1)]*ndims
       sides[dim] = slice(None),
       for side in itertools.product(*sides):
         sideverts = frozenset(patch[side])

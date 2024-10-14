@@ -5,6 +5,8 @@ Module containing various JIT-compiled helper routines for use in `bool.py`
 
 from ..util import np
 
+from typing import Any
+
 from numba import njit, prange
 
 
@@ -51,7 +53,7 @@ def array_to_tupleN(nelems: int):
   funcstr = """def func(arr): return ({})""".\
             format(', '.join(map('arr[{}]'.format, range(nelems))) + ',')
 
-  local_namespace = {}
+  local_namespace: dict[Any, Any] = {}
   # Execute the code in the given namespace
   exec(funcstr, globals(), local_namespace)
 

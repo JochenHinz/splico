@@ -8,7 +8,7 @@
 from ..util import np, _, frozen, _round_array, round_result, \
                    isincreasing, flat_meshgrid, freeze, frozen_cached_property, \
                    augment_by_zeros
-from ..types import HashMixin
+from ..types import HashMixin, FloatArray, IntArray
 from ..err import MissingVertexError, HasNoSubMeshError, HasNoBoundaryError, \
                   EmptyMeshError
 from ._refine import refine_structured, _refine_Triangulation
@@ -22,8 +22,6 @@ from itertools import product
 
 import pyvista as pv
 import vtk
-import treelog as log
-from numpy.typing import NDArray
 
 
 # all supported element types (for now)
@@ -38,10 +36,6 @@ simplex_types = ('point', 'line', 'triangle',
 
 # XXX: In the long run move away from a Class-level attribute structure to
 #      a factory pattern structure.
-
-
-IntArray = NDArray[np.int_]
-FloatArray = NDArray[np.float_]
 
 
 class Mesh(HashMixin):
@@ -100,6 +94,26 @@ class Mesh(HashMixin):
   is_affine: bool
 
   _items = 'elements', 'points'
+
+  @staticmethod
+  def _submesh_elements(mesh: 'Mesh') -> IntArray:
+    """
+    Compute the mesh's submesh elements without duplicates.
+    Requres `self._submesh_indices` to be implemented by the class.
+    """
+    # XXX: jit-compile the element map
+
+    elements = np.concatenate([ mesh.elements[:, list(slce)] for slce in mesh._submesh_indices ])
+
+    # iterate over all elements and map the sorted element indices to the element.
+    sorted_elements: Dict[Tuple[np.int_], List[Tuple[np.int_, ...]]] = {}
+    for elem in map(tuple, elements):
+      sorted_elements.setdefault(tuple(sorted(elem)), []).append(elem)
+
+    # for each list of equivalent elements (differing only by a permutation)
+    # retain the minimum one. Example [(2, 3, 1), (1, 2, 3)] -> (1, 2, 3)
+    elements = sorted(map(min, sorted_elements.values()))
+    return frozen(elements)
 
   def __init__(self, elements: IntArray | Sequence[Sequence[int]], points: FloatArray):
     assert hasattr(self, 'simplex_type') and hasattr(self, 'nverts') and hasattr(self, 'nref'), \
@@ -264,32 +278,13 @@ class Mesh(HashMixin):
     """
     raise HasNoSubMeshError(f"A mesh of type '{self.__class__.__name__}' has no submesh.")
 
-  def _submesh(self) -> IntArray:
-    """
-    Take the mesh's submesh, if applicable.
-    Requres `self._submesh_indices` to be implemented by the class.
-    """
-    # XXX: jit-compile the element map
-
-    elements = np.concatenate([ self.elements[:, list(slce)] for slce in self._submesh_indices ])
-
-    # iterate over all elements and map the sorted element indices to the element.
-    sorted_elements: Dict[Tuple[np.int_], List[Tuple[np.int_, ...]]] = {}
-    for elem in map(tuple, elements):
-      sorted_elements.setdefault(tuple(sorted(elem)), []).append(elem)
-
-    # for each list of equivalent elements (differing only by a permutation)
-    # retain the minimum one. Example [(2, 3, 1), (1, 2, 3)] -> (1, 2, 3)
-    elements = sorted(map(min, sorted_elements.values()))
-    return frozen(elements)
-
   @property
   def _submesh_type(self):
     raise HasNoSubMeshError(f"A mesh of type '{self.__class__.__name__}' has no submesh.")
 
   @cached_property
   def submesh(self):
-    return self._submesh_type(self._submesh(), self.points)
+    return self._submesh_type(self._submesh_elements(self), self.points)
 
   @cached_property
   def _boundary_nonboundary_elements(self) -> Tuple[IntArray, IntArray]:
@@ -392,6 +387,7 @@ class Mesh(HashMixin):
                   'line': vtk.VTK_LINE,
                   'triangle': vtk.VTK_TRIANGLE,
                   'quadrilateral': vtk.VTK_QUAD,
+                  'tetrahedron': vtk.VTK_TETRA,
                   'hexahedron': vtk.VTK_HEXAHEDRON }.get(self.simplex_type, None)
     if cell_type is None:
       raise NotImplementedError(f"Plotting cells of type {self.simplex_type} "
@@ -569,6 +565,7 @@ class Triangulation(AffineMesh):
   @classmethod
   def from_polygon(cls, *args, **kwargs):
     """ See the docstring of `triangulation_from_polygon.` """
+    from ._gmsh import triangulation_from_polygon
     return cls(*triangulation_from_polygon(*args, **kwargs))
 
   @cached_property
@@ -586,57 +583,6 @@ class Triangulation(AffineMesh):
   def _refine(self):
     """ See `_refine_Triangulation`. """
     return _refine_Triangulation(self)
-
-
-def triangulation_from_polygon(points: FloatArray, mesh_size: float | int | Callable = 0.05):
-  """
-  Create :class:`Triangulation` mesh from ordered set of boundary
-  points.
-
-  Parameters
-  ----------
-  points : Array-like of shape (npoints, 2)
-      boundary points ordered in counter-clockwise direction.
-      The first point need not be repeated.
-  mesh_size : :class:`float` or :class:`int` or Callable
-      Numeric value determining the density of cells.
-      Smaller values => denser mesh.
-      Can alternatively be a function of the form
-      mesh_size = lambda dim, tag, x, y, z, _: target mesh size as a
-      function of x and y.
-
-      For instance,
-
-      >>> mesh_size = lambda ... : 1-0.5*np.exp(-20*((x-.5)**2+(y-.5)**2))
-
-      creates a denser mesh close to the point (x, y) = (.5, .5).
-
-  Returns
-  -------
-  elements : :class:`np.ndarray[int, 3]`
-      The mesh's element indices.
-  points : :class:`np.ndarray[float, 3]`
-      The mesh's points.
-  """
-  try:
-    import pygmsh
-  except ModuleNotFoundError as ex:
-    log.warning("The pygmsh library has not been found. "
-                "Please install it via 'pip install pygmsh'.")
-    raise ModuleNotFoundError from ex
-
-  if np.isscalar((_mesh_size := mesh_size)):
-    mesh_size = lambda *args, **kwargs: _mesh_size
-
-  points = np.asarray(points)
-  assert points.shape[1:] == (2,)
-
-  with pygmsh.geo.Geometry() as geom:
-    geom.add_polygon(points)
-    geom.set_mesh_size_callback(mesh_size)
-    mesh = geom.generate_mesh(algorithm=5)
-
-  return mesh.cells_dict['triangle'][:, [0, 2, 1]], mesh.points
 
 
 # XXX: TetMesh. Leave as an exercise for Fabio.

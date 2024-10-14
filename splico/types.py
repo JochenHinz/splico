@@ -11,9 +11,14 @@ from .err import UnequalLengthError
 from functools import wraps
 from collections import ChainMap
 from collections.abc import Hashable
-from typing import Any, Self, Tuple
+from typing import Any, Self, Tuple, List
 
 import treelog as log
+from numpy.typing import NDArray
+
+
+IntArray = NDArray[np.int_]
+FloatArray = NDArray[np.float_]
 
 
 def ensure_same_class(fn):
@@ -131,7 +136,7 @@ class HashMixin(Hashable):
 
   @property
   def tobytes(self) -> Tuple[Hashable, ...]:
-    ret = []
+    ret: List[Hashable | serialized_array] = []
     for i, attr in enumerate(map(self.__getattribute__, self._items)):
       if isinstance(attr, np.ndarray):
 
@@ -166,7 +171,7 @@ class HashMixin(Hashable):
       self._hash = hash(self.tobytes)
     return self._hash
 
-  def __eq__(self, other: Self) -> bool:
+  def __eq__(self, other: Any) -> bool:
     """
     Default implementation of __eq__ for comparison between same types.
     The behavior when ``other.__class__ is not self.__class__``, see

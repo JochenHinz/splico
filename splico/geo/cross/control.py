@@ -1,5 +1,6 @@
+from splico.util import np
+
 from nutils import function, solver
-import numpy as np
 import treelog as log
 
 
