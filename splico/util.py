@@ -30,7 +30,7 @@ GLOBAL_PRECISION = 12
 BAR_LENGTH = 100
 
 
-def _round_array(arr: np.ndarray, precision: Optional[int] = None) -> np.ndarray:
+def _round_array(arr: np.ndarray | Sequence[Any], precision: Optional[Any] = None) -> np.ndarray:
   """
   Round an array to ``precision`` which defaults to ``GLOBAL_PRECISION``
   if not passed.

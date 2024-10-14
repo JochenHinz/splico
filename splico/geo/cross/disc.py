@@ -246,3 +246,9 @@ class CrossSectionMaker:
 
     ret = np.stack([ np.concatenate([pnts, np.zeros((len(pnts), 1), dtype=float)], axis=1) for pnts in solution ], axis=1)
     return NDSpline(self.tknotvector, ret)
+
+
+@lru_cache(maxsize=32)
+def ellipse(a, b, nelems, degree=3, reparam=True):
+  maker = CrossSectionMaker(nelems, degree=degree, reparam=reparam)
+  return maker.make_disc(a, b)

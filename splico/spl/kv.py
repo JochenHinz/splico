@@ -4,28 +4,31 @@ and :class:`TensorKnotVector`. The latter is a vectorized version of the former.
 """
 
 from ..util import _round_array, isincreasing, np, _, \
-                   frozen_cached_property, gauss_quadrature, frozen
+                   frozen_cached_property, gauss_quadrature
 from ..types import HashMixin, ensure_same_class, ensure_same_length
 from ..err import EmptyContainerError
 from ._jit_spl import _call1D, nonzero_bsplines_deriv_vectorized
+from .aux import freeze_csr, sparse_kron
 
 from itertools import starmap
-from functools import partial, lru_cache, reduce, wraps
-from typing import List, Sequence, Self, Any, Optional
+from functools import partial, lru_cache
+from typing import List, Sequence, Self, Any, Optional, Tuple, Dict
 import operator
 
 from scipy import sparse
 from scipy.sparse import linalg as splinalg
+from numpy.typing import NDArray
 
 
 Int = np.int_ | int
 Float = np.float_ | float
 Numeric = Int | Float
+AnySequence = Sequence | Tuple | NDArray
 
 
-# XXX: I would like to use total_ordering but it is slightly out of place here
-#      because two knotvectors can simultaneously satisfy a < b is False and
-#      b < a is False.
+# XXX: I would like to use functools.total_ordering but it is slightly out of
+#      place here because two knotvectors can simultaneously satisfy a < b is
+#      False and b < a is False.
 class UnivariateKnotVector(HashMixin):
   """
   Basic knot-vector object
@@ -34,9 +37,9 @@ class UnivariateKnotVector(HashMixin):
 
   _items = 'knotvalues', 'degree', 'knotmultiplicities'
 
-  def __init__(self, knotvalues: Sequence[Numeric],
+  def __init__(self, knotvalues: AnySequence,
                      degree: Int = 3,
-                     knotmultiplicities: Optional[Sequence[Int]] = None):
+                     knotmultiplicities: Optional[AnySequence] = None):
     knotvalues = _round_array(knotvalues)
     assert isincreasing(knotvalues), 'The knot sequence needs to be strictly increasing.'
 
@@ -64,11 +67,11 @@ class UnivariateKnotVector(HashMixin):
     return f"{self.__class__.__name__}[degree: {self.degree}, nknots: {len(self.knots)}]"
 
   @frozen_cached_property
-  def knots(self) -> np.ndarray[np.float_, 1]:
+  def knots(self) -> NDArray[np.float_]:
     return np.asarray(self.knotvalues, dtype=float)
 
   @frozen_cached_property
-  def km(self) -> np.ndarray[np.int_, 1]:
+  def km(self) -> NDArray[np.int_]:
     return np.asarray(self.knotmultiplicities, dtype=int)
 
   @frozen_cached_property
@@ -89,7 +92,7 @@ class UnivariateKnotVector(HashMixin):
     return np.sum(self.knotmultiplicities[:-1])
 
   @frozen_cached_property
-  def repeated_knots(self) -> np.ndarray[np.float_, 1]:
+  def repeated_knots(self) -> NDArray[np.float_]:
     """ Repeat knots by their knotmultiplicity. """
     return np.repeat(self.knots, self.knotmultiplicities)
 
@@ -150,8 +153,8 @@ class UnivariateKnotVector(HashMixin):
     nknots = len(self.knots)
     knots = np.insert(self.knots, range(1, nknots), (self.knots[:-1] + self.knots[1:])/2.0)
     knotmultiplicities = np.insert(self.knotmultiplicities, range(1, nknots), [1]*(nknots-1))
-    return UnivariateKnotVector(knots, degree=self.degree,
-                                       knotmultiplicities=knotmultiplicities)
+    return self.__class__(knots, degree=self.degree,
+                                 knotmultiplicities=knotmultiplicities)
 
   def refine(self, n=1) -> Self:
     """ Uniformly refine the entire knotvector ``n`` times. """
@@ -160,17 +163,17 @@ class UnivariateKnotVector(HashMixin):
       return self
     return self._refine().refine(n-1)
 
-  def ref_by(self, indices: Int | Sequence[Int]) -> Self:
+  def ref_by(self, indices: Numeric | Sequence[Any] | Tuple[Any] | np.ndarray) -> Self:
     """ Halve elements contained in ``indices``. """
     if np.isscalar(indices):
       indices = indices,
     indices = np.asarray(indices, dtype=int)
     add = (self.knots[indices + 1] + self.knots[indices]) / 2.0
-    return UnivariateKnotVector(knotvalues=np.insert(self.knots, indices+1, add),
-                                degree=self.degree,
-                                knotmultiplicities=np.insert(self.km, indices+1, 1))
+    return self.__class__(knotvalues=np.insert(self.knots, indices+1, add),
+                          degree=self.degree,
+                          knotmultiplicities=np.insert(self.km, indices+1, 1))
 
-  def add_knots(self, knotvalues: Numeric | Sequence[Numeric]) -> Self:
+  def add_knots(self, knotvalues: Numeric | AnySequence) -> Self:
     """
     Add new knots to the knotvector. Adding knots beyond the knotvector's
     limits is currently prohibited.
@@ -188,12 +191,12 @@ class UnivariateKnotVector(HashMixin):
       return self
 
     map_kv_km = dict(zip(self.knotvalues, self.knotmultiplicities, strict=True))
-    new_km = [map_kv_km.get(val, None) or 1 for val in new_knots]
-    return UnivariateKnotVector(new_knots, degree=self.degree,
-                                           knotmultiplicities=new_km)
+    new_km = [map_kv_km.get(val) or 1 for val in new_knots]
+    return self.__class__(new_knots, degree=self.degree,
+                                     knotmultiplicities=new_km)
 
-  def raise_multiplicities(self, indices: Int | Sequence[Int],
-                                 amounts: Int | Sequence[Int]) -> Self:
+  def raise_multiplicities(self, indices: Int | AnySequence,
+                                 amounts: Int | AnySequence) -> Self:
     """
     Raise the knotmulitplicities corresponding to ``indices`` by ``amount``.
     """
@@ -262,7 +265,7 @@ class UnivariateKnotVector(HashMixin):
     all_knots = np.concatenate([self.knots, other.knots])
     all_kms = np.concatenate([self.km, other.km])
 
-    map_knots_km = {}
+    map_knots_km: Dict[np.float_, List[Int]] = {}
     for val, km in zip(all_knots, all_kms):
       map_knots_km.setdefault(val, []).append(km)
     map_knots_km = {key: max(val) for key, val in map_knots_km.items()}
@@ -294,23 +297,6 @@ class UnivariateKnotVector(HashMixin):
 
   def __ge__(self, other):
     return self == other or self > other
-
-
-def freeze_csr(fn):
-  """
-  Decorator for freezing a :class:`sparse.csr_matrix` before it is returned
-  to avoid accidental overwrites, for instance when returning from cached functions.
-
-  If a mutable instance of the matrix is desired, the matrix has to be copied.
-  """
-  @wraps(fn)
-  def wrapper(*args, **kwargs):
-    ret = fn(*args, **kwargs)
-    assert isinstance(ret, sparse.csr_matrix)
-    for item in map(lambda x: getattr(ret, x), ('data', 'indices', 'indptr')):
-      frozen(item)  # convert the array to read-only to avoid accidental overwrites
-    return ret
-  return wrapper
 
 
 @lru_cache(maxsize=32)
@@ -353,14 +339,6 @@ def as_UnivariateKnotVector(kv: UnivariateKnotVector | Any) -> UnivariateKnotVec
   return UnivariateKnotVector(*kv)
 
 
-def sparse_kron(*_mats: Sequence[sparse.spmatrix | np.ndarray]) -> sparse.csr_matrix:
-  assert len(_mats) >= 1
-  mats: List[sparse.spmatrix] = list(map(sparse.csr_matrix, _mats))
-  if len(mats) == 1:
-    return mats[0]
-  return reduce(lambda x, y: sparse.kron(x, y, format='csr'), mats)
-
-
 class TensorKnotVector(HashMixin):
 
   # XXX: Maybe indirectly subclass np.ndarray via the __array_ufunc__ protocol.
@@ -384,6 +362,7 @@ class TensorKnotVector(HashMixin):
 
   # XXX: We may want to find a prettier solution for the following
 
+  @staticmethod
   def _vectorize_with_indices(name: str):
     """
     Vectorize an operation and apply it to each :class:`UnivariateKnotVector`
@@ -437,6 +416,7 @@ class TensorKnotVector(HashMixin):
 
     return wrapper
 
+  @staticmethod
   def _vectorize_operator(name: str, return_type=None):
     """
     Vectorize an operator operation. For instance __and__.
@@ -462,6 +442,7 @@ class TensorKnotVector(HashMixin):
       return rt([op(kv0, kv1) for kv0, kv1 in zip(self, other)])
     return wrapper
 
+  @staticmethod
   def _prop_wrapper(name: str, return_type=tuple):
     """
     Vectorize a (cached) property. Optionally takes a return container-type
@@ -515,7 +496,7 @@ class TensorKnotVector(HashMixin):
   def __len__(self):
     return self.ndim
 
-  def collocate(self, *list_of_abscissae: np.ndarray, dx: int | np.int_ | Sequence[int] | None = None):
+  def collocate(self, *list_of_abscissae, dx: Int | Sequence[Int] | None = None):
     """
     Tensor-product version of ``UnivariateKnotVector.collocate``.
     """

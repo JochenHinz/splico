@@ -4,8 +4,9 @@ from ._jit_spl import call, tensor_call
 from ..mesh.mesh import Mesh
 from .kv import UnivariateKnotVector, TensorKnotVector, as_TensorKnotVector, \
                 KnotVectorType
+from .aux import tensorial_prolongation_matrix
 
-from typing import List, Sequence, Callable, Tuple, Any
+from typing import List, Sequence, Callable, Tuple, Any, Self
 from types import GenericAlias
 from functools import reduce
 
@@ -172,6 +173,13 @@ class NDSpline(HashMixin, NDArrayOperatorsMixin):
     >>> (3, 3, 4, 2, 3)
     """
     return self.controlpoints.reshape(self.knotvector.dim + self.shape)
+
+  def prolong_to(self, knotvector_to: TensorKnotVector) -> Self:
+    T = tensorial_prolongation_matrix(self.knotvector, knotvector_to)
+    n, m = T.shape
+    controlpoints = T @ self.controlpoints.reshape(m, -1)
+    return self._edit(knotvector=knotvector_to,
+                      controlpoints=controlpoints.reshape((n,) + self.shape))
 
   def __call__(self, *positions: np.ndarray,
                      tensor: bool = False,
@@ -393,7 +401,10 @@ class NDSpline(HashMixin, NDArrayOperatorsMixin):
 
     # XXX: remove for loop and replace by dedicated vectorized routines.
     #      Using Numba is another option.
-    controlpoints = _vectorize_numpy_operation(func, spl.controlpoints, *notmyclass, **kwargs)
+    controlpoints = _vectorize_numpy_operation(func,
+                                               spl.controlpoints,
+                                               *notmyclass,
+                                               **kwargs)
 
     return NDSpline(self.knotvector, controlpoints)
 

@@ -2,6 +2,7 @@ from splico.util import _
 from splico.spl import UnivariateKnotVector, TensorKnotVector
 from splico.spl import NDSpline, SplineCollection
 from splico.mesh import rectilinear
+from splico.geo import ellipse
 
 import unittest
 
@@ -35,36 +36,6 @@ class TestNDSpline(unittest.TestCase):
 
     test = spline(xi, xi)
     self.assertTrue(test.shape == (len(xi), 4, 3))
-
-
-class TestFitSample(unittest.TestCase):
-
-  def test_fit_spline2D(self):
-    kv = UnivariateKnotVector(np.linspace(0, 1, 11))
-    kv = kv * kv
-    abscissae = np.linspace(0, 1, 21)
-    x, y = map(np.ravel, np.meshgrid(abscissae, abscissae))
-    z = np.zeros_like(x)
-    spline = kv.fit([abscissae] * 2, np.stack([x, 1 + x + y, z], axis=1))
-    mesh = rectilinear((21, 21))
-    sampled_mesh = spline.sample_mesh( mesh )
-    self.assertTrue( (np.abs(sampled_mesh.points[:, :2] - np.stack([x, 1 + x + y], axis=1)) < 1e-2).all() )
-
-  def test_fit_spline3D(self):
-    kv = UnivariateKnotVector(np.linspace(0, 1, 11))
-    kv = kv * kv * kv
-    abscissae = np.linspace(0, 1, 21)
-    x, y, z = map(np.ravel, np.meshgrid(abscissae, abscissae, abscissae))
-    spline = kv.fit([abscissae] * 3, np.stack([x, 1 + x + y, z], axis=1))
-    mesh = rectilinear((21, 21, 21))
-    sampled_mesh = spline.sample_mesh( mesh )
-    self.assertTrue( (np.abs(sampled_mesh.points - np.stack([x, 1 + x + y, z], axis=1)) < 1e-2).all() )
-
-  def test_sample_mesh(self):
-    pass
-
-
-class TestNDSPlineArithmetic(unittest.TestCase):
 
   def test_add(self):
     kv0, kv1 = [UnivariateKnotVector(np.linspace(0, 1, n)) for n in (5, 7)]
@@ -100,6 +71,41 @@ class TestNDSPlineArithmetic(unittest.TestCase):
 
     offset = np.random.randn(3, 2, 4)
     self.assertTrue( np.allclose((spl0 * offset).controlpoints, spl0.controlpoints * offset[_]) )
+
+  def test_prolong(self):
+    disc = ellipse(1, 1, 4)
+    kv = disc.knotvector.refine(...)
+    disc_r = disc.prolong_to(kv)
+    sample_mesh = rectilinear([np.linspace(0, 1, 11)]*2)
+
+    self.assertTrue(np.allclose(disc[0].tensorcall(*kv.knots),
+                                disc_r[0].tensorcall(*kv.knots)))
+
+    disc_r[0].sample_mesh(sample_mesh).plot()
+
+
+class TestFitSample(unittest.TestCase):
+
+  def test_fit_spline2D(self):
+    kv = UnivariateKnotVector(np.linspace(0, 1, 11))
+    kv = kv * kv
+    abscissae = np.linspace(0, 1, 21)
+    x, y = map(np.ravel, np.meshgrid(abscissae, abscissae))
+    z = np.zeros_like(x)
+    spline = kv.fit([abscissae] * 2, np.stack([x, 1 + x + y, z], axis=1))
+    mesh = rectilinear((21, 21))
+    sampled_mesh = spline.sample_mesh( mesh )
+    self.assertTrue( (np.abs(sampled_mesh.points[:, :2] - np.stack([x, 1 + x + y], axis=1)) < 1e-2).all() )
+
+  def test_fit_spline3D(self):
+    kv = UnivariateKnotVector(np.linspace(0, 1, 11))
+    kv = kv * kv * kv
+    abscissae = np.linspace(0, 1, 21)
+    x, y, z = map(np.ravel, np.meshgrid(abscissae, abscissae, abscissae))
+    spline = kv.fit([abscissae] * 3, np.stack([x, 1 + x + y, z], axis=1))
+    mesh = rectilinear((21, 21, 21))
+    sampled_mesh = spline.sample_mesh( mesh )
+    self.assertTrue( (np.abs(sampled_mesh.points - np.stack([x, 1 + x + y, z], axis=1)) < 1e-2).all() )
 
 
 class TestSplineCollection(unittest.TestCase):
