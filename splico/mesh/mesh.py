@@ -561,10 +561,12 @@ class HexMesh(BilinearMixin, Mesh):
                                [1, 3, 5, 7],
                                [2, 3, 6, 7], ]))
 
-  @cached_property
+ # why chached property and the return is not frozen
+  @frozen_cached_property
   def pvelements(self):
     return self.elements[:, [0, 4, 6, 2, 1, 5, 7, 3]]
 
+  #why not cached?
   @property
   def _submesh_type(self):
     return QuadMesh
@@ -604,11 +606,12 @@ class QuadMesh(BilinearMixin, Mesh):
     x = np.linspace(0, 1, order)
     return np.stack(list(map(np.ravel, np.meshgrid(x, x))), axis=1)
 
+  #why here the submesh is cached?
   @cached_property
   def submesh(self):
     return LineMesh(self._submesh(), self.points)
 
-  @cached_property
+  @frozen_cached_property
   def pvelements(self):
     return self.elements[:, [0, 2, 3, 1]]
 

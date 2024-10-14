@@ -104,12 +104,14 @@ def aspect_ratio(mesh: Mesh) -> Tuple[np.ndarray[np.float_, 1], 3]:
           not face diagonals or body diagonals.
       
    """      
+   import ipdb
+   ipdb.set_trace()
   
    # Check for the mesh validity
    assert mesh.is_valid(), "mesh is not valid"
 
    element_points = mesh.points[mesh.elements]
-
+   
    # Calculate pairwise distances for all elements
    distances = linalg.norm(element_points[:, :, _] - element_points[:, _, :], axis=-1)
    
@@ -132,3 +134,53 @@ def aspect_ratio(mesh: Mesh) -> Tuple[np.ndarray[np.float_, 1], 3]:
    stats = np.stack(( np.mean(aspect_ratios), np.max(aspect_ratios), np.min(aspect_ratios)), axis = -1) 
 
    return (stats)
+
+
+def skewness_metric(mesh: Mesh) -> Tuple[np.ndarray[np.float_, 1],3]:
+   
+   assert mesh.is_valid, "mesh is not valid"
+   
+   theta_opt = 0
+   if mesh.simplex_type in ['triangle','tetrahedron']:
+      theta_opt = np.pi/3
+   elif mesh.simplex_type in ['quadrilateral', 'hexahedron']:
+      theta_opt = np.pi/2 
+   
+   element_points = mesh.points[mesh.elements]
+
+   # Calculate pairwise distances for all elements
+   lines = element_points[:, :, _] - element_points[:, _, :]
+   
+   import ipdb
+   ipdb.set_trace()
+   
+   
+   # skewness = []  
+  
+   # # non-vectorized version
+   # for i in range(Mesh.elements.shape[0]):
+   #    angles = []
+   #    for k in range(Mesh.elements.shape[1]):
+   #       for j in range(Mesh.elements.shape[1]):
+   #       if j != k :
+   #          projection = np.dot(Mesh.points[Mesh.elements[i, k]], Mesh.points[Mesh.elements[i, j]])
+   #          angles.append(np.arccos(projection))
+      
+   #    max_angle_element, min_angle_element = arg_max_min(angles)
+      
+   #    skewness_elem = [(max_angle_element - np.pi/3)/ (np.pi - np.pi/3), (np.pi/3 - min_angle_element)/(np.pi/3)]
+   #    index_skew = np.argmax(skewness_elem)
+
+   #    skewness.append(skewness_elem[index_skew])
+   
+   # max_skewness, min_skewness = arg_max_min(skewness)
+   
+   # mean_skewness = frozen(np.mean(skewness))   
+   # max_skewness = frozen(max_skewness)      
+   # min_skewness = frozen(min_skewness)
+   
+   # # return as tuple, better the stats are immutable
+   # stats = (mean_skewness, max_skewness, min_skewness)
+
+      
+   return stats
