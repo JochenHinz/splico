@@ -93,8 +93,6 @@ class Mesh(Immutable):
   # A piecewise affine mesh has a constant metric tensor on each element.
   is_affine: bool
 
-  _items = 'elements', 'points'
-
   @staticmethod
   def _submesh_elements(mesh: 'Mesh') -> IntArray:
     """

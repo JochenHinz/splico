@@ -11,7 +11,10 @@ from .err import UnequalLengthError
 from functools import wraps
 from collections import ChainMap
 from collections.abc import Hashable
-from typing import Any, Self, Tuple, List
+from abc import ABCMeta
+from typing import Any, Self, Tuple, List, Dict
+from weakref import WeakValueDictionary
+import inspect
 
 import treelog as log
 from numpy.typing import NDArray
@@ -76,13 +79,82 @@ def ensure_same_length(fn):
   return wrapper
 
 
-class Immutable(Hashable):
+def remove_self(signature: inspect.Signature):
+  """
+  Remove the ``self`` argument from a bound method signature.
+  """
+  assert list(signature.parameters.keys())[0] == 'self'
+  params = [item for i, item in enumerate(signature.parameters.values()) if i]
+  return inspect.Signature(params)
+
+
+class ImmutableMeta(ABCMeta):
+  """
+  Metaclass for immutable types. For use in the :class:`Immutable` base class.
+  If a class does not implement the ``_items`` class-level attribute, it is
+  inferred from the ``__init__``'s signature. The signature cannot be inferred
+  if it contains ``*args`` or ``**kwargs``. If ``_items`` is not implemented
+  or cannot be inferred, the base class prevents instantiation.
+
+  Example
+  -------
+
+  >>> class MyClass(metaclass=ImmutableMeta):
+        def __init__(self, a:float, b: float):
+          self.a = float(a)
+          self.b = float(b)
+
+  >>> MyClass._items
+      ('a', 'b')
+
+  Similarly
+
+  >>> class MyClass(metaclass=ImmutableMeta):
+        def __init__(self, *args, **kwargs):
+          pass
+
+  >>> MyClass._items
+      ERROR
+  """
+
+  def __new__(mcls, *args, **kwargs):
+    cls = super().__new__(mcls, *args, **kwargs)
+    init_sig = remove_self(inspect.signature(cls.__init__))
+    # we set the signature of the class manually because inspect cannot infer
+    # it from `__call__`.
+    cls.__signature__ = init_sig
+    # _items has not been implemented as a class-level attribute -> try to infer it
+    # if it can't be inferred and isn't implemented, an error is thrown upon
+    # trying to instantiate the class.
+    if not hasattr(cls, '_items'):
+      if not any( param.kind in (inspect.Parameter.VAR_POSITIONAL,
+                                 inspect.Parameter.VAR_KEYWORD)
+                            for param in init_sig.parameters.values() ):
+        _items = tuple(init_sig.parameters.keys())
+        cls._items = _items
+    return cls
+
+  def __call__(cls, *args, **kwargs):
+    # make sure that if _items is not implemented or inferred, the class is not
+    # instantiated.
+    if not hasattr(cls, '_items'):
+      raise TypeError('Cannot instantiate a class that does not implement `_items`.')
+    ret = cls.__new__(cls, *args, **kwargs)
+    if isinstance(ret, cls):
+      ret.__init__(*args, **kwargs)
+    return ret
+
+
+class Immutable(metaclass=ImmutableMeta):
   """
   Generic Mixin for immutable types.
   Has the ``_items`` class attribute.
   The ``_items`` attribute is a tuple of strings where each string represents
   the name of a class attribute (typically set in ``__init__``) that contributes
-  to the class's hash.
+  to the class's hash. If the class does not explicitly implement `_items`,
+  it is inferred from the `__init__`'s signature.' So if a class stores the
+  inputs it gets as attributes of the same name, it is possible to skip the
+  implementation of `_items`.
   Each element in ``_items`` needs to refer to a hashable type with the exception
   of :class:`np.ndarray` which is serialized using ``serialize_array``.
 
@@ -105,7 +177,14 @@ class Immutable(Hashable):
 
   >>> class MyClass(Immutable):
         _items = 'a', 'b'
-        def __init__(a: np.ndarray, b: Tuple[int, ...]):
+        def __init__(self, a: np.ndarray, b: Tuple[int, ...]):
+          self.a = frozen(a, dtype=float)
+          self.b = tuple(map(int, b))
+
+  Or with signature inference:
+
+  >>> class MyClass(Immutable):
+        def __init__(self, a: np.ndarray, b: Tuple[int, ...]):
           self.a = frozen(a, dtype=float)
           self.b = tuple(map(int, b))
 
@@ -141,16 +220,17 @@ class Immutable(Hashable):
       if isinstance(attr, np.ndarray):
 
         if attr.flags.writeable is True:
-          log.warning(f"Warning, attempting to hash the attribute `{self._items[i]}`"
-                      " which is a writeable `np.ndarray`."
-                       "Ensure that all `np.ndarray` attributes are non-writeable"
-                       " using `util.frozen` or `util.freeze`.")
+          log.warning("Warning, attempting to hash the attribute "
+                      f"`{self._items[i]}` which is a writeable `np.ndarray`."
+                      "Ensure that all `np.ndarray` attributes are non-writeable"
+                      " using `util.frozen` or `util.freeze`.")
 
         ret.append(serialize_array(attr))
       elif isinstance(attr, Hashable):
         ret.append(attr)
       else:
-        raise AssertionError(f"Attribute of type '{str(type(attr))}' cannot be hashed.")
+        raise AssertionError(f"Attribute of type '{str(type(attr))}'"
+                             " cannot be hashed.")
     return tuple(ret)
 
   def __getstate__(self):
@@ -174,8 +254,6 @@ class Immutable(Hashable):
   def __eq__(self, other: Any) -> bool:
     """
     Default implementation of __eq__ for comparison between same types.
-    The behavior when ``other.__class__ is not self.__class__``, see
-    `ensure_same_class`.
     """
     if self.__class__ is not other.__class__:
       return NotImplemented
@@ -184,6 +262,59 @@ class Immutable(Hashable):
     for item0, item1 in zip(self.tobytes, other.tobytes):
       if item0 != item1: return False
     return True
+
+
+class SingletonMeta(ImmutableMeta):
+  """
+  Singleton meta class.
+  The same as :type:`ImmutableMeta` but adds a weakref cache to the class
+  for memorizing class instances. Each inherited class receives its own
+  unique cache.
+  """
+
+  def __new__(mcls, *args, **kwargs):
+    assert not hasattr(mcls, '_cache')
+    ret = super().__new__(mcls, *args, **kwargs)
+    ret._cache = WeakValueDictionary()
+    return ret
+
+  def canonicalize_args(cls, *args: Hashable, **kwargs: Dict[str, Hashable]):
+    """
+    Bring input arguments along with defaults (if applicable)
+    into one canonical form suitable for hashing. Avoids duplicates resulting
+    from instantiating via positional or keyword arguments.
+    """
+    signature = cls.__signature__
+    bound = signature.bind(*args, **kwargs)
+    bound.apply_defaults()
+    return bound.args, tuple(bound.kwargs.items())
+
+
+class Singleton(Immutable, metaclass=SingletonMeta):
+  """
+  Singleton base class.
+  For each set of inputs only one instance can exist at a time.
+  Each instance may only take hashable arguments (for now) in order to be
+  eligible for hashing.
+
+  >>> class MySingleton(Singleton):
+        def __init__(self, a: float, b: float):
+          self.a = float(a)
+          self.b = float(b)
+
+  >>> A = MySingleton(5, 3)
+  >>> B = MySingleton(a=5.0, b=3.0)  # integer floats are equivalent to ints as keys
+  >>> A is B
+      True
+  """
+
+  def __new__(cls, *args, **kwargs):
+    _args = cls.canonicalize_args(*args, **kwargs)
+    try:
+      ret = cls._cache[_args]
+    except KeyError:
+      ret = cls._cache[_args] = super().__new__(cls)
+    return ret
 
 
 class NanVec(np.ndarray):

@@ -35,8 +35,6 @@ class UnivariateKnotVector(Immutable):
   """
   # XXX: support for periodic knotvectors
 
-  _items = 'knotvalues', 'degree', 'knotmultiplicities'
-
   def __init__(self, knotvalues: AnySequence,
                      degree: Int = 3,
                      knotmultiplicities: Optional[AnySequence] = None):
@@ -345,8 +343,6 @@ class TensorKnotVector(Immutable):
   # XXX: In the long run, UnivariateKnotVector, TensorKnotVector should be
   #      replaced by a more general NDKnotVector class.
   # XXX: docstring
-
-  _items = 'knotvectors',
 
   def __init__(self, knotvectors: Sequence[UnivariateKnotVector]):
     self.knotvectors = tuple(map(as_UnivariateKnotVector, knotvectors))

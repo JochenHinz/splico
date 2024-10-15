@@ -92,8 +92,6 @@ class NDSpline(Immutable, NDArrayOperatorsMixin):
       The controlpoints.
   """
 
-  _items = 'knotvector', 'controlpoints'
-
   @classmethod
   def one(cls, knotvector):
     """
