@@ -124,7 +124,7 @@ def _refine_Triangulation(mesh):
         i1                             i1
         / \                            / \
        /   \                          /   \
-      /     \         becomes      i10 ---- i21
+      /     \         becomes      i01 ---- i12
      /       \                      / \   /  \
     /         \                    /   \ /    \
   i0 --------- i2                i0 -- i02 --- i2
@@ -138,20 +138,21 @@ def _refine_Triangulation(mesh):
 
   points = mesh.points
   maxindex = len(points)
-  slices = np.array([[0, 2], [2, 1], [1, 0]])
+  # [0, 1], [0, 2], [1, 2]
+  slices = list(mesh._submesh_indices)
   all_edges = list(set(map(abs_tuple, np.concatenate(mesh.elements[:, slices]))))
   newpoints = points[np.array(all_edges)].sum(1) / 2
   map_edge_number = dict(zip(all_edges, count(maxindex)))
 
   triangles = []
   for tri in mesh.elements:
-    i02, i21, i10 = [map_edge_number[edge] for edge in map(abs_tuple, tri[slices])]
+    i01, i02, i12 = [map_edge_number[edge] for edge in map(abs_tuple, tri[slices])]
     i0, i1, i2 = tri
     triangles.extend([
-        [i0, i02, i10],
-        [i02, i2, i21],
-        [i02, i21, i10],
-        [i10, i21, i1]
+        [i0, i01, i02],
+        [i01, i1, i12],
+        [i02, i01, i12],
+        [i02, i12, i2]
     ])
 
   elements = np.array(triangles, dtype=int)

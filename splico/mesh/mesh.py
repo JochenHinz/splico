@@ -8,7 +8,7 @@
 from ..util import np, _, frozen, _round_array, round_result, \
                    isincreasing, flat_meshgrid, freeze, frozen_cached_property, \
                    augment_by_zeros
-from ..types import HashMixin, FloatArray, IntArray
+from ..types import Immutable, FloatArray, IntArray
 from ..err import MissingVertexError, HasNoSubMeshError, HasNoBoundaryError, \
                   EmptyMeshError
 from ._refine import refine_structured, _refine_Triangulation
@@ -38,7 +38,7 @@ simplex_types = ('point', 'line', 'triangle',
 #      a factory pattern structure.
 
 
-class Mesh(HashMixin):
+class Mesh(Immutable):
   """
   Abstract Base Class for representing various mesh types.
 

@@ -5,7 +5,7 @@ and :class:`TensorKnotVector`. The latter is a vectorized version of the former.
 
 from ..util import _round_array, isincreasing, np, _, \
                    frozen_cached_property, gauss_quadrature
-from ..types import HashMixin, ensure_same_class, ensure_same_length
+from ..types import Immutable, ensure_same_class, ensure_same_length
 from ..err import EmptyContainerError
 from ._jit_spl import _call1D, nonzero_bsplines_deriv_vectorized
 from .aux import freeze_csr, sparse_kron
@@ -29,7 +29,7 @@ AnySequence = Sequence | Tuple | NDArray
 # XXX: I would like to use functools.total_ordering but it is slightly out of
 #      place here because two knotvectors can simultaneously satisfy a < b is
 #      False and b < a is False.
-class UnivariateKnotVector(HashMixin):
+class UnivariateKnotVector(Immutable):
   """
   Basic knot-vector object
   """
@@ -339,7 +339,7 @@ def as_UnivariateKnotVector(kv: UnivariateKnotVector | Any) -> UnivariateKnotVec
   return UnivariateKnotVector(*kv)
 
 
-class TensorKnotVector(HashMixin):
+class TensorKnotVector(Immutable):
 
   # XXX: Maybe indirectly subclass np.ndarray via the __array_ufunc__ protocol.
   # XXX: In the long run, UnivariateKnotVector, TensorKnotVector should be

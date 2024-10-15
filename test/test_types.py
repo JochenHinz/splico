@@ -1,9 +1,9 @@
-from splico.types import HashMixin, ensure_same_class
+from splico.types import Immutable, ensure_same_class
 
 import unittest
 
 
-class A(HashMixin):
+class A(Immutable):
   _items = 'a',
 
   def __init__(self, a):
@@ -14,7 +14,7 @@ class A(HashMixin):
     return self.a <= other.a
 
 
-class B(HashMixin):
+class B(Immutable):
   _items = 'a',
 
   def __init__(self, a):

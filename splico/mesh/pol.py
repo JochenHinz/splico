@@ -14,6 +14,9 @@ sl = slice(_)
 # generalizable to N dimensions. In the long run, we would like to support
 # meshes of higher dimensionality, hence the custom implementation.
 
+# XXX: In the long run, nD polynomial evaluation should be based on Horner's
+#      method, see https://en.wikipedia.org/wiki/Horner%27s_method.
+
 
 def _nd_pol_derivative(weights: np.ndarray, dx: Sequence[int] | np.ndarray) -> np.ndarray:
   """

@@ -76,17 +76,17 @@ def ensure_same_length(fn):
   return wrapper
 
 
-class HashMixin(Hashable):
+class Immutable(Hashable):
   """
-  Generic Mixin for hashability.
-  Requires each derived class to implement the ``_items`` class attribute.
+  Generic Mixin for immutable types.
+  Has the ``_items`` class attribute.
   The ``_items`` attribute is a tuple of strings where each string represents
   the name of a class attribute (typically set in ``__init__``) that contributes
   to the class's hash.
   Each element in ``_items`` needs to refer to a hashable type with the exception
   of :class:`np.ndarray` which is serialized using ``serialize_array``.
 
-  The Mixin then implements the ``__hash__`` and the ``__eq__`` dunder methods
+  The class then implements the ``__hash__`` and the ``__eq__`` dunder methods
   in the obvious way. For this, the ``__hash__` and ``__eq__`` dunder methods
   make use of the ``tobytes`` cached property which serializes all relevant
   attributes and returns them as a tuple.
@@ -103,7 +103,7 @@ class HashMixin(Hashable):
   the exception of :class:`np.ndarray`s which need to be frozen using
   ``frozen`` or ``freeze``.
 
-  >>> class MyClass(HashMixin):
+  >>> class MyClass(Immutable):
         _items = 'a', 'b'
         def __init__(a: np.ndarray, b: Tuple[int, ...]):
           self.a = frozen(a, dtype=float)
@@ -179,6 +179,8 @@ class HashMixin(Hashable):
     """
     if self.__class__ is not other.__class__:
       return NotImplemented
+    if self is other:
+      return True
     for item0, item1 in zip(self.tobytes, other.tobytes):
       if item0 != item1: return False
     return True

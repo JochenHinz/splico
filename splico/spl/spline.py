@@ -1,5 +1,5 @@
 from ..util import _round_array, np, frozen, augment_by_zeros
-from ..types import HashMixin
+from ..types import Immutable
 from ._jit_spl import call, tensor_call
 from ..mesh.mesh import Mesh
 from .kv import UnivariateKnotVector, TensorKnotVector, as_TensorKnotVector, \
@@ -64,7 +64,7 @@ class __NDSpline_implementations__:
     return NDSpline(knotvector, cps)
 
 
-class NDSpline(HashMixin, NDArrayOperatorsMixin):
+class NDSpline(Immutable, NDArrayOperatorsMixin):
 
   """
   Class representing an N-dimensional spline.
