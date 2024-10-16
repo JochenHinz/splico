@@ -4,6 +4,7 @@ from splico.spl import NDSpline, SplineCollection
 from splico.mesh import rectilinear
 from splico.geo import ellipse
 
+import operator
 import unittest
 
 import numpy as np
@@ -36,6 +37,28 @@ class TestNDSpline(unittest.TestCase):
 
     test = spline(xi, xi)
     self.assertTrue(test.shape == (len(xi), 4, 3))
+
+  def test_arithmetic(self):
+    uknotvector = UnivariateKnotVector(np.linspace(0, 1, 21), 3)
+    knotvector = uknotvector * uknotvector
+
+    ndatapoints = 11
+    xi = np.linspace(0, 1, ndatapoints)
+    data = (xi[:, _, _, _] + .2 * np.random.randn(*(ndatapoints,)*2, 4, 3)).reshape(-1, 4, 3)
+    spline = knotvector.fit([xi, xi], data, lam0=1e-6)
+
+    for op in (operator.add, operator.mul, operator.truediv, operator.sub):
+      # adding number doesn't change shape
+      self.assertEqual(op(spline, 5).shape, spline.shape)
+
+      # adding array that is shorter but not scalar should not change the shape
+      self.assertEqual(op(spline, np.random.randn(1, 3)).shape, spline.shape)
+
+      # adding array of shape spline.shape doesn't change array
+      self.assertEqual(op(spline, np.random.randn(4, 3)).shape, spline.shape)
+
+      # adding bigger array changes shape
+      self.assertEqual(op(spline, np.random.randn(3, 4, 3)).shape, (3,) + spline.shape)
 
   def test_add(self):
     kv0, kv1 = [UnivariateKnotVector(np.linspace(0, 1, n)) for n in (5, 7)]
@@ -81,7 +104,14 @@ class TestNDSpline(unittest.TestCase):
     self.assertTrue(np.allclose(disc[0].tensorcall(*kv.knots),
                                 disc_r[0].tensorcall(*kv.knots)))
 
+    disc_r = disc.refine(...)
+
+    self.assertTrue(np.allclose(disc[0].tensorcall(*kv.knots),
+                                disc_r[0].tensorcall(*kv.knots)))
+
     disc_r[0].sample_mesh(sample_mesh).plot()
+
+    self.assertTrue(all(np.allclose(kn0, kn1) for kn0, kn1 in zip(disc_r.knots, kv.knots)))
 
 
 class TestFitSample(unittest.TestCase):

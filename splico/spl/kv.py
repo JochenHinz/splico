@@ -5,14 +5,15 @@ and :class:`TensorKnotVector`. The latter is a vectorized version of the former.
 
 from ..util import _round_array, isincreasing, np, _, \
                    frozen_cached_property, gauss_quadrature
-from ..types import Immutable, ensure_same_class, ensure_same_length
+from ..types import Immutable, ensure_same_class, ensure_same_length, Int, \
+                    Numeric
 from ..err import EmptyContainerError
 from ._jit_spl import _call1D, nonzero_bsplines_deriv_vectorized
 from .aux import freeze_csr, sparse_kron
 
 from itertools import starmap
 from functools import partial, lru_cache
-from typing import List, Sequence, Self, Any, Optional, Tuple, Dict
+from typing import List, Sequence, Self, Any, Optional, Tuple, Dict, cast
 import operator
 
 from scipy import sparse
@@ -20,9 +21,6 @@ from scipy.sparse import linalg as splinalg
 from numpy.typing import NDArray
 
 
-Int = np.int_ | int
-Float = np.float_ | float
-Numeric = Int | Float
 AnySequence = Sequence | Tuple | NDArray
 
 
@@ -46,6 +44,7 @@ class UnivariateKnotVector(Immutable):
     assert len(self.knotvalues) >= 2
 
     self.degree = int(degree)
+    assert self.degree > 0
 
     if knotmultiplicities is None:
       start = self.degree + 1
@@ -150,11 +149,11 @@ class UnivariateKnotVector(Immutable):
     """ Uniformly refine the entire knotvector once. """
     nknots = len(self.knots)
     knots = np.insert(self.knots, range(1, nknots), (self.knots[:-1] + self.knots[1:])/2.0)
-    knotmultiplicities = np.insert(self.knotmultiplicities, range(1, nknots), [1]*(nknots-1))
+    knotmultiplicities = np.insert(self.knotmultiplicities, range(1, nknots), 1)
     return self.__class__(knots, degree=self.degree,
                                  knotmultiplicities=knotmultiplicities)
 
-  def refine(self, n=1) -> Self:
+  def refine(self, n: int = 1) -> Self:
     """ Uniformly refine the entire knotvector ``n`` times. """
     assert (n := int(n)) >= 0
     if n == 0:
@@ -266,7 +265,10 @@ class UnivariateKnotVector(Immutable):
     map_knots_km: Dict[np.float_, List[Int]] = {}
     for val, km in zip(all_knots, all_kms):
       map_knots_km.setdefault(val, []).append(km)
-    map_knots_km = {key: max(val) for key, val in map_knots_km.items()}
+
+    # mypy still complains after recasting type ... nothing I can do.
+    map_knots_km = cast(Dict[np.float_, Int],
+                        {key: max(val) for key, val in map_knots_km.items()})
 
     knots = np.unique(all_knots)
     knotmultiplicities = np.array([map_knots_km[val] for val in knots], dtype=int)
@@ -287,7 +289,7 @@ class UnivariateKnotVector(Immutable):
     return (self.km + dp <= other.km[np.searchsorted(other.knots, self.knots)]).all()
 
   @ensure_same_class
-  def __gt__(self, other):  # see if one is subset of other
+  def __gt__(self, other):  # see if self contains the basis of other
     return other < self
 
   def __le__(self, other):
@@ -400,6 +402,7 @@ class TensorKnotVector(Immutable):
         indices = indices,
       elif indices is Ellipsis or indices is None:
         indices = range(len(self))
+      indices = list(indices)
       assert all( -len(self) <= i < len(self) for i in indices )
       indices = [ i % len(self) for i in indices ]
       _self = list(self)
@@ -456,7 +459,6 @@ class TensorKnotVector(Immutable):
   knots = _prop_wrapper('knots')
   km = _prop_wrapper('km')
   degree = _prop_wrapper('degree')
-  knotmultiplicities = _prop_wrapper('knotmultiplicities')
   repeated_knots = _prop_wrapper('repeated_knots')
   nelems = _prop_wrapper('nelems')
   dim = _prop_wrapper('dim')

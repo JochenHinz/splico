@@ -13,6 +13,7 @@ from collections import ChainMap
 from collections.abc import Hashable
 from abc import ABCMeta
 from typing import Any, Self, Tuple, List, Dict
+from types import EllipsisType
 from weakref import WeakValueDictionary
 import inspect
 
@@ -22,6 +23,11 @@ from numpy.typing import NDArray
 
 IntArray = NDArray[np.int_]
 FloatArray = NDArray[np.float_]
+Int = int | np.int_
+Float = float | np.float_
+Numeric = Int | Float
+Index = IntArray | int | List[int] | None | EllipsisType
+MultiIndex = Tuple[Index, ...]
 
 
 def ensure_same_class(fn):
@@ -79,12 +85,12 @@ def ensure_same_length(fn):
   return wrapper
 
 
-def remove_self(signature: inspect.Signature):
+def remove_self(signature: inspect.Signature) -> inspect.Signature:
   """
   Remove the ``self`` argument from a bound method signature.
   """
   assert list(signature.parameters.keys())[0] == 'self'
-  params = [item for i, item in enumerate(signature.parameters.values()) if i]
+  params = list(signature.parameters.values())[1:]
   return inspect.Signature(params)
 
 
@@ -320,7 +326,7 @@ class Singleton(Immutable, metaclass=SingletonMeta):
 class NanVec(np.ndarray):
   """
   Vector of dtype float initilized to np.nan.
-  I used to implement Dirichlet boundary conditions.
+  Is used to implement Dirichlet boundary conditions.
   """
 
   @classmethod

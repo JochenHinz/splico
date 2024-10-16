@@ -7,8 +7,8 @@
 
 from ..util import np, _, frozen, _round_array, round_result, \
                    isincreasing, flat_meshgrid, freeze, frozen_cached_property, \
-                   augment_by_zeros
-from ..types import Immutable, FloatArray, IntArray
+                   augment_by_zeros, sorted_tuple
+from ..types import Immutable, FloatArray, IntArray, ensure_same_class, Int
 from ..err import MissingVertexError, HasNoSubMeshError, HasNoBoundaryError, \
                   EmptyMeshError
 from ._refine import refine_structured, _refine_Triangulation
@@ -16,7 +16,7 @@ from .pol import eval_nd_polynomial_local
 from .bool import _issubmesh, mesh_boundary_union, mesh_union, mesh_difference
 
 from abc import abstractmethod
-from typing import Callable, Sequence, Self, Tuple, Dict, List
+from typing import Callable, Sequence, Self, Tuple, Dict, List, Any
 from functools import cached_property
 from itertools import product
 
@@ -101,12 +101,13 @@ class Mesh(Immutable):
     """
     # XXX: jit-compile the element map
 
-    elements = np.concatenate([ mesh.elements[:, list(slce)] for slce in mesh._submesh_indices ])
+    elements = np.concatenate([ mesh.elements[:, list(slce)]
+                                          for slce in mesh._submesh_indices ])
 
     # iterate over all elements and map the sorted element indices to the element.
     sorted_elements: Dict[Tuple[np.int_], List[Tuple[np.int_, ...]]] = {}
     for elem in map(tuple, elements):
-      sorted_elements.setdefault(tuple(sorted(elem)), []).append(elem)
+      sorted_elements.setdefault(sorted_tuple(elem), []).append(elem)
 
     # for each list of equivalent elements (differing only by a permutation)
     # retain the minimum one. Example [(2, 3, 1), (1, 2, 3)] -> (1, 2, 3)
@@ -114,9 +115,10 @@ class Mesh(Immutable):
     return frozen(elements)
 
   def __init__(self, elements: IntArray | Sequence[Sequence[int]], points: FloatArray):
-    assert hasattr(self, 'simplex_type') and hasattr(self, 'nverts') and hasattr(self, 'nref'), \
+    assert all(hasattr(self, item) for item in ('simplex_type', 'nverts', 'nref', 'is_affine')), \
         'Derived classes need to implement their element type and the number of' \
-        ' vertices per element as well as the number of refinement elements.'
+        ' vertices per element as well as the number of refinement elements' \
+        ' and whether they are affine or not.'
 
     self.elements = frozen(elements, dtype=int)
 
@@ -326,24 +328,25 @@ class Mesh(Immutable):
     """
     raise NotImplementedError
 
-  def __sub__(self, other: Self) -> Self:
+  @ensure_same_class
+  def __sub__(self, other: Any) -> Self:
     """
-    Subtract `other` from `self` creating a new (usually smaller) mesh.
+    Subtract ``other`` from ``self`` creating a new (usually smaller) mesh.
     """
     # XXX: avoid for loops using numpy
-    assert other.__class__ is self.__class__
-    other_elems = set(map(lambda x: tuple(sorted(x)), other.elements))
+    other_elems = set(map(sorted_tuple, other.elements))
 
     keep_elems = []
-    for ielem, elem in enumerate(map(lambda x: tuple(sorted(x)), self.elements)):
-      if elem in other_elems and (self.points[(_elem := list(elem))] == other.points[_elem]).all():
+    for ielem, elem in enumerate(map(sorted_tuple, self.elements)):
+      if elem in other_elems and \
+         (self.points[(_elem := list(elem))] == other.points[_elem]).all():
           continue
       keep_elems.append(ielem)
 
     return self.take(keep_elems)
 
+  @ensure_same_class
   def __or__(self, other):
-    assert self.__class__ is other.__class__
     return mesh_union(self, other)
 
   @cached_property
@@ -655,7 +658,7 @@ def rectilinear(_points: Sequence) -> LineMesh | QuadMesh | HexMesh:
   points = []
   for elem in _points:
 
-    if np.isscalar(elem):
+    if isinstance(elem, Int):
       elem = np.linspace(0, 1, elem)
 
     assert isincreasing((elem := np.asarray(elem, dtype=float)))

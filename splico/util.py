@@ -1,8 +1,5 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 """
-@author: Jochen Hinz
+Various utility functions.
 """
 
 import sys
@@ -25,7 +22,7 @@ import numpy as np
 _ = np.newaxis
 
 
-# the mesh's points are rounded to this number of significant digits
+# points are rounded to this number of significant digits
 GLOBAL_PRECISION = 12
 BAR_LENGTH = 100
 
@@ -265,3 +262,7 @@ def augment_by_zeros(points: np.ndarray, axis_target=3, axis=1):
   zeros_shape = tuple(dim if i != axis else axis_target - n
                       for i, dim in enumerate(points.shape))
   return np.concatenate([points, np.zeros(zeros_shape, dtype=points.dtype)], axis=axis)
+
+
+def sorted_tuple(tpl):
+  return tuple(sorted(tpl))
