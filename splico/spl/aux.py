@@ -1,14 +1,13 @@
 """
 Module providing helper functionality for use in ``kv.py`` and ``spline.py``,
 such as prolonging to a refined knotvector.
-Forthcoming.
 """
 
 from ..util import frozen, np
 
 from itertools import starmap
 from functools import wraps, reduce, lru_cache
-from typing import Sequence, List
+from typing import List
 
 from numba import njit
 from scipy import sparse
@@ -31,7 +30,7 @@ def freeze_csr(fn):
   return wrapper
 
 
-def sparse_kron(*_mats: Sequence[sparse.spmatrix | np.ndarray]) -> sparse.csr_matrix:
+def sparse_kron(*_mats: sparse.spmatrix | np.ndarray) -> sparse.csr_matrix:
   """
   Take the Kronecker product of several sparse matrices.
   """

@@ -12,7 +12,7 @@ from functools import wraps
 from collections import ChainMap
 from collections.abc import Hashable
 from abc import ABCMeta
-from typing import Any, Self, Tuple, List, Dict
+from typing import Any, Self, Tuple, List, Dict, TypeVar, Sequence
 from types import EllipsisType
 from weakref import WeakValueDictionary
 import inspect
@@ -21,13 +21,23 @@ import treelog as log
 from numpy.typing import NDArray
 
 
+T = TypeVar('T')
+
+Int = int | np.integer
+Float = float | np.floating
+Numeric = Int | Float
+
 IntArray = NDArray[np.int_]
 FloatArray = NDArray[np.float_]
-Int = int | np.int_
-Float = float | np.float_
-Numeric = Int | Float
+NumericArray = IntArray | FloatArray
+
 Index = IntArray | int | List[int] | None | EllipsisType
 MultiIndex = Tuple[Index, ...]
+
+AnySequence = Sequence[T] | Tuple[T, ...]
+AnyIntSeq = AnySequence[Int] | IntArray
+AnyFloatSeq = AnySequence[Float] | FloatArray
+AnyNumericSeq = AnySequence[Numeric] | NumericArray
 
 
 def ensure_same_class(fn):
@@ -90,8 +100,7 @@ def remove_self(signature: inspect.Signature) -> inspect.Signature:
   Remove the ``self`` argument from a bound method signature.
   """
   assert list(signature.parameters.keys())[0] == 'self'
-  params = list(signature.parameters.values())[1:]
-  return inspect.Signature(params)
+  return inspect.Signature(list(signature.parameters.values())[1:])
 
 
 class ImmutableMeta(ABCMeta):
@@ -133,11 +142,10 @@ class ImmutableMeta(ABCMeta):
     # if it can't be inferred and isn't implemented, an error is thrown upon
     # trying to instantiate the class.
     if not hasattr(cls, '_items'):
-      if not any( param.kind in (inspect.Parameter.VAR_POSITIONAL,
-                                 inspect.Parameter.VAR_KEYWORD)
-                            for param in init_sig.parameters.values() ):
-        _items = tuple(init_sig.parameters.keys())
-        cls._items = _items
+      # make sure signature doesn't have `*args` or `**kwargs` in it.
+      if not set(map(lambda x: x.kind, init_sig.parameters.values())) & \
+             {inspect.Parameter.VAR_KEYWORD, inspect.Parameter.VAR_POSITIONAL}:
+        cls._items = tuple(init_sig.parameters.keys())
     return cls
 
   def __call__(cls, *args, **kwargs):
@@ -145,10 +153,7 @@ class ImmutableMeta(ABCMeta):
     # instantiated.
     if not hasattr(cls, '_items'):
       raise TypeError('Cannot instantiate a class that does not implement `_items`.')
-    ret = cls.__new__(cls, *args, **kwargs)
-    if isinstance(ret, cls):
-      ret.__init__(*args, **kwargs)
-    return ret
+    return ABCMeta.__call__(cls, *args, **kwargs)
 
 
 class Immutable(metaclass=ImmutableMeta):
@@ -158,7 +163,7 @@ class Immutable(metaclass=ImmutableMeta):
   The ``_items`` attribute is a tuple of strings where each string represents
   the name of a class attribute (typically set in ``__init__``) that contributes
   to the class's hash. If the class does not explicitly implement `_items`,
-  it is inferred from the `__init__`'s signature.' So if a class stores the
+  it is inferred from the `__init__`'s signature.' So, if a class stores the
   inputs it gets as attributes of the same name, it is possible to skip the
   implementation of `_items`.
   Each element in ``_items`` needs to refer to a hashable type with the exception
@@ -193,6 +198,9 @@ class Immutable(metaclass=ImmutableMeta):
         def __init__(self, a: np.ndarray, b: Tuple[int, ...]):
           self.a = frozen(a, dtype=float)
           self.b = tuple(map(int, b))
+
+  >>> MyClass._items
+      ('a', 'b')
 
   >>> A = MyClass( np.linspace(0, 1, 11), (1, 2, 3) )
   >>> hash(A)
@@ -274,8 +282,8 @@ class SingletonMeta(ImmutableMeta):
   """
   Singleton meta class.
   The same as :type:`ImmutableMeta` but adds a weakref cache to the class
-  for memorizing class instances. Each inherited class receives its own
-  unique cache.
+  for memorizing class instances while avoiding memory leaks.
+  Each separate class with this metaclass receives its own unique cache.
   """
 
   def __new__(mcls, *args, **kwargs):

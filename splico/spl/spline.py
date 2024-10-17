@@ -1,5 +1,6 @@
 from ..util import _round_array, np, frozen, augment_by_zeros, _
-from ..types import Immutable, FloatArray, Index, MultiIndex
+from ..types import Immutable, FloatArray, Index, MultiIndex, NumericArray, \
+                    Int, AnyIntSeq, AnyFloatSeq
 from ..mesh.mesh import Mesh
 from ._jit_spl import call, tensor_call
 from .kv import UnivariateKnotVector, TensorKnotVector, as_TensorKnotVector, \
@@ -7,7 +8,7 @@ from .kv import UnivariateKnotVector, TensorKnotVector, as_TensorKnotVector, \
 from .aux import tensorial_prolongation_matrix
 from .meta import NDSplineMeta
 
-from typing import Sequence, Callable, Tuple, Self
+from typing import Sequence, Callable, Tuple, Self, Optional, Any
 from types import GenericAlias
 from functools import reduce
 
@@ -29,11 +30,12 @@ class __NDSpline_implementations__:
   __array_ufunc__ protocol.
   """
 
+  @staticmethod
   def implements(np_function: np.ufunc):
-    def decorator(func):
+    def wrapper(func):
       HANDLED_NDSPLINE_FUNCTIONS[np_function] = func
       return func
-    return decorator
+    return wrapper
 
   @implements(np.add)
   def add(self, other):
@@ -104,8 +106,8 @@ class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
     return cls(as_TensorKnotVector(knotvector), np.ones(knotvector.ndofs))
 
   @classmethod
-  def from_exact_interpolation(cls, verts: Sequence[float] | FloatArray,
-                                     data: Sequence[float] | FloatArray, **scipyargs):
+  def from_exact_interpolation(cls, verts: AnyFloatSeq,
+                                     data: AnyFloatSeq, **scipyargs):
     """
     Classmethod for creating a an exact interpolation of a verts, data pair
     using scipy. It is then wrapped as a NDSpline.
@@ -113,8 +115,8 @@ class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
 
     # XXX: parameters
 
-    verts = np.asarray(verts)
-    data = np.asarray(data)
+    verts = np.asarray(verts, dtype=float)
+    data = np.asarray(data, dtype=float)
 
     assert verts.ndim == data.ndim == 1, NotImplementedError
 
@@ -140,13 +142,13 @@ class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
     assert isinstance(dimension, (int, type(...)))
     return GenericAlias(cls, dimension)
 
-  def __init__(self, knotvector: KnotVectorType, controlpoints: FloatArray | Sequence[float]):
+  def __init__(self, knotvector: KnotVectorType, controlpoints: AnyFloatSeq):
     self.knotvector = as_TensorKnotVector(knotvector)
 
     # for now we only allow tensorial knotvectors of up to length 3
     assert 1 <= len(self.knotvector) <= 3, NotImplementedError
 
-    self.controlpoints = frozen(_round_array(controlpoints))
+    self.controlpoints = frozen(_round_array(controlpoints), dtype=float)
     assert self.controlpoints.shape[0] == self.knotvector.ndofs
 
   def __repr__(self) -> str:
@@ -182,9 +184,9 @@ class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
     return self._edit(knotvector=knotvector_to,
                       controlpoints=controlpoints.reshape((n,) + self.shape))
 
-  def __call__(self, *positions: np.ndarray,
+  def __call__(self, *positions: FloatArray,
                      tensor: bool = False,
-                     dx: Sequence[int | np.int_] | int | np.int_ | None = None):
+                     dx: Int | AnyIntSeq = 0):
     """
     Evaluate the spline in a set of points.
 
@@ -212,10 +214,9 @@ class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
           (np.prod([len(po) for pos in positions]),) + self.controlpoints.shape[1:]
         else.
     """
-    if dx is None:
-      dx = 0
-    if isinstance(dx, (int, np.int_)):
+    if isinstance(dx, Int):
       dx = (dx,) * self.nvars
+    assert len(dx) == self.nvars
 
     positions = tuple(map(np.asarray, positions))
     assert all( len((y := pos.shape)) == 1 for pos in positions )
@@ -410,7 +411,7 @@ class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
     return NDSpline(self.knotvector, controlpoints)
 
 
-def _vectorize_first_axis(op: Callable, controlpoints: np.ndarray, *args: Sequence[np.ndarray], **kwargs):
+def _vectorize_first_axis(op: Callable, controlpoints: np.ndarray, *args: NumericArray, **kwargs):
   """
   Vectorization along the first axis.
   Inputs are broadcast to a form that the operation is performed len(controlpoints)
@@ -424,8 +425,8 @@ def _vectorize_first_axis(op: Callable, controlpoints: np.ndarray, *args: Sequen
   controlpoints = np.broadcast_to(controlpoints, (n,) + output_shape_tail)
 
   # first broadcast to shape (1,) + output_shape_tail, then to (n,) + output_shape_tail
-  args = [np.broadcast_to(np.broadcast_to(arr, output_shape_tail)[_], (n,) + output_shape_tail)
-          for arr in args]
+  args = tuple(np.broadcast_to(np.broadcast_to(arr, output_shape_tail)[_], (n,) + output_shape_tail)
+               for arr in args)
   return op(controlpoints, *args)
 
 

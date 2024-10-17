@@ -3,8 +3,9 @@ Polynomial routines for evaluating the local element maps.
 """
 
 from ..util import np, _
+from ..types import Int, FloatArray, AnyIntSeq
 
-from typing import Sequence
+from typing import Tuple
 from functools import lru_cache
 
 sl = slice(_)
@@ -18,19 +19,19 @@ sl = slice(_)
 #      method, see https://en.wikipedia.org/wiki/Horner%27s_method.
 
 
-def _nd_pol_derivative(weights: np.ndarray, dx: Sequence[int] | np.ndarray) -> np.ndarray:
+def _nd_pol_derivative(weights: FloatArray, dx: AnyIntSeq) -> FloatArray:
   """
-  Given a :class:`np.ndarray` of shape (p, q, r, ..., x, y, z) respresening
-  `(x, y, z)` n-dependency polynomials of order (p, q, r, ...) and a length n
+  Given a :class:`np.ndarray` of shape (p, q, r, ..., x, y, z, ...) respresening
+  `(x, y, z, ...)` n-dependency polynomials of order (p, q, r, ...) and a length n
   array-like `dx` of positive integers representing partial derivative orders,
-  return the polynomial weights of shape (p-dx[0], q-dx[1], r-dx[2], ..., x, y, z)
+  return the polynomial weights of shape (p-dx[0], q-dx[1], r-dx[2], ..., x, y, z, ...)
   representing the derivatives of the input polynomials.
 
   Parameters
   ----------
   weights : :class:`np.ndarray`
       The polynomial weights of len(weights) polynomials, all of the same order.
-  dx : :class:`np.ndarray` or Sequence of integers.
+  dx : :class:`np.ndarray` or Sequence of integers
       The derivative orders. Must be (non-strictly) positive. The first
       len(dx) axes of `weights` are interpreted as polynomial weight axes.
 
@@ -89,7 +90,7 @@ def _compute_basis_weights(mesh):
 
 
 @lru_cache(maxsize=8)
-def _compute_pol_weights(mesh, dx) -> np.ndarray:
+def _compute_pol_weights(mesh, dx: Tuple[Int, ...]) -> FloatArray:
   """
   Polynomial weights of each element's map.
   For `mesh.eval_local`.
@@ -110,7 +111,7 @@ def _compute_pol_weights(mesh, dx) -> np.ndarray:
   return _nd_pol_derivative(ret, dx)
 
 
-def eval_nd_polynomial_local(mesh, points: np.ndarray, dx=None) -> np.ndarray:
+def eval_nd_polynomial_local(mesh, points: FloatArray, dx: Int | AnyIntSeq = 0) -> FloatArray:
   """
   Evaluate `(x, y, z)` n-dependency polynomials or their derivatives in `points`.
 
@@ -139,17 +140,18 @@ def eval_nd_polynomial_local(mesh, points: np.ndarray, dx=None) -> np.ndarray:
   assert mesh.ndims == ndim, "The point array's shape doesn't match the mesh's" \
                              " dimensionality."
 
-  if dx is None:
-    dx = 0
-  if np.isscalar(dx):
-    dx = (dx,) * ndim
+  # we have to convert to new variable to avoid mypy errors ...
+  if isinstance(dx, Int):
+    dx_tpl: Tuple[Int, ...] = (dx,) * ndim
+  else:
+    dx_tpl = tuple(dx)
 
-  assert len(dx) == ndim
+  assert len(dx_tpl) == ndim
 
   # take derivative weights
-  weights = _compute_pol_weights(mesh, tuple(dx))
+  weights = _compute_pol_weights(mesh, dx_tpl)
 
-  shape = weights.shape[:len(dx)]
+  shape = weights.shape[:ndim]
 
   # compute all x, y, z, ... points raised to all powers
   # shape: (mydim, len(points))
@@ -160,12 +162,12 @@ def eval_nd_polynomial_local(mesh, points: np.ndarray, dx=None) -> np.ndarray:
   array_shape = weights.shape + (len(points),)
 
   # broadcast to the following shapes:
-  # suppose weight.shape == (p, q, r, ..., x, y, z), and len(points) == n.
+  # suppose weight.shape == (p, q, r, ..., x, y, z, ...), and len(points) == n.
   # We create arrays of shape (p, 1, 1, ..., 1), (1, q, 1, ..., 1) and
-  # (1, 1, r, 1, .., 1) which are all broadcast to shape (p, q, r, ..., x, y, z, n)
+  # (1, 1, r, 1, .., 1) which are all broadcast to shape (p, q, r, ..., x, y, z, ..., n)
   myshape = lambda j: (_,) * j + (sl,) + (_,) * (len(array_shape) - j - 2) + (sl,)
   reshaped_arrays = [ np.broadcast_to(mypower[myshape(i)], array_shape)
                       for i, mypower in enumerate(powers) ]
 
-  # return the result in shape (x, y, z, n)
+  # return the result in shape (x, y, z, ..., n)
   return (weights[..., _] * np.multiply.reduce(reshaped_arrays)).sum(tuple(range(ndim)))

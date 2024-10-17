@@ -4,15 +4,19 @@
 from .util import np
 
 from typing import Sequence
+from functools import partial
 import math
 
 from numba import njit
 
 
+njit = partial(njit, cache=True)
+
+
 """ itertools-equivalent Numba implementations. """
 
 
-@njit(cache=True)
+@njit
 def _product(arr0: np.ndarray, list_of_linspaces: Sequence[np.ndarray]):
   """
   Given :class:`np.ndarray` `arr0` and :class:`list` of :class:`np.ndarray`s
@@ -41,7 +45,7 @@ def _product(arr0: np.ndarray, list_of_linspaces: Sequence[np.ndarray]):
     arr0 = ret
 
 
-@njit(cache=True)
+@njit
 def product(list_of_arrays):
   """
   Numba equivalent of the ``itertools.product`` iterator with the difference
@@ -61,7 +65,7 @@ def product(list_of_arrays):
   return _product(list_of_arrays[0][:, None], list_of_arrays[1:])
 
 
-@njit(cache=True)
+@njit
 def linspace_product(array_of_steps):
   """
   Convenience function for creating a product of linspaces
@@ -73,7 +77,7 @@ def linspace_product(array_of_steps):
   return product(list_of_arrays)
 
 
-@njit(cache=True)
+@njit
 def arange_product(array_of_integers):
   """
   Convenience function for creating a product of aranges
@@ -90,7 +94,7 @@ Formatting to strings for homogeneous string-based Numba hashing.
 """
 
 
-@njit(cache=True)
+@njit
 def cut_trail(f_str):
   # XXX: docstring
   cut = 0
@@ -113,7 +117,7 @@ def cut_trail(f_str):
   return f_str
 
 
-@njit(cache=True)
+@njit
 def float2str(value):
   # XXX: docstring
   if math.isnan(value):
@@ -149,7 +153,7 @@ def float2str(value):
 """ np.ufunc equivalents """
 
 
-@njit(cache=True)
+@njit
 def mul_reduce(tpl):
   ret = 1
   for fac in tpl:
@@ -157,7 +161,7 @@ def mul_reduce(tpl):
   return ret
 
 
-@njit(cache=True)
+@njit
 def add_reduce(tpl):
   ret = 0
   for item in tpl:
@@ -170,7 +174,7 @@ Various custom implementations of numpy functions not yet supported in Numba
 """
 
 
-@njit(cache=True)
+@njit
 def ravel_multi_index(multi_index, dims):
   flat_index = 0
   stride = 1

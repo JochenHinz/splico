@@ -5,23 +5,20 @@ and :class:`TensorKnotVector`. The latter is a vectorized version of the former.
 
 from ..util import _round_array, isincreasing, np, _, \
                    frozen_cached_property, gauss_quadrature
-from ..types import Immutable, ensure_same_class, ensure_same_length, Int, \
-                    Numeric
+from ..types import Immutable, ensure_same_class, Int, Numeric, AnyIntSeq, \
+                    AnyNumericSeq, FloatArray, IntArray, AnySequence, \
+                    NumericArray
+from .meta import TensorKnotVectorMeta
 from ..err import EmptyContainerError
 from ._jit_spl import _call1D, nonzero_bsplines_deriv_vectorized
 from .aux import freeze_csr, sparse_kron
 
 from itertools import starmap
 from functools import partial, lru_cache
-from typing import List, Sequence, Self, Any, Optional, Tuple, Dict, cast
-import operator
+from typing import List, Sequence, Self, Any, Optional, Dict, cast
 
 from scipy import sparse
 from scipy.sparse import linalg as splinalg
-from numpy.typing import NDArray
-
-
-AnySequence = Sequence | Tuple | NDArray
 
 
 # XXX: I would like to use functools.total_ordering but it is slightly out of
@@ -33,9 +30,9 @@ class UnivariateKnotVector(Immutable):
   """
   # XXX: support for periodic knotvectors
 
-  def __init__(self, knotvalues: AnySequence,
+  def __init__(self, knotvalues: AnyNumericSeq,
                      degree: Int = 3,
-                     knotmultiplicities: Optional[AnySequence] = None):
+                     knotmultiplicities: Optional[AnyIntSeq] = None):
     knotvalues = _round_array(knotvalues)
     assert isincreasing(knotvalues), 'The knot sequence needs to be strictly increasing.'
 
@@ -58,21 +55,21 @@ class UnivariateKnotVector(Immutable):
        self.knotmultiplicities[-1] <= self.degree:
       raise NotImplementedError('Currently, only open knotvectors are supported.')
 
-    assert all(0 < i <= self.degree + 1 for i in self.knotmultiplicities[1:-1])
+    assert (0 < self.km[1:-1]).all() and (self.km[1:-1] <= self.degree + 1).all()
 
-  def __repr__(self):
+  def __repr__(self) -> str:
     return f"{self.__class__.__name__}[degree: {self.degree}, nknots: {len(self.knots)}]"
 
   @frozen_cached_property
-  def knots(self) -> NDArray[np.float_]:
+  def knots(self) -> FloatArray:
     return np.asarray(self.knotvalues, dtype=float)
 
   @frozen_cached_property
-  def km(self) -> NDArray[np.int_]:
+  def km(self) -> IntArray:
     return np.asarray(self.knotmultiplicities, dtype=int)
 
   @frozen_cached_property
-  def greville(self):
+  def greville(self) -> FloatArray:
     """ Compute the Greville points. """
     knots = self.repeated_knots
     return knots[np.arange(self.degree, dtype=int)[_] +
@@ -89,12 +86,12 @@ class UnivariateKnotVector(Immutable):
     return np.sum(self.knotmultiplicities[:-1])
 
   @frozen_cached_property
-  def repeated_knots(self) -> NDArray[np.float_]:
+  def repeated_knots(self) -> FloatArray:
     """ Repeat knots by their knotmultiplicity. """
     return np.repeat(self.knots, self.knotmultiplicities)
 
   @frozen_cached_property
-  def dx(self) -> np.ndarray:
+  def dx(self) -> FloatArray:
     """ Return the distance between distinct knots. """
     return np.diff(self.knots)
 
@@ -115,7 +112,7 @@ class UnivariateKnotVector(Immutable):
 
   __neg__ = flip
 
-  def collocate(self, abscissae: Sequence[int | float] | np.ndarray, dx: int = 0):
+  def collocate(self, abscissae: AnyNumericSeq, dx: Int = 0) -> sparse.csr_matrix:
     """
     Collocation matrix X over the abscissae ``abscissae``.
     Generates a sparse matrix X such that the solution x of the system
@@ -153,16 +150,16 @@ class UnivariateKnotVector(Immutable):
     return self.__class__(knots, degree=self.degree,
                                  knotmultiplicities=knotmultiplicities)
 
-  def refine(self, n: int = 1) -> Self:
+  def refine(self, n: Int = 1) -> Self:
     """ Uniformly refine the entire knotvector ``n`` times. """
     assert (n := int(n)) >= 0
     if n == 0:
       return self
     return self._refine().refine(n-1)
 
-  def ref_by(self, indices: Numeric | Sequence[Any] | Tuple[Any] | np.ndarray) -> Self:
+  def ref_by(self, indices: Int | AnyIntSeq) -> Self:
     """ Halve elements contained in ``indices``. """
-    if np.isscalar(indices):
+    if isinstance(indices, Int):
       indices = indices,
     indices = np.asarray(indices, dtype=int)
     add = (self.knots[indices + 1] + self.knots[indices]) / 2.0
@@ -170,12 +167,12 @@ class UnivariateKnotVector(Immutable):
                           degree=self.degree,
                           knotmultiplicities=np.insert(self.km, indices+1, 1))
 
-  def add_knots(self, knotvalues: Numeric | AnySequence) -> Self:
+  def add_knots(self, knotvalues: Numeric | AnyNumericSeq) -> Self:
     """
     Add new knots to the knotvector. Adding knots beyond the knotvector's
     limits is currently prohibited.
     """
-    if np.isscalar(knotvalues):
+    if isinstance(knotvalues, Numeric):
       knotvalues = knotvalues,
     knotvalues = np.asarray(knotvalues, dtype=float)
 
@@ -192,23 +189,23 @@ class UnivariateKnotVector(Immutable):
     return self.__class__(new_knots, degree=self.degree,
                                      knotmultiplicities=new_km)
 
-  def raise_multiplicities(self, indices: Int | AnySequence,
-                                 amounts: Int | AnySequence) -> Self:
+  def raise_multiplicities(self, indices: Int | AnyIntSeq,
+                                 amounts: Int | AnyIntSeq) -> Self:
     """
     Raise the knotmulitplicities corresponding to ``indices`` by ``amount``.
     """
-    if np.isscalar(indices):
+    if isinstance(indices, Int):
       indices = indices,
     indices = np.asarray(indices, dtype=int)
 
-    if np.isscalar(amounts):
+    if isinstance(amounts, Int):
       amounts = (amounts,) * len(indices)
 
     km = np.asarray(self.knotmultiplicities, dtype=int)
     km[indices] += np.asarray(amounts, dtype=int)
     return self._edit(knotmultiplicities=km)
 
-  def integrate(self, dx=0):
+  def integrate(self, dx: Int = 0):
     """ See ``univariate_integral``. """
     return univariate_integral(self, dx=dx)
 
@@ -301,8 +298,8 @@ class UnivariateKnotVector(Immutable):
 
 @lru_cache(maxsize=32)
 @freeze_csr
-def univariate_integral(uknotvector: UnivariateKnotVector, dx: int = 0) -> sparse.csr_matrix:
-  """
+def univariate_integral(uknotvector: UnivariateKnotVector, dx: Int = 0) -> sparse.csr_matrix:
+  r"""
   Compute the matrix with entries M_ij = \int_(a, b) phi_i^(dx) phi_j^(dx) dx,
   where ``uknotvector.knots == a, *ignore, b``.
 
@@ -317,7 +314,7 @@ def univariate_integral(uknotvector: UnivariateKnotVector, dx: int = 0) -> spars
 
   # XXX: jit-compile with Numba using COO-format instead of lil.
 
-  maxrep = np.asarray(uknotvector.knotmultiplicities, dtype=int)[1:-1].max()
+  maxrep = uknotvector.km[1:-1].max()
   assert uknotvector.degree >= dx and maxrep <= uknotvector.degree + 1 - dx
 
   knots, ext_knots = uknotvector.knots, uknotvector.repeated_knots
@@ -339,14 +336,14 @@ def as_UnivariateKnotVector(kv: UnivariateKnotVector | Any) -> UnivariateKnotVec
   return UnivariateKnotVector(*kv)
 
 
-class TensorKnotVector(Immutable):
+class TensorKnotVector(Immutable, metaclass=TensorKnotVectorMeta):
 
   # XXX: Maybe indirectly subclass np.ndarray via the __array_ufunc__ protocol.
   # XXX: In the long run, UnivariateKnotVector, TensorKnotVector should be
   #      replaced by a more general NDKnotVector class.
   # XXX: docstring
 
-  def __init__(self, knotvectors: Sequence[UnivariateKnotVector]):
+  def __init__(self, knotvectors: AnySequence[UnivariateKnotVector]):
     self.knotvectors = tuple(map(as_UnivariateKnotVector, knotvectors))
     if not self.knotvectors:
       raise EmptyContainerError("Cannot instantiate from empty Sequence.")
@@ -355,153 +352,28 @@ class TensorKnotVector(Immutable):
     """ By default we iterate over ``self.knotvectors``. """
     yield from self.knotvectors
 
-  def __repr__(self):
+  def __repr__(self) -> str:
     return f"{self.__class__.__name__}[degree: {self.degree}, nknots: {tuple(map(len, self.knots))}]"
 
-  # XXX: We may want to find a prettier solution for the following
-
-  @staticmethod
-  def _vectorize_with_indices(name: str):
-    """
-    Vectorize an operation and apply it to each :class:`UnivariateKnotVector`
-    in ``self.knotvectors``.
-
-    Parameters
-    ----------
-    name: :class:`str`
-    The name of the method of :class:`UnivariateKnotVector` that is to
-    be applied to all :class:`UnivariateKnotVector`s in `self`.
-
-    Returns
-    -------
-    func: :class:`Callable`
-        Bound method that is added to the catalogue of functionality.
-
-    The resulting function's syntax is the following:
-    >>> kv
-      UnivariateKnotVector[...]
-    >>> tkv = kv * kv * kv
-    >>> tkv.refine(..., n=[1, 0, 1])
-
-    Here the ``...`` (or None) indicates that the operation should be applied to
-    all :class:`UnivariateKnotVector`s in ``self``, where the i-th knotvector
-    receives input ``n[i]``.
-
-    The return type is always :class:`self.__class__`.
-
-    Similarly, we may pass the indices explicitly, for instance:
-    >>> tkv.refine([0, 2], [1, 1])
-    >>> tkv.refine(..., n=[1, 0, 1]) == tkv.refine([0, 2], [1, 1])
-      True
-
-    Here the knotvector corresponding to the i-th entry in `indices` receives
-    ``n[i]`` as input.
-    """
-    def wrapper(self, indices, *args, **kwargs):
-      if np.isscalar(indices):
-        indices = indices,
-      elif indices is Ellipsis or indices is None:
-        indices = range(len(self))
-      indices = list(indices)
-      assert all( -len(self) <= i < len(self) for i in indices )
-      indices = [ i % len(self) for i in indices ]
-      _self = list(self)
-      assert all( len(a) == len(indices) for a in args ) and \
-             all( len(val) == len(indices) for val in kwargs.values() )
-      for j, i in enumerate(indices):
-        _self[i] = getattr(_self[i], name)(*(a[j] for a in args),
-                                           **{k: v[j] for k, v in kwargs.items()})
-      return self.__class__(_self)
-
-    return wrapper
-
-  @staticmethod
-  def _vectorize_operator(name: str, return_type=None):
-    """
-    Vectorize an operator operation. For instance __and__.
-    >>> kv0
-      UnivariateKnotVector[...]
-    >>> kv1
-      UnivariateKnotVector[...]
-    >>> kv2 = kv0 & kv1
-    >>> tkv0 = TensorKnotVector([kv0] * 3)
-    >>> tkv1 = TensorKnotVector([kv1] * 3)
-    >>> (tkv0 & tkv1) == TensorKnotVector([kv2] * 3)
-        True
-
-    We may optionally pass a return type that differs from ``None``
-    in which case the return type defaults to ``self.__class__``.
-    """
-    op = getattr(operator, name)
-
-    @ensure_same_length
-    @ensure_same_class
-    def wrapper(self, other):
-      rt = return_type or self.__class__
-      return rt([op(kv0, kv1) for kv0, kv1 in zip(self, other)])
-    return wrapper
-
-  @staticmethod
-  def _prop_wrapper(name: str, return_type=tuple):
-    """
-    Vectorize a (cached) property. Optionally takes a return container-type
-    argument which the properties are iterated into.
-    For instance, :class:`list` or :class:`tuple`. Defaults to :class:`tuple`.
-    """
-    @property
-    def wrapper(self):
-      return return_type([getattr(e, name) for e in self])
-    return wrapper
-
-  # vectorized operations
-
-  dx = _prop_wrapper('dx')
-  knots = _prop_wrapper('knots')
-  km = _prop_wrapper('km')
-  degree = _prop_wrapper('degree')
-  repeated_knots = _prop_wrapper('repeated_knots')
-  nelems = _prop_wrapper('nelems')
-  dim = _prop_wrapper('dim')
-  greville = _prop_wrapper('greville')
-
-  flip = _vectorize_with_indices('flip')
-  refine = _vectorize_with_indices('refine')
-  ref_by = _vectorize_with_indices('ref_by')
-  add_knots = _vectorize_with_indices('add_knots')
-  raise_multiplicities = _vectorize_with_indices('raise_multiplicities')
-
-  __and__ = _vectorize_operator('__and__')
-  __or__ = _vectorize_operator('__or__')
-
-  # all pairs have to pass operation to be true
-  __lt__ = _vectorize_operator('__lt__', all)
-  __gt__ = _vectorize_operator('__gt__', all)
-  __le__ = _vectorize_operator('__le__', all)
-  __ge__ = _vectorize_operator('__le__', all)
-
-  ###
-
   @property
-  def ndim(self):
+  def ndim(self) -> int:
     """ Number of knotvectors. """
     return len(self.knotvectors)
 
   @property
-  def ndofs(self):
+  def ndofs(self) -> np.int_:
     """ Total number of DOFs. """
     return np.prod(self.dim)
 
-  def __len__(self):
+  def __len__(self) -> int:
     return self.ndim
 
-  def collocate(self, *list_of_abscissae, dx: Int | Sequence[Int] | None = None):
+  def collocate(self, *list_of_abscissae, dx: Int | AnyIntSeq = 0) -> sparse.csr_matrix:
     """
     Tensor-product version of ``UnivariateKnotVector.collocate``.
     """
-    if isinstance(dx, (int, np.int_)):
-      dx = (int(dx),) * len(self)
-    if dx is None:
-      dx = (0,) * len(self)
+    if isinstance(dx, Int):
+      dx = (dx,) * len(self)
     assert len( (dx := tuple(dx)) ) == len(list_of_abscissae) == len(self)
     mats = [ kv.collocate(absc, dx=_dx)
                       for kv, absc, _dx, in zip(self, list_of_abscissae, dx) ]
@@ -519,10 +391,10 @@ class TensorKnotVector(Immutable):
     return sum( sparse_kron(*(kv.integrate(dx=i) for kv, i in zip(self, row)))
                 for row in (2 * np.eye(len(self))).astype(int) )
 
-  def fit(self, list_of_abscissae: Sequence[np.ndarray | Sequence[int | float]],
-                data: Sequence | np.ndarray,
-                lam0: float | int = 1e-5,
-                lam1: float | int = 0                                           ):
+  def fit(self, list_of_abscissae: Sequence[AnyNumericSeq],
+                data: NumericArray,
+                lam0: Numeric = 1e-5,
+                lam1: Numeric = 0                         ):
     """
     Fit a spline to a set of points and vertices in the least squares sense
     with (optional) added regularisation using ``self`` as knotvector.
@@ -562,7 +434,7 @@ class TensorKnotVector(Immutable):
     """
 
     list_of_abscissae = list(map(np.asarray, list_of_abscissae))
-    data = np.asarray(data)
+    data = np.asarray(data, dtype=float)
 
     assert data.shape[:1] == (np.multiply.reduce(list(map(len, list_of_abscissae))),)
     assert all(lam >= 0 for lam in (lam0, lam1))
@@ -580,7 +452,7 @@ class TensorKnotVector(Immutable):
     from .spline import NDSpline
     return NDSpline(self, splinalg.spsolve(M, rhs).reshape((-1,) + data.shape[1:]))
 
-  def __mul__(self, other):
+  def __mul__(self, other: Any):
     """
     Multiplying by a :class:`TensorKnotVector` or a
     :class:`UnivariateKnotVector` simply gives a bigger knotvector.
@@ -592,10 +464,6 @@ class TensorKnotVector(Immutable):
     else:
       return NotImplemented
     return TensorKnotVector(knotvectors)
-
-  del _vectorize_with_indices
-  del _vectorize_operator
-  del _prop_wrapper
 
 
 KnotVectorType = UnivariateKnotVector | TensorKnotVector | \

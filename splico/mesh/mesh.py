@@ -14,14 +14,12 @@ from ..err import MissingVertexError, HasNoSubMeshError, HasNoBoundaryError, \
 from ._refine import refine_structured, _refine_Triangulation
 from .pol import eval_nd_polynomial_local
 from .bool import _issubmesh, mesh_boundary_union, mesh_union, mesh_difference
+from .plot import plot_mesh, plot_pointmesh
 
 from abc import abstractmethod
 from typing import Callable, Sequence, Self, Tuple, Dict, List, Any
 from functools import cached_property
 from itertools import product
-
-import pyvista as pv
-import vtk
 
 
 # all supported element types (for now)
@@ -135,7 +133,7 @@ class Mesh(Immutable):
     assert 0 <= self.elements.min() <= self.elements.max() < len(self.points), 'Hanging node detected.'
     assert np.unique(self.elements, axis=0).shape == self.elements.shape, "Duplicate element detected."
 
-  def __repr__(self):
+  def __repr__(self) -> str:
     return f"{self.__class__.__name__}[nelems: {len(self.elements)}, npoints: {len(self.points)}]"
 
   @abstractmethod
@@ -200,8 +198,6 @@ class Mesh(Immutable):
   def refine(self, n: int = 1) -> Self:
     """
     Refine the mesh `n` times.
-    Optionally return an array with rows that correspond to the element indices of
-    elements that replace the old element.
     """
     assert (n := int(n)) >= 0
     if n == 0:
@@ -258,7 +254,7 @@ class Mesh(Immutable):
     # for a 1D mesh it's enough to check if the metric tensor is SPD
     return (np.linalg.det(self.GK(points)) > 0).all()
 
-  def eval_local(self, points: FloatArray, dx=None) -> FloatArray:
+  def eval_local(self, points: FloatArray, dx=0) -> FloatArray:
     """ Evaluate each element map locally in `points`. """
 
     # eval_nd_polynomial_local(self, points, dx=dx).shape == (nelems, 3, npoints)
@@ -383,25 +379,7 @@ class Mesh(Immutable):
       yield self.points[indices]
 
   def plot(self):
-    nelems = len(self.elements)
-    cell_type = { 'point': vtk.VTK_POINTS,
-                  'line': vtk.VTK_LINE,
-                  'triangle': vtk.VTK_TRIANGLE,
-                  'quadrilateral': vtk.VTK_QUAD,
-                  'tetrahedron': vtk.VTK_TETRA,
-                  'hexahedron': vtk.VTK_HEXAHEDRON }.get(self.simplex_type, None)
-    if cell_type is None:
-      raise NotImplementedError(f"Plotting cells of type {self.simplex_type} "
-                                 "has not been implementd yet.")
-
-    self = self.drop_points_and_renumber()
-
-    points = self.points
-    elements = np.concatenate([np.full((nelems, 1), self.nverts, dtype=int), self.pvelements], axis=1).astype(int)
-
-    # for some reason I get segfaults sometimes if I don't copy self.points
-    grid = pv.UnstructuredGrid(elements, np.array([cell_type] * nelems), points)
-    grid.plot(show_edges=True, line_width=1, color="tan")
+    plot_mesh(self)
 
   def take(self, elemindices: Sequence[int] | IntArray):
     return self._edit(elements=self.elements[np.asarray(elemindices, dtype=int)])
@@ -449,7 +427,7 @@ class MultilinearMesh(Mesh):
 
 class AffineMesh(Mesh):
   """
-  Mixin for affine mesh types.
+  Derived class for affine mesh types.
   Provides an implementation for the _local_ordinances abstract method.
   """
   # XXX: currently affine meshes require special-tailored refinement methods.
@@ -623,8 +601,7 @@ class PointMesh(Mesh):
     return np.zeros((1,), dtype=float)
 
   def plot(self):
-    point_cloud = pv.PolyData(self.points[self.elements.ravel()])
-    point_cloud.plot(eye_dome_lighting=True)
+    plot_pointmesh(self)
 
   def is_valid(self, **kwargs):
     return True
