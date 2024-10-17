@@ -1,7 +1,8 @@
 """
 Module declaring various types that find applications throughout the library.
-In particular, this module introduces :class:`HashMixin`, a general purpose
-base class for immutable and hashable classes.
+In particular, this module introduces :class:`Immutable`, a general purpose
+base class for immutable and hashable classes. It also introduces the
+:class:`Singleton` base class.
 """
 
 

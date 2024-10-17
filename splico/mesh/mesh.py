@@ -15,6 +15,7 @@ from ._refine import refine_structured, _refine_Triangulation
 from .pol import eval_nd_polynomial_local
 from .bool import _issubmesh, mesh_boundary_union, mesh_union, mesh_difference
 from .plot import plot_mesh, plot_pointmesh
+from .meta import MeshMeta
 
 from abc import abstractmethod
 from typing import Callable, Sequence, Self, Tuple, Dict, List, Any
@@ -36,7 +37,7 @@ simplex_types = ('point', 'line', 'triangle',
 #      a factory pattern structure.
 
 
-class Mesh(Immutable):
+class Mesh(Immutable, metaclass=MeshMeta):
   """
   Abstract Base Class for representing various mesh types.
 
@@ -113,25 +114,21 @@ class Mesh(Immutable):
     return frozen(elements)
 
   def __init__(self, elements: IntArray | Sequence[Sequence[int]], points: FloatArray):
-    assert all(hasattr(self, item) for item in ('simplex_type', 'nverts', 'nref', 'is_affine')), \
-        'Derived classes need to implement their element type and the number of' \
-        ' vertices per element as well as the number of refinement elements' \
-        ' and whether they are affine or not.'
 
     self.elements = frozen(elements, dtype=int)
-
-    points = _round_array(points)
-    self.points = frozen(points, dtype=float)
+    self.points = frozen(_round_array(points), dtype=float)
 
     # sanity checks
-    # XXX: instead raising an error, find a more graceful way of empty mesh handling
+    assert self.elements.shape[1:] == (self.nverts,)
+    # XXX: instead raising an error, implement more graceful empty mesh handling
     if not self.elements.shape[0]:
       raise EmptyMeshError('Found an empty mesh.')
     assert self.points.shape[1:] == (3,), \
       NotImplementedError("Meshes are assumed to be manifolds in R^3 by default.")
-    assert self.elements.shape[1:] == (self.nverts,)
-    assert 0 <= self.elements.min() <= self.elements.max() < len(self.points), 'Hanging node detected.'
-    assert np.unique(self.elements, axis=0).shape == self.elements.shape, "Duplicate element detected."
+    assert 0 <= self.elements.min() <= self.elements.max() < len(self.points), \
+        "Hanging node detected."
+    assert np.unique(self.elements, axis=0).shape == self.elements.shape, \
+        "Duplicate element detected."
 
   def __repr__(self) -> str:
     return f"{self.__class__.__name__}[nelems: {len(self.elements)}, npoints: {len(self.points)}]"
