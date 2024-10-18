@@ -1,5 +1,5 @@
 from numpy import linalg
-from pyvista import Line
+from pyvista import Line, Quadrilateral
 
 from ..util import np, _, frozen
 
@@ -28,7 +28,7 @@ def aspect_ratio(mesh: Mesh) -> Tuple[np.float_,...]:
    Returns:
        np.ndarray: mean, maximum and minimum aspect ratio.
 
-    Notes:
+   Notes:
         - Edge lengths are typically computed using Euclidean distance.
         - For 2D elements (e.g., triangles, quads), the aspect ratio is based on edge lengths.
         - For 3D elements the aspect ratio is still based on edge lengths,
@@ -38,15 +38,16 @@ def aspect_ratio(mesh: Mesh) -> Tuple[np.float_,...]:
    
    # Check for the mesh validity
    assert mesh.is_valid(), "mesh is not valid"
+   assert mesh.ndims >= 2, "mesh has to be, at least, 2-dimensional entity"
 
    submesh = mesh.submesh   
    
    elements = mesh.elements[:,mesh._submesh_indices]
    
-   # 2D mesh
-   if mesh._submesh_type == LineMesh:
+   # Decomposing the mesh
+   if mesh._submesh_type is LineMesh: # 2D mesh case
       pass
-   else: # 3D mesh
+   else: # 3D mesh case
       elements = elements[:,:,submesh._submesh_indices]
    
    elem_point = mesh.points[elements]
