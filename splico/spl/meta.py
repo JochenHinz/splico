@@ -5,34 +5,41 @@ Metaclasses specific to the `splico.spl` package.
 from ..types import ImmutableMeta, ensure_same_length, ensure_same_class
 from ..util import np
 
+from functools import wraps
 import operator
 
 
-def add_vectorizations(cls, *args, **kwargs):
+def add_vectorizations(fn):
   """
   Decorator for adding vectorized versions of various :class:`UnivariateKnotVector`
   methods and properties to the :class:`TensorKnotVector` class.
   """
-  # `_vectorize_X` methods available from the metaclass
 
-  # add all vectorized properties
-  for name in ('dx', 'knots', 'km', 'degree',
-               'repeated_knots', 'nelems', 'dim', 'greville'):
-    cls._vectorize_property(name)
+  @wraps(fn)
+  def wrapper(*args, **kwargs):
+    cls = fn(*args, **kwargs)
 
-  # add all vectorization with arguments
-  for name in ('flip', 'refine', 'ref_by', 'add_knots', 'raise_multiplicities'):
-    cls._vectorize_with_indices(name)
+    # `_vectorize_X` methods available from the metaclass
+    # add all vectorized properties
+    for name in ('dx', 'knots', 'km', 'degree',
+                 'repeated_knots', 'nelems', 'dim', 'greville'):
+      cls._vectorize_property(name)
 
-  # add all operator vectorizations without custom return type
-  for name in ('__and__', '__or__'):  # operator is inferred from ``name``
-    cls._vectorize_operator(name)
+    # add all vectorization with arguments
+    for name in ('flip', 'refine', 'ref_by', 'add_knots', 'raise_multiplicities'):
+      cls._vectorize_with_indices(name)
 
-  # add all operator vectorizations with custom return type
-  for name in ('__lt__', '__gt__', '__le__', '__ge__'):
-    cls._vectorize_operator(name, all)
+    # add all operator vectorizations without custom return type
+    for name in ('__and__', '__or__'):  # operator is inferred from ``name``
+      cls._vectorize_operator(name)
 
-  return cls
+    # add all operator vectorizations with custom return type
+    for name in ('__lt__', '__gt__', '__le__', '__ge__'):
+      cls._vectorize_operator(name, all)
+
+    return cls
+
+  return wrapper
 
 
 class TensorKnotVectorMeta(ImmutableMeta):
@@ -57,8 +64,9 @@ class TensorKnotVectorMeta(ImmutableMeta):
   # XXX: this should become a general metaclass that allows for vectorization
   #      of arbitrary attribute's methods.
 
+  @add_vectorizations
   def __new__(mcls, *args, **kwargs):
-    return add_vectorizations(super().__new__(mcls, *args, **kwargs))
+    return super().__new__(mcls, *args, **kwargs)
 
   def _vectorize_with_indices(cls, name: str):
     """
@@ -157,7 +165,8 @@ class NDSplineMeta(ImmutableMeta):
   """
   Metaclass for the NDSpline class.
   Is equivalent to :type:`ImmutableMeta` but automatically inherits a number
-  of functions from ``splico.spl.TensorKnotVector`` that create a new knotvector.
+  of functions from :class:`splico.spl.TensorKnotVector` that create a new
+  knotvector.
   The spline is then automatically prolonged to the newly created knotvector.
   Similarly, a number of properties are inherited. They can then directly be
   called from the spline rather than delegating them to the spline's knotvector.

@@ -8,18 +8,18 @@ from .kv import UnivariateKnotVector, TensorKnotVector, as_TensorKnotVector, \
 from .aux import tensorial_prolongation_matrix
 from .meta import NDSplineMeta
 
-from typing import Sequence, Callable, Tuple, Self, Optional, Any
+from typing import Sequence, Callable, Tuple, Self
 from types import GenericAlias
 from functools import reduce
 
 from scipy import interpolate
 from numpy.lib.mixins import NDArrayOperatorsMixin
 
+
 sl = slice(_)
 
 
 IMPLEMENTED_UFUNCS = (np.add, np.subtract, np.multiply, np.divide)
-
 HANDLED_NDSPLINE_FUNCTIONS = {}
 
 
@@ -42,6 +42,10 @@ class __NDSpline_implementations__:
     assert self.knotvector == other.knotvector
     # if the knotvectors are the same, simply add the controlpoints together
     return NDSpline(self.knotvector, self.controlpoints + other.controlpoints)
+
+  @implements(np.subtract)
+  def sub(self, other):
+    return self + -other
 
   @implements(np.multiply)
   def mul(self, other):
@@ -198,7 +202,8 @@ class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
         Must satisfy all(len(pos) == len(positions[0]) for pos in positions)
         and len(positions) == len(self.knotvector)
     dx : :class:`Sequence[int]` or :class:`int`
-        Derivative order of the evaluation. Must satisfy len(dx) == len(self.knotvector).
+        Derivative order of the evaluation. Must satisfy:
+        en(dx) == len(self.knotvector).
         If given by a :class:`int` it is repeated len(self.knotvector) times.
     tensor : :class:`bool`
         If true, the spline is evaluated over a meshgrid of the positions, i.e.,
@@ -216,7 +221,7 @@ class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
     """
     if isinstance(dx, Int):
       dx = (dx,) * self.nvars
-    assert len(dx) == self.nvars
+    assert len((dx := tuple(map(int, dx)))) == self.nvars
 
     positions = tuple(map(np.asarray, positions))
     assert all( len((y := pos.shape)) == 1 for pos in positions )
@@ -225,11 +230,12 @@ class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
     if not tensor:
       assert all(pos.shape == y for pos in positions)
 
-    controlpoints = self.controlpoints if self.shape else self.controlpoints[:, _]
+    # reshape to matrix shape, if self.shape == (), np.prod((), dtype=int) == 1
+    controlpoints = self.controlpoints.reshape(-1, np.prod(self.shape, dtype=int))
 
-    function = {False: call, True: tensor_call}[tensor]
+    function = {False: call, True: tensor_call}.get(tensor)
     ret = [function(positions, self.repeated_knots, self.degree, x, dx)
-                    for x in controlpoints.reshape(-1, np.prod(controlpoints.shape[1:])).T]
+                                                      for x in controlpoints.T]
 
     # XXX: np.stack makes a copy, find better solution (possibly do this in numba)
     return np.stack(ret, axis=1).reshape(-1, *self.shape)
@@ -261,12 +267,15 @@ class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
     if not self.shape:
       raise TypeError('iteration over 0-d array')
     yield from (self._edit(knotvector=self.knotvector, controlpoints=controlpoints)
-                              for controlpoints in self.controlpoints.swapaxes(0, 1))
+                        for controlpoints in self.controlpoints.swapaxes(0, 1))
 
   def ravel(self) -> Self:
     """ Ravel the tensorial spline. """
     shape = self.controlpoints.shape[:1] + (self.shape and (-1,))
     return self._edit(controlpoints=self.controlpoints.reshape(shape))
+
+  def __neg__(self):
+    return -1 * self
 
   def __matmul__(self, other):
     # XXX: docstring
@@ -365,7 +374,9 @@ class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
     if method != '__call__':
       return NotImplemented
 
-    if kwargs:  # XXX: add support for kwargs. This is tricky because some cannot be supported.
+    # XXX: add support for kwargs. This is tricky because some cannot be
+    #      supported by immutable classes.
+    if kwargs:
       return NotImplemented
 
     if ufunc not in IMPLEMENTED_UFUNCS:
@@ -375,10 +386,7 @@ class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
     # if of other class type, needs to be convertable to np.ndarray
     myclass, notmyclass = [], []
     for inp in inputs:
-      if isinstance(inp, NDSpline):
-        myclass.append(inp)
-      else:
-        notmyclass.append(np.asarray(inp))  # convert to array for broadcasting
+      (myclass if isinstance(inp, NDSpline) else notmyclass).append(inp)
 
     if len(myclass) > 1:  # this block handles interactions between NDSplines
       # interactions between >= 2 NDSplines and other inputs are not handled
@@ -398,14 +406,11 @@ class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
     # get the ufunc
     func = getattr(ufunc, method)
 
-    # apply operation with input to controlpoints along the first axis in
-    # a for loop (for now)
+    # apply operation with input to controlpoints along the first axis
 
-    # XXX: remove for loop and replace by dedicated vectorized routines.
-    #      Using Numba is another option.
     controlpoints = _vectorize_first_axis(func,
                                           spl.controlpoints,
-                                          *notmyclass,
+                                          *map(np.asarray, notmyclass),
                                           **kwargs)
 
     return NDSpline(self.knotvector, controlpoints)
@@ -468,14 +473,14 @@ class SplineCollection(np.ndarray):
     if isinstance(array_of_splines, NDSpline):
       array_of_splines = list(iter(array_of_splines))
     ret = np.array(array_of_splines, dtype=NDSpline)
-    assert ret.ndim > 0, NotImplementedError
-    ret_ravel = ret.ravel()
-    if not all(isinstance(element, NDSpline) for element in ret_ravel):
+    assert ret.ndim > 0
+    el0, *ignore = ret_raveled = ret.ravel()
+    if not all(isinstance(element, NDSpline) for element in ret_raveled):
       raise TypeError("All entries need to be an instantiation of `NDSpline`.")
     # fail switch that ensures that each NDSpline's shape is such that the evaluation can be reshaped properly
     # XXX: not sure if this catches all situations
-    assert all((element.nvars, element.shape) == (ret_ravel[0].nvars, ret_ravel[0].shape)
-               for element in ret_ravel)
+    assert all((element.nvars, element.shape) == (el0.nvars, el0.shape)
+               for element in ret_raveled)
     ret = ret.view(cls)
     ret.flags.writeable = False  # make read-only (for now)
     return ret

@@ -2,14 +2,18 @@
 Polynomial routines for evaluating the local element maps.
 """
 
-from ..util import np, _
+from ..util import np, _, freeze
 from ..types import Int, FloatArray, AnyIntSeq
 
-from typing import Tuple
+from typing import Tuple, TYPE_CHECKING
 from functools import lru_cache
+
+from numba import njit
 
 sl = slice(_)
 
+if TYPE_CHECKING:
+  from .mesh import Mesh
 
 # While numpy provides routines for polynomial evaluation, they are not easily
 # generalizable to N dimensions. In the long run, we would like to support
@@ -19,12 +23,42 @@ sl = slice(_)
 #      method, see https://en.wikipedia.org/wiki/Horner%27s_method.
 
 
+@njit(cache=True)
+def _derivative_weights(pol_order, dx):
+  """
+  Accumulated ``dx``-th derivative weights of a ``pol_order``-th polynomial.
+  >>> _derivative_weights(5, 0)
+      [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]  (identity)
+  >>> _derivative_weights(5, 1)
+      [1.0, 2.0, 3.0, 4.0, 5.0]
+  >>> _derivative_weights(5, 2)
+      [2.0, 6.0, 12.0, 20.0]
+  >>> _derivative_weights(5, 3)
+      [6.0, 24.0, 60.0]
+  >>> _derivative_weights(5, 4)
+      [24.0, 120.0]
+  >>> _derivative_weights(5, 5)
+      [120.0]
+  >>> _derivative_weights(5, 6)
+      [0.0]                           (null-function)
+  """
+  assert pol_order >= 0 and dx >= 0
+  if dx > pol_order:
+    return np.zeros((1,), dtype=np.float64)
+  ret = np.ones((pol_order + 1,), dtype=np.float64)
+  for i in range(dx):
+    ret = (ret * np.arange(len(ret)))[1:]
+  return ret
+
+
+@freeze
 def _nd_pol_derivative(weights: FloatArray, dx: AnyIntSeq) -> FloatArray:
   """
-  Given a :class:`np.ndarray` of shape (p, q, r, ..., x, y, z, ...) respresening
-  `(x, y, z, ...)` n-dependency polynomials of order (p, q, r, ...) and a length n
-  array-like `dx` of positive integers representing partial derivative orders,
-  return the polynomial weights of shape (p-dx[0], q-dx[1], r-dx[2], ..., x, y, z, ...)
+  Given a :class:`np.ndarray` of shape (p, q, r, ..., x, y, z, ...)
+  respresening `(x, y, z, ...)` n-dependency polynomials of order
+  (p, q, r, ...) and a length n array-like `dx` of positive integers
+  representing partial derivative orders, return the polynomial weights
+  of shape (p-dx[0], q-dx[1], r-dx[2], ..., x, y, z, ...)
   representing the derivatives of the input polynomials.
 
   Parameters
@@ -44,32 +78,30 @@ def _nd_pol_derivative(weights: FloatArray, dx: AnyIntSeq) -> FloatArray:
   # get the number of derivative axes
   nder = len(dx)
 
-  assert all( 0 <= _dx < n for _dx, n in zip(dx, weights.shape[:nder], strict=True) )
-
-  if (dx == 0).all():
-    return weights
-
+  assert all(0 <= _dx < n for _dx, n in zip(dx, weights.shape[:nder], strict=True))
   ntot = weights.ndim
 
-  derivative_weights = np.meshgrid(*map(np.arange, weights.shape[:nder]),
-                                   copy=False,
-                                   sparse=True,
-                                   indexing='ij')
+  _dweights = lambda shp, _dx: _derivative_weights(shp - 1, _dx)
 
-  for i, (_dx, myweights) in enumerate(zip(dx, derivative_weights)):
-    if _dx == 0: continue
-    weights = weights * myweights[(...,) + (_,)*(ntot - nder)]
-    weights = weights[(sl,) * i + (slice(1, _),)]
+  # shape (weights.shape[0] - dx[0], weights.shape[1] - dx[1], ...)
+  dweights = np.broadcast_arrays(*np.meshgrid(*map(_dweights, weights.shape, dx),
+                                              copy=False,
+                                              sparse=True,
+                                              indexing='ij') )
 
-  return _nd_pol_derivative(weights, tuple(max(_dx - 1, 0) for _dx in dx))
+  # slice out first i = dx[j] entries in the j-th dimension of ``weights``
+  # and multiply by the product of `dweights` with appropriate number of
+  # one axes appended at the end.
+  return weights[tuple(slice(i, _) for i in dx)] * \
+         np.multiply.reduce(dweights)[(...,) + (_,) * (ntot - nder)]
 
 
 @lru_cache(maxsize=8)
-def _compute_basis_weights(mesh):
+@freeze
+def _compute_basis_weights(mesh: 'Mesh'):
   """
   The polynomial weights of the nodal basis functions in the reference
-  element.
-  Shape: (2,) * self.ndims + (nverts,)
+  element. Shape: (2,) * self.ndims + (nverts,)
   """
 
   # PointMesh ords have shape (1,) so we need to reshape to two dimensions
@@ -82,7 +114,7 @@ def _compute_basis_weights(mesh):
   # solve for the nodal basis function's polynomial weights
   # and reshape them to tensorial (nfuncs, x, y, z, ...) shape
 
-  # shape: (2 ** self.ndims, *(2,) * self.ndims)
+  # shape: (*(2,) * self.ndims, 2 ** self.ndims)
   # (basis_f_index, 2, 2, ...)
   basis_funcs = np.zeros((*(2,) * mesh.ndims, X.shape[0]), dtype=float)
   basis_funcs[*ords.T] = np.linalg.solve(X, np.eye(X.shape[0]))
@@ -90,13 +122,11 @@ def _compute_basis_weights(mesh):
 
 
 @lru_cache(maxsize=8)
-def _compute_pol_weights(mesh, dx: Tuple[Int, ...]) -> FloatArray:
+def _compute_pol_weights(mesh: 'Mesh', dx: Tuple[Int, ...]) -> FloatArray:
   """
   Polynomial weights of each element's map.
-  For `mesh.eval_local`.
+  For `splico.mesh.Mesh.eval_local`.
   """
-  # XXX: caching doesn't re-use for instance the result of dx = (1, 0, 0) if
-  #      dx = (2, 0, 0) is computed. Change the caching structure to improve this.
 
   assert len(dx) == mesh.ndims
   basis_funcs = _compute_basis_weights(mesh)
@@ -111,15 +141,17 @@ def _compute_pol_weights(mesh, dx: Tuple[Int, ...]) -> FloatArray:
   return _nd_pol_derivative(ret, dx)
 
 
-def eval_nd_polynomial_local(mesh, points: FloatArray, dx: Int | AnyIntSeq = 0) -> FloatArray:
+def eval_nd_polynomial_local(mesh: 'Mesh', points: FloatArray,
+                                           dx: Int | AnyIntSeq = 0) -> FloatArray:
   """
-  Evaluate `(x, y, z)` n-dependency polynomials or their derivatives in `points`.
+  Evaluate `(x, y, z, ...)` n-dependency polynomials or their derivatives
+  in `points`.
 
   Parameters
   ----------
   weights: :class:`np.ndarray`
-      Array of shape (p, q, r, ..., x, y, z) representing `(x, y, z)` n-dimensional
-      polynomials, all of the same order (p, q, r, ...).
+      Array of shape (p, q, r, ..., x, y, z, ...) representing `(x, y, z, ...)`
+      n-dimensional polynomials, all of the same order (p, q, r, ...).
   points : :class:`np.ndarray`
       Array of points. Must have shape (npoints, n), where n is the number
       of polynomial dependencies (x, y, z, ...).
@@ -131,7 +163,7 @@ def eval_nd_polynomial_local(mesh, points: FloatArray, dx: Int | AnyIntSeq = 0) 
   Returns
   -------
   evaluations : :class:`np.ndarray`
-      Polynomial (derivative) evaluations of shape (x, y, z, npoints).
+      Polynomial (derivative) evaluations of shape (x, y, z, ..., npoints).
   """
 
   # in case points is one-dimensional (PointMesh)
@@ -150,24 +182,25 @@ def eval_nd_polynomial_local(mesh, points: FloatArray, dx: Int | AnyIntSeq = 0) 
 
   # take derivative weights
   weights = _compute_pol_weights(mesh, dx_tpl)
-
   shape = weights.shape[:ndim]
 
   # compute all x, y, z, ... points raised to all powers
-  # shape: (mydim, len(points))
+  # shape: (q, npoints) where q is the number of powers
   powers = [ mypoints[_] ** np.arange(dim)[:, _]
                             for mypoints, dim in zip(points.T, shape) ]
 
   # all powers are broadcast to this shape
   array_shape = weights.shape + (len(points),)
+  m = len(array_shape)
 
   # broadcast to the following shapes:
-  # suppose weight.shape == (p, q, r, ..., x, y, z, ...), and len(points) == n.
-  # We create arrays of shape (p, 1, 1, ..., 1), (1, q, 1, ..., 1) and
-  # (1, 1, r, 1, .., 1) which are all broadcast to shape (p, q, r, ..., x, y, z, ..., n)
-  myshape = lambda j: (_,) * j + (sl,) + (_,) * (len(array_shape) - j - 2) + (sl,)
+  # suppose weight.shape == (p, q, r, ..., x, y, z, ...) and len(points) == npoints.
+  # We create arrays of shape (p, 1, 1, ..., npoints), (1, q, 1, ..., npoints)
+  # and (1, 1, r, 1, .., npoints) which are all broadcast to shape
+  # (p, q, r, ..., x, y, z, ..., npoints)
+  myshape = lambda j: (_,) * j + (sl,) + (_,) * (m - j - 2) + (sl,)
   reshaped_arrays = [ np.broadcast_to(mypower[myshape(i)], array_shape)
-                      for i, mypower in enumerate(powers) ]
+                                      for i, mypower in enumerate(powers) ]
 
   # return the result in shape (x, y, z, ..., n)
   return (weights[..., _] * np.multiply.reduce(reshaped_arrays)).sum(tuple(range(ndim)))

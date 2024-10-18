@@ -60,6 +60,11 @@ class TestNDSpline(unittest.TestCase):
       # adding bigger array changes shape
       self.assertEqual(op(spline, np.random.randn(3, 4, 3)).shape, (3,) + spline.shape)
 
+    self.assertTrue(np.allclose((spline + spline).controlpoints,
+                                spline.controlpoints + spline.controlpoints))
+    self.assertTrue(np.allclose((spline - spline).controlpoints,
+                                spline.controlpoints - spline.controlpoints))
+
   def test_add(self):
     kv0, kv1 = [UnivariateKnotVector(np.linspace(0, 1, n)) for n in (5, 7)]
     kv = kv0 * kv1

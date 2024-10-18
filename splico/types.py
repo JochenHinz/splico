@@ -8,6 +8,7 @@ base class for immutable and hashable classes. It also introduces the
 
 from .util import serialize_array, deserialize_array, serialized_array, np
 from .err import UnequalLengthError
+from .log import logger as log
 
 from functools import wraps
 from collections import ChainMap
@@ -18,7 +19,6 @@ from types import EllipsisType
 from weakref import WeakValueDictionary
 import inspect
 
-import treelog as log
 from numpy.typing import NDArray
 
 
@@ -159,8 +159,8 @@ class ImmutableMeta(ABCMeta):
 
 class Immutable(metaclass=ImmutableMeta):
   """
-  Generic Mixin for immutable types.
-  Has the ``_items`` class attribute.
+  Generic base clas for immutable types.
+  Has the ``_items`` class-level attribute.
   The ``_items`` attribute is a tuple of strings where each string represents
   the name of a class attribute (typically set in ``__init__``) that contributes
   to the class's hash. If the class does not explicitly implement `_items`,
@@ -185,7 +185,7 @@ class Immutable(metaclass=ImmutableMeta):
   It is of paramount importance that the derived class is immutable.
   This means that all relevant attributes are immutable and hashable with
   the exception of :class:`np.ndarray`s which need to be frozen using
-  ``frozen`` or ``freeze``.
+  ``util.frozen`` or ``util.freeze``.
 
   >>> class MyClass(Immutable):
         _items = 'a', 'b'

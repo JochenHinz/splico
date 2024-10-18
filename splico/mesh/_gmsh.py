@@ -4,10 +4,9 @@ Gmsh routines for creating mesh types.
 
 from ..util import np
 from ..types import FloatArray
+from ..log import logging as log
 
 from typing import Callable
-
-import treelog as log
 
 
 try:

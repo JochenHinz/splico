@@ -5,13 +5,12 @@ This module's purpose is performing various boolean operations on meshes.
 
 from ..util import np
 from ..err import HasNoSubMeshError
+from ..log import logger as log
 from ._bool import make_numba_indexmap, _remap_elements, _match_active, \
                    renumber_elements_from_indexmap as renumber_elements
 
 from functools import lru_cache
 from itertools import product
-
-import treelog as log
 
 
 @lru_cache(maxsize=8)

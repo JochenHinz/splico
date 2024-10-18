@@ -10,6 +10,7 @@ import math
 from numba import njit
 
 
+# cache enabled by default
 njit = partial(njit, cache=True)
 
 

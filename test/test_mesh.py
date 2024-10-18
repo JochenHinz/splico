@@ -163,6 +163,8 @@ class TestEval(unittest.TestCase):
         points = np.stack(list(map(np.ravel, np.meshgrid(*[np.linspace(0, 1, 2)] * i, indexing='ij'))), axis=1)
 
         self.assertTrue(np.allclose(mesh.eval_local(points), mesh.points[mesh.elements]))
+        for j, dx in enumerate(np.eye(i)):
+          self.assertTrue(np.allclose(mesh.eval_local(points, dx=dx)[..., j], 0.2))
 
     with self.subTest('Testing PointMesh'):
       # This one is important to test because PointMesh's local ordinances

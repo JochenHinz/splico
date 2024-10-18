@@ -73,7 +73,7 @@ def _univariate_prolongation_matrix(kvold, kvnew, p):
   return T
 
 
-@lru_cache(maxsize=32)
+@lru_cache(maxsize=8)
 @freeze_csr
 def univariate_prolongation_matrix(kvold,
                                    kvnew) -> sparse.csr_matrix:
@@ -86,7 +86,7 @@ def univariate_prolongation_matrix(kvold,
   return sparse.csr_matrix(T)
 
 
-@lru_cache(maxsize=32)
+@lru_cache(maxsize=8)
 @freeze_csr
 def tensorial_prolongation_matrix(kvold,
                                   kvnew) -> sparse.csr_matrix:
