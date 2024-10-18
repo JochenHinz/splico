@@ -63,8 +63,6 @@ class Mesh(Immutable, metaclass=MeshMeta):
       0 <= ndims < 4 (for now).
   nverts : :class:`int`.
       Number of vertices per element. `self.elements.shape[1:] == (nverts,)`.
-  nref : :class:`int`.
-      Number of new elements each element is replaced by under refinement.
   is_affine : :class:`bool`.
       Boolean representing whether the mesh is affine or not
       (may be removed in the future).
@@ -82,11 +80,6 @@ class Mesh(Immutable, metaclass=MeshMeta):
   # Number of vertices per simplex.
   # For instance, simplex_type == 'triangle' means nverts = 3.
   nverts: int
-
-  # Factor by which the number of elements grows if we perform refinement.
-  # For instance, if nref == 3, the element with index 0 is replaced by elements
-  # 0, 1, 2 (and so on).
-  nref: int
 
   # A boolean that indicates whether the mesh is piecewise affine.
   # A piecewise affine mesh has a constant metric tensor on each element.
@@ -137,8 +130,11 @@ class Mesh(Immutable, metaclass=MeshMeta):
   def _refine(self) -> Self:
     """
     Refine the entire mesh once.
-    We assume that the new elements are ordered such that the element with index `i`
-    is replaced by [self.nref * i, ..., self.nref * i + self.nref - 1]
+    We assume that the new elements are ordered such that the element with
+    index ``i`` is replaced by
+          [nref * i, ..., nref * i + nref - 1],
+    where ``nref`` is the proliferation factor of the number of mesh elements
+    under a single refinement step.
     """
     # each derived class HAS to implement this method
     pass
@@ -465,7 +461,6 @@ class HexMesh(MultilinearMesh):
   simplex_type = 'hexahedron'
   ndims = 3
   nverts = 8
-  nref = 8
 
   @cached_property
   def _submesh_indices(self):
@@ -499,7 +494,6 @@ class QuadMesh(MultilinearMesh):
   simplex_type = 'quadrilateral'
   ndims = 2
   nverts = 4
-  nref = 4
 
   @cached_property
   def _submesh_indices(self):
@@ -536,7 +530,6 @@ class Triangulation(AffineMesh):
   simplex_type = 'triangle'
   ndims = 2
   nverts = 3
-  nref = 4
 
   @classmethod
   def from_polygon(cls, *args, **kwargs):
@@ -569,7 +562,6 @@ class LineMesh(AffineMesh):
   simplex_type = 'line'
   ndims = 1
   nverts = 2
-  nref = 2
 
   def _refine(self):
     return refine_structured(self)
@@ -588,7 +580,6 @@ class PointMesh(Mesh):
   simplex_type = 'point'
   ndims = 0
   nverts = 1
-  nref = 1
   is_affine = True
 
   def _refine(self):

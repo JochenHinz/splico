@@ -17,7 +17,7 @@ from abc import ABCMeta
 from typing import Any, Self, Tuple, List, Dict, TypeVar, Sequence
 from types import EllipsisType
 from weakref import WeakValueDictionary
-import inspect
+from inspect import signature, Signature, Parameter
 
 from numpy.typing import NDArray
 
@@ -28,11 +28,11 @@ Int = int | np.integer
 Float = float | np.floating
 Numeric = Int | Float
 
-IntArray = NDArray[np.int_]
-FloatArray = NDArray[np.float_]
+IntArray = NDArray[np.integer]
+FloatArray = NDArray[np.floating]
 NumericArray = IntArray | FloatArray
 
-Index = IntArray | int | List[int] | None | EllipsisType
+Index = IntArray | int | List[int] | None | EllipsisType | slice
 MultiIndex = Tuple[Index, ...]
 
 AnySequence = Sequence[T] | Tuple[T, ...]
@@ -96,12 +96,22 @@ def ensure_same_length(fn):
   return wrapper
 
 
-def remove_self(signature: inspect.Signature) -> inspect.Signature:
+def remove_self(signature: Signature) -> Signature:
   """
   Remove the ``self`` argument from a bound method signature.
   """
   assert list(signature.parameters.keys())[0] == 'self'
-  return inspect.Signature(list(signature.parameters.values())[1:])
+  return Signature(list(signature.parameters.values())[1:])
+
+
+def is_valid_signature(signature: Signature) -> bool:
+  """
+  Return ``True`` if an `__init__` signature neither contains `*args`
+  nor `**kwargs`.
+  """
+  signature = remove_self(signature)
+  return bool(set(map(lambda x: x.kind, signature.parameters.values())) &
+              {Parameter.VAR_KEYWORD, Parameter.VAR_POSITIONAL}) is False
 
 
 class ImmutableMeta(ABCMeta):
@@ -110,13 +120,14 @@ class ImmutableMeta(ABCMeta):
   If a class does not implement the ``_items`` class-level attribute, it is
   inferred from the ``__init__``'s signature. The signature cannot be inferred
   if it contains ``*args`` or ``**kwargs``. If ``_items`` is not implemented
-  or cannot be inferred, the base class prevents instantiation.
+  or cannot be inferred from signature or the base classes' signatures,
+  the base class prevents instantiation.
 
   Example
   -------
 
   >>> class MyClass(metaclass=ImmutableMeta):
-        def __init__(self, a:float, b: float):
+        def __init__(self, a: float, b: float):
           self.a = float(a)
           self.b = float(b)
 
@@ -131,29 +142,56 @@ class ImmutableMeta(ABCMeta):
 
   >>> MyClass._items
       ERROR
+
+  If a derived class has an `__init__` of the form `(self, *args, **kwargs)`
+  and doesn't implement _items explicitly, it is inferred from the parent class
+  or its parent classes.
+
+  >>> class MyDerivedClass(MyClass):  # MyClass._items == ('a', 'b')
+        def __init__(self, *args, **kwargs):
+          super().__init__(*args, **kwargs)
+
+  >>> MyDerivedClass._items
+      ('a', 'b')
   """
 
-  def __new__(mcls, *args, **kwargs):
-    cls = super().__new__(mcls, *args, **kwargs)
-    init_sig = remove_self(inspect.signature(cls.__init__))
-    # we set the signature of the class manually because inspect cannot infer
-    # it from `__call__`.
-    cls.__signature__ = init_sig
-    # _items has not been implemented as a class-level attribute -> try to infer it
-    # if it can't be inferred and isn't implemented, an error is thrown upon
-    # trying to instantiate the class.
-    if not hasattr(cls, '_items'):
-      # make sure signature doesn't have `*args` or `**kwargs` in it.
-      if not set(map(lambda x: x.kind, init_sig.parameters.values())) & \
-             {inspect.Parameter.VAR_KEYWORD, inspect.Parameter.VAR_POSITIONAL}:
-        cls._items = tuple(init_sig.parameters.keys())
+  def __new__(mcls, name, bases, attrs, *args, **kwargs):
+    cls = super().__new__(mcls, name, bases, attrs, *args, **kwargs)
+    # since we overwrite __call__, inspect cannot infer the correct signature
+    # therefore we set it manually from the cls.__init__
+    cls.__signature__ = remove_self(signature(cls.__init__))
+    try:
+      _items = attrs['_items']
+      assert all(isinstance(element, str) for element in _items), \
+          'Received invalid type for the _item class-level argument.'
+      cls._items = tuple(_items)  # make sure it's converted to a tuple
+    except KeyError:
+      # _items has not been implemented as a class-level attribute -> try to infer
+      # it first from the __init__ signature. The signature may not contain
+      # *args or **kwargs. If this fails, try to infer the signature from the
+      # parent classes. If that fails too and `_items` isn't implemented,
+      # an error is thrown upon trying to instantiate the class.
+
+      # delete in case it was set through an earlier call to __new__
+      try:
+        del cls._items
+      except AttributeError:
+        pass
+
+      for subclass in cls.__mro__:
+        if is_valid_signature((sig := signature(subclass.__init__))):
+          cls._items = tuple(remove_self(sig).parameters.keys())
+          break
+
     return cls
 
   def __call__(cls, *args, **kwargs):
     # make sure that if _items is not implemented or inferred, the class is not
     # instantiated.
     if not hasattr(cls, '_items'):
-      raise TypeError('Cannot instantiate a class that does not implement `_items`.')
+      raise TypeError("The class's `_items` class-level attribute has not been"
+                      " implemented or could not be inferred. Cannot "
+                      "a class that does not implement this attribute.")
     return ABCMeta.__call__(cls, *args, **kwargs)
 
 

@@ -78,16 +78,21 @@ def _nd_pol_derivative(weights: FloatArray, dx: AnyIntSeq) -> FloatArray:
   # get the number of derivative axes
   nder = len(dx)
 
+  if not nder or (dx == 0).all():
+    return weights
+
+  # if weights.shape is shorter than dx this will fail
   assert all(0 <= _dx < n for _dx, n in zip(dx, weights.shape[:nder], strict=True))
   ntot = weights.ndim
 
   _dweights = lambda shp, _dx: _derivative_weights(shp - 1, _dx)
 
   # shape (weights.shape[0] - dx[0], weights.shape[1] - dx[1], ...)
-  dweights = np.broadcast_arrays(*np.meshgrid(*map(_dweights, weights.shape, dx),
-                                              copy=False,
-                                              sparse=True,
-                                              indexing='ij') )
+  dweights = \
+      np.broadcast_arrays(*np.meshgrid(*map(_dweights, weights.shape, dx),
+                                       copy=False,
+                                       sparse=True,
+                                       indexing='ij') )
 
   # slice out first i = dx[j] entries in the j-th dimension of ``weights``
   # and multiply by the product of `dweights` with appropriate number of
@@ -108,8 +113,8 @@ def _compute_basis_weights(mesh: 'Mesh'):
   ords = np.atleast_2d(mesh._local_ordinances(1).astype(int))
 
   # set up the matrix we need to solve
-  X = np.stack([ np.multiply.reduce([_x ** i for _x, i in zip(ords.T, multi_index)])
-                 for multi_index in ords ], axis=1)
+  X = np.stack([ np.multiply.reduce([_x ** i for _x, i in zip(ords.T, mindex)])
+                 for mindex in ords ], axis=1)
 
   # solve for the nodal basis function's polynomial weights
   # and reshape them to tensorial (nfuncs, x, y, z, ...) shape
@@ -129,7 +134,7 @@ def _compute_pol_weights(mesh: 'Mesh', dx: Tuple[Int, ...]) -> FloatArray:
   """
 
   assert len(dx) == mesh.ndims
-  basis_funcs = _compute_basis_weights(mesh)
+  bfuncs = _compute_basis_weights(mesh)
 
   # get the element-wise weights in tensorial layout
   # shape: (2 ** self.ndims, nelems, 3)
@@ -137,7 +142,7 @@ def _compute_pol_weights(mesh: 'Mesh', dx: Tuple[Int, ...]) -> FloatArray:
 
   # (1, ..., 1, 2 ** ndims, nelems, 3) and (2, ..., 2, 2 **ndims, 1, 1 )
   # becomes (2, ..., 2, 2 ** ndims, nelems, 3).sum(-3) == (2, ..., 2, nelems, 3)
-  ret = (elementwise_weights[(_,) * mesh.ndims] * basis_funcs[..., _, _]).sum(-3)
+  ret = (elementwise_weights[(_,) * mesh.ndims] * bfuncs[..., _, _]).sum(-3)
   return _nd_pol_derivative(ret, dx)
 
 
@@ -199,8 +204,8 @@ def eval_nd_polynomial_local(mesh: 'Mesh', points: FloatArray,
   # and (1, 1, r, 1, .., npoints) which are all broadcast to shape
   # (p, q, r, ..., x, y, z, ..., npoints)
   myshape = lambda j: (_,) * j + (sl,) + (_,) * (m - j - 2) + (sl,)
-  reshaped_arrays = [ np.broadcast_to(mypower[myshape(i)], array_shape)
-                                      for i, mypower in enumerate(powers) ]
+  barrs = [ np.broadcast_to(mypower[myshape(i)], array_shape)
+                          for i, mypower in enumerate(powers) ]
 
   # return the result in shape (x, y, z, ..., n)
-  return (weights[..., _] * np.multiply.reduce(reshaped_arrays)).sum(tuple(range(ndim)))
+  return (weights[..., _] * np.multiply.reduce(barrs)).sum(tuple(range(ndim)))
