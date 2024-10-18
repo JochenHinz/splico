@@ -15,6 +15,7 @@ class TestMeshQualityCriteria(unittest.TestCase):
         mesh_struct.plot
         
         stats_unstruct = aspect_ratio(mesh_unstruct)
+        #stats_unstruct = aspect_ratio(mesh_struct)
         
         print(stats_unstruct)
         

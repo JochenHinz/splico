@@ -32,7 +32,7 @@ def aspect_ratio(mesh: Mesh) -> Tuple[np.float_,...]:
         - Edge lengths are typically computed using Euclidean distance.
         - For 2D elements (e.g., triangles, quads), the aspect ratio is based on edge lengths.
         - For 3D elements the aspect ratio is still based on edge lengths,
-          not face diagonals or body diagonals.
+          but excludes face diagonals or body diagonals.
       
    """      
    
@@ -41,16 +41,18 @@ def aspect_ratio(mesh: Mesh) -> Tuple[np.float_,...]:
 
    submesh = mesh.submesh   
    
-   mesh.elements = mesh.elements[:,mesh._submesh_indices]
+   elements = mesh.elements[:,mesh._submesh_indices]
    
    # 2D mesh
    if mesh._submesh_type == LineMesh:
-      elem_point = mesh.points[mesh.elements]
-      distances = linalg.norm(elem_point[...,1,:] - elem_point[...,0,:], axis = -1)
+      pass
    else: # 3D mesh
-      mesh.elements = mesh.elements[:,:,submesh._submesh_indices]
-      elem_point = mesh.points[mesh.elements]
-      distances = linalg.norm(elem_point[...,1,:] - elem_point[...,0,:], axis = -1).reshape(elem_point.shape[0],-1)
+      elements = elements[:,:,submesh._submesh_indices]
+   
+   elem_point = mesh.points[elements]
+   
+   distances = linalg.norm(elem_point[...,1,:] - elem_point[...,0,:], axis = -1)
+   distances = distances.reshape(distances.shape[0], -1)
 
    dist_min = np.min(distances, axis = 1)
    dist_max = np.max(distances, axis = 1)

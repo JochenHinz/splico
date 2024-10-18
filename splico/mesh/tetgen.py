@@ -28,7 +28,7 @@ class TetGen(AffineMesh):
     the edge between vertices 3-1 is understood
     '''
     
-    simplex_type = 'Tetraheda'
+    simplex_type = 'tetrahedron'
     ndims = 3
     nverts = 4
     nref = 4
@@ -36,12 +36,12 @@ class TetGen(AffineMesh):
     # why _ in front of the function
     @cached_property
     def _submesh_indices(self):
-        return tuple(map(frozen, [[0,1,2], [0,1,3], [0,2,3], [1,2,3]] ))        
+        return tuple(map(frozen, [[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]] ))        
 
 
     @frozen_cached_property
     def pvelements(self):
-        return self.elements[:, [0,3,1,2]]
+        return self.elements[:, [0, 3, 1, 2]]
 
     @property
     def _submesh_type(self):   

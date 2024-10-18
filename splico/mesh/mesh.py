@@ -508,7 +508,6 @@ class HexMesh(MultilinearMesh):
   def pvelements(self):
     return self.elements[:, [0, 4, 6, 2, 1, 5, 7, 3]]
 
-  #why not cached?
   @property
   def _submesh_type(self):
     return QuadMesh
@@ -574,7 +573,7 @@ class Triangulation(AffineMesh):
 
   @cached_property
   def _submesh_indices(self):
-    return tuple(map(frozen, [[0, 2], [2, 1], [1, 0]]))
+    return tuple(map(frozen, [[0, 1], [0, 2], [1, 2]]))
 
   @property
   def _submesh_type(self):
