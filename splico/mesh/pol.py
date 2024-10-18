@@ -26,7 +26,9 @@ if TYPE_CHECKING:
 @njit(cache=True)
 def _derivative_weights(pol_order, dx):
   """
-  Accumulated ``dx``-th derivative weights of a ``pol_order``-th polynomial.
+  Accumulated ``dx``-th derivative multiplicative weights of a
+  ``pol_order``-th polynomial.
+
   >>> _derivative_weights(5, 0)
       [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]  (identity)
   >>> _derivative_weights(5, 1)
@@ -76,14 +78,17 @@ def _nd_pol_derivative(weights: FloatArray, dx: AnyIntSeq) -> FloatArray:
   """
   dx = np.asarray(dx, dtype=int)
   # get the number of derivative axes
-  nder = len(dx)
 
-  if not nder or (dx == 0).all():
-    return weights
+  nder = len(dx)
+  ntot = weights.ndim
+
+  assert ntot >= nder
 
   # if weights.shape is shorter than dx this will fail
   assert all(0 <= _dx < n for _dx, n in zip(dx, weights.shape[:nder], strict=True))
-  ntot = weights.ndim
+
+  if not nder or (dx == 0).all():
+    return weights
 
   _dweights = lambda shp, _dx: _derivative_weights(shp - 1, _dx)
 
