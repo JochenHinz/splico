@@ -165,6 +165,11 @@ class ImmutableMeta(ABCMeta):
       assert all(isinstance(element, str) for element in _items), \
           'Received invalid type for the _item class-level argument.'
       cls._items = tuple(_items)  # make sure it's converted to a tuple
+      if is_valid_signature(cls.__signature__):
+        if set(_items) != set(remove_self(cls.__signature__).parameters.keys()):
+          log.warning(f"Warning, the class `{cls.__name__}`'s signature does not"
+                       " match its `_items` implementation which will lead to"
+                       " errors when using `self._edit` or `hash(self)`.")
     except KeyError:
       # _items has not been implemented as a class-level attribute -> try to infer
       # it first from the __init__ signature. The signature may not contain
@@ -172,7 +177,7 @@ class ImmutableMeta(ABCMeta):
       # parent classes. If that fails too and `_items` isn't implemented,
       # an error is thrown upon trying to instantiate the class.
 
-      # delete in case it was set through an earlier call to __new__
+      # delete in case it was set through inheritance
       try:
         del cls._items
       except AttributeError:
@@ -191,7 +196,7 @@ class ImmutableMeta(ABCMeta):
     if not hasattr(cls, '_items'):
       raise TypeError("The class's `_items` class-level attribute has not been"
                       " implemented or could not be inferred. Cannot "
-                      "a class that does not implement this attribute.")
+                      "instantiate a class that does not implement this attribute.")
     return ABCMeta.__call__(cls, *args, **kwargs)
 
 
