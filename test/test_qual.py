@@ -13,7 +13,6 @@ import unittest
 
 class TestMeshQualityCriteria(unittest.TestCase):
 
-
   def test_aspect_ratio(self):
     mesh_unstruct = unit_disc_triangulation()
     mesh_struct = rectilinear((17, 25, 13))

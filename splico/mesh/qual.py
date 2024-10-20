@@ -6,7 +6,7 @@
 """
 
 from ..util import np
-from .mesh import LineMesh, Mesh 
+from .mesh import LineMesh, Mesh
 from numpy import linalg
 from typing import Tuple
 
@@ -40,6 +40,7 @@ def aspect_ratio(mesh: Mesh) -> Tuple[np.float_, ...]:
    - For 3D elements the aspect ratio is still based on
      edge lengths, but excludes face diagonals or body diagonals.
   """
+
   assert mesh.is_valid(), "mesh is not valid"
   assert mesh.ndims >= 2, "mesh has to be, at least, a 2-dimensional entity"
 
@@ -55,11 +56,11 @@ def aspect_ratio(mesh: Mesh) -> Tuple[np.float_, ...]:
 
   elem_point = mesh.points[elements]
 
-  distances = linalg.norm(elem_point[..., 1, :] - elem_point[..., 0, :], axis = -1)
+  distances = linalg.norm(elem_point[..., 1, :] - elem_point[..., 0, :], axis=-1)
   distances = distances.reshape(distances.shape[0], -1)
 
-  dist_min = np.min(distances, axis = 1)
-  dist_max = np.max(distances, axis = 1)
+  dist_min = np.min(distances, axis=1)
+  dist_max = np.max(distances, axis=1)
 
   aspect_ratios = dist_max / dist_min
 

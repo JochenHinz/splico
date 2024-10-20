@@ -11,8 +11,7 @@ from mesh import Triangulation, AffineMesh
 
 
 class TetGen(AffineMesh):
-
-  '''
+  """
 
           1
           |\
@@ -30,7 +29,7 @@ class TetGen(AffineMesh):
     3
 
     the edge between vertices 3-1 is understood
-  '''
+  """
 
   simplex_type = 'tetrahedron'
   ndims = 3
