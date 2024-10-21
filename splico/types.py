@@ -2,7 +2,8 @@
 Module declaring various types that find applications throughout the library.
 In particular, this module introduces :class:`Immutable`, a general purpose
 base class for immutable and hashable classes. It also introduces the
-:class:`Singleton` base class.
+:class:`Singleton` base class which is a variant of :class:`Immutable` that
+can only create one instance per input.
 """
 
 
@@ -14,7 +15,7 @@ from functools import wraps
 from collections import ChainMap
 from collections.abc import Hashable
 from abc import ABCMeta
-from typing import Any, Self, Tuple, List, Dict, TypeVar, Sequence
+from typing import Any, Self, Tuple, List, Dict, TypeVar, Sequence, Callable
 from types import EllipsisType
 from weakref import WeakValueDictionary
 from inspect import signature, Signature, Parameter
@@ -23,6 +24,7 @@ from numpy.typing import NDArray
 
 
 T = TypeVar('T')
+C = TypeVar('C', bound='Singleton')
 
 Int = int | np.integer
 Float = float | np.floating
@@ -41,7 +43,7 @@ AnyFloatSeq = AnySequence[Float] | FloatArray
 AnyNumericSeq = AnySequence[Numeric] | NumericArray
 
 
-def ensure_same_class(fn):
+def ensure_same_class(fn: Callable) -> Callable:
   """
   A decorator ensuring that a function of the form ``fn(self, other)``
   immediately returns ``NotImplemented`` in case
@@ -55,7 +57,7 @@ def ensure_same_class(fn):
       def __eq__(self, other):
         return self.attr == other.attr
 
-  >>> a = MyClass(attr=5)  # derives from HashMixin
+  >>> a = MyClass(attr=5)  # derives from Immutable
   >>> b = MyClass(attr=5)
   >>> a <= b
       True
@@ -68,21 +70,21 @@ def ensure_same_class(fn):
       ERROR
   >>> a == 'foo'  # equality not resolved
       False
-  >>> c = MyOtherClass(attr=5)  # derives from HashMixin
+  >>> c = MyOtherClass(attr=5)  # derives from Immutable
   >>> a <= c
       ERROR
   >>> a == c
       False
   """
   @wraps(fn)
-  def wrapper(self, other: Any) -> Self:
+  def wrapper(self, other: Any):
     if self.__class__ is not other.__class__:
       return NotImplemented
     return fn(self, other)
   return wrapper
 
 
-def ensure_same_length(fn):
+def ensure_same_length(fn: Callable) -> Callable:
   """
   Decorator for making sure that sized objects have equal length.
   The types of ``self`` and ``other`` have to match.
@@ -90,7 +92,7 @@ def ensure_same_length(fn):
   @wraps(fn)
   def wrapper(self, other):
     if len(self) != len(other):
-      raise UnequalLengthError("Can only perform operation on instances with"
+      raise UnequalLengthError("Can only perform operation on instances of"
                                " equal length.")
     return fn(self, other)
   return wrapper
@@ -109,7 +111,6 @@ def is_valid_signature(signature: Signature) -> bool:
   Return ``True`` if an `__init__` signature neither contains `*args`
   nor `**kwargs`.
   """
-  signature = remove_self(signature)
   return bool(set(map(lambda x: x.kind, signature.parameters.values())) &
               {Parameter.VAR_KEYWORD, Parameter.VAR_POSITIONAL}) is False
 
@@ -117,11 +118,11 @@ def is_valid_signature(signature: Signature) -> bool:
 class ImmutableMeta(ABCMeta):
   """
   Metaclass for immutable types. For use in the :class:`Immutable` base class.
-  If a class does not implement the ``_items`` class-level attribute, it is
-  inferred from the ``__init__``'s signature. The signature cannot be inferred
-  if it contains ``*args`` or ``**kwargs``. If ``_items`` is not implemented
-  or cannot be inferred from signature or the base classes' signatures,
-  the base class prevents instantiation.
+  If a class does not implement the ``_field_names`` class-level attribute, it
+  is inferred from the ``__init__``'s signature. The signature cannot be inferred
+  if it contains ``*args`` or ``**kwargs``. If ``_field_names`` is not implemented
+  or cannot be inferred from the base classes' signatures, the base class
+  prevents instantiation.
 
   Example
   -------
@@ -131,7 +132,7 @@ class ImmutableMeta(ABCMeta):
           self.a = float(a)
           self.b = float(b)
 
-  >>> MyClass._items
+  >>> MyClass._field_names
       ('a', 'b')
 
   Similarly
@@ -140,87 +141,86 @@ class ImmutableMeta(ABCMeta):
         def __init__(self, *args, **kwargs):
           pass
 
-  >>> MyClass._items
+  >>> MyClass._field_names
       ERROR
 
   If a derived class has an `__init__` of the form `(self, *args, **kwargs)`
-  and doesn't implement _items explicitly, it is inferred from the parent class
-  or its parent classes.
+  and doesn't implement `_field_names`` explicitly, it is inferred from the parent
+  class or its parent classes.
 
-  >>> class MyDerivedClass(MyClass):  # MyClass._items == ('a', 'b')
+  >>> class MyDerivedClass(MyClass):  # MyClass._field_names == ('a', 'b')
         def __init__(self, *args, **kwargs):
           super().__init__(*args, **kwargs)
 
-  >>> MyDerivedClass._items
+  >>> MyDerivedClass._field_names
       ('a', 'b')
   """
 
   def __new__(mcls, name, bases, attrs, *args, **kwargs):
     cls = super().__new__(mcls, name, bases, attrs, *args, **kwargs)
+
     # since we overwrite __call__, inspect cannot infer the correct signature
     # therefore we set it manually from the cls.__init__
     cls.__signature__ = remove_self(signature(cls.__init__))
+
     try:
-      _items = attrs['_items']
-      assert all(isinstance(element, str) for element in _items), \
+      _field_names = attrs['_field_names']
+      assert all(isinstance(element, str) for element in _field_names), \
           'Received invalid type for the _item class-level argument.'
-      cls._items = tuple(_items)  # make sure it's converted to a tuple
+      cls._field_names = tuple(_field_names)  # make sure it's converted to a tuple
+
       if is_valid_signature(cls.__signature__):
-        if set(_items) != set(remove_self(cls.__signature__).parameters.keys()):
+        if set(_field_names) != set(cls.__signature__.parameters.keys()):
           log.warning(f"Warning, the class `{cls.__name__}`'s signature does not"
-                       " match its `_items` implementation which will lead to"
-                       " errors when using `self._edit` or `hash(self)`.")
+                       " match its `_field_names` implementation which will lead"
+                       " to errors when using `self._edit` or `hash(self)`.")
     except KeyError:
-      # _items has not been implemented as a class-level attribute -> try to infer
+      # _field_names has not been implemented as a class-level attribute -> try to infer
       # it first from the __init__ signature. The signature may not contain
       # *args or **kwargs. If this fails, try to infer the signature from the
-      # parent classes. If that fails too and `_items` isn't implemented,
+      # parent classes. If that fails too and `_field_names` isn't implemented,
       # an error is thrown upon trying to instantiate the class.
 
-      # delete in case it was set through inheritance
-      try:
-        del cls._items
-      except AttributeError:
-        pass
-
-      for subclass in cls.__mro__:
-        if is_valid_signature((sig := signature(subclass.__init__))):
-          cls._items = tuple(remove_self(sig).parameters.keys())
+      for pclass in cls.__mro__:
+        if is_valid_signature((sig := remove_self(signature(pclass.__init__)))):
+          cls._field_names = tuple(sig.parameters.keys())
           break
 
     return cls
 
   def __call__(cls, *args, **kwargs):
-    # make sure that if _items is not implemented or inferred, the class is not
+    # make sure that if _field_names is not implemented or inferred, the class is not
     # instantiated.
-    if not hasattr(cls, '_items'):
-      raise TypeError("The class's `_items` class-level attribute has not been"
-                      " implemented or could not be inferred. Cannot "
+    if not hasattr(cls, '_field_names'):
+      raise TypeError("The class's `_field_names` class-level attribute has not"
+                      " been implemented or could not be inferred. Cannot "
                       "instantiate a class that does not implement this attribute.")
-    return ABCMeta.__call__(cls, *args, **kwargs)
+    ret = super().__call__(*args, **kwargs)
+    ret._is_initialized = True  # private variable to prevent overwriting attributes
+    return ret
 
 
 class Immutable(metaclass=ImmutableMeta):
   """
-  Generic base clas for immutable types.
-  Has the ``_items`` class-level attribute.
-  The ``_items`` attribute is a tuple of strings where each string represents
-  the name of a class attribute (typically set in ``__init__``) that contributes
-  to the class's hash. If the class does not explicitly implement `_items`,
-  it is inferred from the `__init__`'s signature.' So, if a class stores the
+  Generic base class for immutable types.
+  Has the ``_field_names`` class-level attribute. The ``_field_names`` attribute
+  is a tuple of strings where each string represents the name of a class
+  attribute (typically set in ``__init__``) that contributes to the class's hash.
+  If the class does not explicitly implement `_field_names`,
+  it is inferred from the `__init__`'s signature. So, if a class stores the
   inputs it gets as attributes of the same name, it is possible to skip the
-  implementation of `_items`.
-  Each element in ``_items`` needs to refer to a hashable type with the exception
-  of :class:`np.ndarray` which is serialized using ``serialize_array``.
+  implementation of `_field_names`.
+  Each element in ``_field_names`` needs to refer to a hashable type with the
+  exception of :class:`np.ndarray` which is serialized using ``serialize_array``.
 
   The class then implements the ``__hash__`` and the ``__eq__`` dunder methods
   in the obvious way. For this, the ``__hash__` and ``__eq__`` dunder methods
-  make use of the ``tobytes`` cached property which serializes all relevant
+  make use of the ``_tobytes`` cached property which serializes all relevant
   attributes and returns them as a tuple.
 
   The same Mixin implements the ``_lib`` method that returns a dictionary of
-  all (relevant) attributes implemented by ``_items``, i.e.,
-      {item: getattr(self, item) for item in self._items}.
+  all (relevant) attributes implemented by ``_field_names``, i.e.,
+      {item: getattr(self, item) for item in self._field_names}.
   The ``_edit`` method then allows for editing single or several attributes
   while keeping all others intact and instantiates a new instance of the
   same class with the updated attributes.
@@ -231,7 +231,7 @@ class Immutable(metaclass=ImmutableMeta):
   ``util.frozen`` or ``util.freeze``.
 
   >>> class MyClass(Immutable):
-        _items = 'a', 'b'
+        _field_names = 'a', 'b'
         def __init__(self, a: np.ndarray, b: Tuple[int, ...]):
           self.a = frozen(a, dtype=float)
           self.b = tuple(map(int, b))
@@ -243,7 +243,7 @@ class Immutable(metaclass=ImmutableMeta):
           self.a = frozen(a, dtype=float)
           self.b = tuple(map(int, b))
 
-  >>> MyClass._items
+  >>> MyClass._field_names
       ('a', 'b')
 
   >>> A = MyClass( np.linspace(0, 1, 11), (1, 2, 3) )
@@ -262,25 +262,26 @@ class Immutable(metaclass=ImmutableMeta):
       True
   """
 
-  _items: Tuple[str, ...]
-
-  def _edit(self, **kwargs):
-    return self.__class__(**ChainMap(kwargs, self._lib))
+  _field_names: Tuple[str, ...]
+  __signature__: Signature
 
   @property
   def _lib(self) -> dict:
-    return {item: getattr(self, item) for item in self._items}
+    return {item: getattr(self, item) for item in self._field_names}
+
+  def _edit(self, **kwargs) -> Self:
+    return self.__class__(**ChainMap(kwargs, self._lib))
 
   @property
-  def tobytes(self) -> Tuple[Hashable, ...]:
-    ret: List[Hashable | serialized_array] = []
-    for i, attr in enumerate(map(self.__getattribute__, self._items)):
+  def _tobytes(self) -> Tuple[Hashable, ...]:
+    ret: List[Hashable] = []
+    for i, attr in enumerate(map(self.__getattribute__, self._field_names)):
       if isinstance(attr, np.ndarray):
 
         if attr.flags.writeable is True:
           log.warning("Warning, attempting to hash the attribute "
-                      f"`{self._items[i]}` which is a writeable `np.ndarray`."
-                      "Ensure that all `np.ndarray` attributes are non-writeable"
+                      f"`{self._field_names[i]}` which is a writeable `np.ndarray`."
+                      "Ensure that all `np.ndarray` attributes are read-only"
                       " using `util.frozen` or `util.freeze`.")
 
         ret.append(serialize_array(attr))
@@ -291,14 +292,21 @@ class Immutable(metaclass=ImmutableMeta):
                              " cannot be hashed.")
     return tuple(ret)
 
-  def __getstate__(self):
-    """ For pickling. """
-    return self.tobytes
+  def __setattr__(self, name: str, value: Any) -> None:
+    if hasattr(self, '_is_initialized'):  # __init__ is complete
+      if name in self._field_names or name == '_is_initialized':
+        raise AttributeError(f"The {self.__class__.__name__}'s immutability"
+                              " prohibits overwriting attributes in `_field_names`.")
+    super().__setattr__(name, value)
 
-  def __setstate__(self, state):
+  def __getstate__(self) -> Tuple[Hashable, ...]:
+    """ For pickling. """
+    return self._tobytes
+
+  def __setstate__(self, state) -> None:
     """ For unpickling. """
     args = {}
-    for key, item in zip(self._items, state):
+    for key, item in zip(self._field_names, state):
       if isinstance(item, serialized_array):
         item = deserialize_array(item)
       args[key] = item
@@ -306,7 +314,7 @@ class Immutable(metaclass=ImmutableMeta):
 
   def __hash__(self) -> int:
     if not hasattr(self, '_hash'):
-      self._hash = hash(self.tobytes)
+      self._hash = hash(self._tobytes)
     return self._hash
 
   def __eq__(self, other: Any) -> bool:
@@ -314,10 +322,10 @@ class Immutable(metaclass=ImmutableMeta):
     Default implementation of __eq__ for comparison between same types.
     """
     if self.__class__ is not other.__class__:
-      return NotImplemented
+      return NotImplemented  # Liskov substitution principle
     if self is other:
       return True
-    for item0, item1 in zip(self.tobytes, other.tobytes):
+    for item0, item1 in zip(self._tobytes, other._tobytes):
       if item0 != item1: return False
     return True
 
@@ -330,13 +338,8 @@ class SingletonMeta(ImmutableMeta):
   Each separate class with this metaclass receives its own unique cache.
   """
 
-  def __new__(mcls, *args, **kwargs):
-    assert not hasattr(mcls, '_cache')
-    ret = super().__new__(mcls, *args, **kwargs)
-    ret._cache = WeakValueDictionary()
-    return ret
-
-  def canonicalize_args(cls, *args: Hashable, **kwargs: Dict[str, Hashable]):
+  @staticmethod
+  def _canonicalize_args(cls, *args: Hashable, **kwargs: Dict[str, Hashable]):
     """
     Bring input arguments along with defaults (if applicable)
     into one canonical form suitable for hashing. Avoids duplicates resulting
@@ -346,6 +349,18 @@ class SingletonMeta(ImmutableMeta):
     bound = signature.bind(*args, **kwargs)
     bound.apply_defaults()
     return bound.args, tuple(bound.kwargs.items())
+
+  def __new__(mcls, *args, **kwargs):
+    cls = super().__new__(mcls, *args, **kwargs)
+    cls._cache = WeakValueDictionary()
+    return cls
+
+  def __call__(cls, *args, **kwargs):
+    _args = cls._canonicalize_args(cls, *args, **kwargs)
+    try:
+      return cls._cache[_args]
+    except KeyError:  # do the usual and add to weakref dictionary
+      return cls._cache.setdefault(_args, super().__call__(*args, **kwargs))
 
 
 class Singleton(Immutable, metaclass=SingletonMeta):
@@ -361,18 +376,12 @@ class Singleton(Immutable, metaclass=SingletonMeta):
           self.b = float(b)
 
   >>> A = MySingleton(5, 3)
-  >>> B = MySingleton(a=5.0, b=3.0)  # integer floats are equivalent to ints as keys
+  >>> B = MySingleton(a=5.0, b=3.0)  # integer floats behave equivalent to ints
   >>> A is B
       True
   """
 
-  def __new__(cls, *args, **kwargs):
-    _args = cls.canonicalize_args(*args, **kwargs)
-    try:
-      ret = cls._cache[_args]
-    except KeyError:
-      ret = cls._cache[_args] = super().__new__(cls)
-    return ret
+  _cache: WeakValueDictionary
 
 
 class NanVec(np.ndarray):

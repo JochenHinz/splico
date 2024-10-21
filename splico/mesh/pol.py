@@ -19,12 +19,18 @@ if TYPE_CHECKING:
 # generalizable to N dimensions. In the long run, we would like to support
 # meshes of higher dimensionality, hence the custom implementation.
 
+# While our meshes are currently bilinear or affine and therefore the local
+# element map only requires a polynomial weight array of shape (p, q, r, ...)
+# with p == q == r == ... == 2 (or less for gradients), this implementation
+# works for any polynomial order and keeps the door open for future
+# implementations of higher-order Lagrange-type meshes.
+
 # XXX: In the long run, nD polynomial evaluation should be based on Horner's
 #      method, see https://en.wikipedia.org/wiki/Horner%27s_method.
 
 
 @njit(cache=True)
-def _derivative_weights(pol_order, dx):
+def _derivative_weights(pol_order: Int, dx: Int):
   """
   Accumulated ``dx``-th derivative multiplicative weights of a
   ``pol_order``-th polynomial.
@@ -97,7 +103,7 @@ def _nd_pol_derivative(weights: FloatArray, dx: AnyIntSeq) -> FloatArray:
       np.broadcast_arrays(*np.meshgrid(*map(_dweights, weights.shape, dx),
                                        copy=False,
                                        sparse=True,
-                                       indexing='ij') )
+                                       indexing='ij'))
 
   # slice out first i = dx[j] entries in the j-th dimension of ``weights``
   # and multiply by the product of `dweights` with appropriate number of
@@ -142,7 +148,7 @@ def _compute_pol_weights(mesh: 'Mesh', dx: Tuple[Int, ...]) -> FloatArray:
   bfuncs = _compute_basis_weights(mesh)
 
   # get the element-wise weights in tensorial layout
-  # shape: (2 ** self.ndims, nelems, 3)
+  # shape: (nverts_per_elem, nelems, 3)
   elementwise_weights = mesh.points[mesh.elements.T]
 
   # (1, ..., 1, 2 ** ndims, nelems, 3) and (2, ..., 2, 2 **ndims, 1, 1 )

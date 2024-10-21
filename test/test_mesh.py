@@ -1,4 +1,5 @@
-from splico.mesh import Mesh, rectilinear, Triangulation, mesh_union, PointMesh
+from splico.mesh import Mesh, rectilinear, Triangulation, mesh_union, PointMesh, \
+                        LineMesh
 from splico.util import global_precision
 
 import unittest
@@ -65,6 +66,15 @@ class RefineAndGeometryMap(unittest.TestCase):
         # sort and take unique to change to default ordering
         self.assertTrue( (np.unique(np.sort(mesh1.elements, axis=1), axis=0) == np.unique(np.sort(rmesh.elements, axis=1), axis=0)).all() )
         self.assertTrue( np.allclose(mesh1.points, rmesh.points) )
+
+        nverts_r = mesh0.points.shape[0]
+        while True:
+          nverts_r += mesh0.elements.shape[0]  # for each submesh element, we get one additional point
+          if isinstance(mesh0, LineMesh):
+            break
+          mesh0 = mesh0.submesh
+
+        self.assertEqual(nverts_r, rmesh.points.shape[0])
 
   def test_refine_triangulation(self):
     mesh = unit_disc_triangulation()

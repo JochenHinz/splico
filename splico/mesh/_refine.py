@@ -53,9 +53,10 @@ def _refine_structured(elements: np.ndarray, points: np.ndarray, ndims: int):
   index = len(map_index_coord)
   map_format_index = {}
 
-  # map ((i,), (1.0,)) which represents 1 * self.points[i] to index i
+  # map ((i), (1.0)) which represents 1 * self.points[i] to index i
+  one = np.array([1.0], dtype=np.float64)
   for i in range(len(points)):
-    map_format_index['((i,), (1.0,))'] = i
+    map_format_index[_format_indices_weights(np.array([i], dtype=np.int64), one)] = i
 
   xi = np.linspace(0, 1, 3)
 
@@ -79,6 +80,7 @@ def _refine_structured(elements: np.ndarray, points: np.ndarray, ndims: int):
       # get index that corresponds to the formatted indices, weights
       # if not yet available, create new index via defaultdict constructor
       _hash = _format_indices_weights(indices, weights)
+
       if _hash not in map_format_index:
         map_format_index[_hash] = index
         map_index_coord[index] = (points[indices] * weights[:, None]).sum(0)

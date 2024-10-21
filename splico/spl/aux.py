@@ -94,5 +94,5 @@ def tensorial_prolongation_matrix(kvold,
   #      I think in this case the matrix should be conditionally converted
   #      to sparse format.
   assert kvold <= kvnew
-  # XXX: implement a variant that never carries out the kronecker product
+  # XXX: implement a variant that never explicitly carries out the kronecker product
   return sparse_kron(*starmap(univariate_prolongation_matrix, zip(kvold, kvnew)))
