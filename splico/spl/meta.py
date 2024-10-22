@@ -173,7 +173,7 @@ class NDSplineMeta(ImmutableMeta):
   For example:
 
   >>> spl
-      NDSpline<(4, 5)>
+      NDSpline<4, 5>
   >>> spl.knotvector.knots
       ([0, 0.1, 0.2, 0.4, 0.8, 1.0],)
   >>> spl.knots

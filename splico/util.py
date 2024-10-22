@@ -249,8 +249,8 @@ def normalize(array: np.ndarray) -> np.ndarray:
 
 
 def flat_meshgrid(*arrays, indexing: Literal['xy', 'ij'] = 'ij', axis: int = 0) -> np.ndarray:
-  ret = np.stack(list(map(np.ravel, np.meshgrid(*arrays, indexing=indexing))), axis=axis)
-  return ret
+  meshgrid = tuple(np.meshgrid(*arrays, indexing=indexing))
+  return np.stack(list(map(np.ravel, meshgrid)), axis=axis)
 
 
 def augment_by_zeros(points: np.ndarray, axis_target=3, axis=1):

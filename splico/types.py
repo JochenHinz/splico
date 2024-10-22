@@ -195,7 +195,7 @@ class ImmutableMeta(ABCMeta):
       raise TypeError("The class's `_field_names` class-level attribute has not"
                       " been implemented or could not be inferred. Cannot "
                       "instantiate a class that does not implement this attribute.")
-    ret = super().__call__(*args, **kwargs)
+    ret = type.__call__(cls, *args, **kwargs)
     ret._is_initialized = True  # private variable to prevent overwriting attributes
     return ret
 

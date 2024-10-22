@@ -183,7 +183,9 @@ class TestEval(unittest.TestCase):
       elements = np.arange(20)[:, None]
       mesh = PointMesh(elements, points)
 
-      self.assertTrue(np.allclose(mesh.eval_local(mesh._local_ordinances(1)), mesh.points[mesh.elements]))
+      points = mesh._local_ordinances(1)
+      self.assertTrue(np.allclose(mesh.eval_local(points),
+                                  mesh.points[mesh.elements]))
 
 
 if __name__ == '__main__':

@@ -23,6 +23,14 @@ IMPLEMENTED_UFUNCS = (np.add, np.subtract, np.multiply, np.divide)
 HANDLED_NDSPLINE_FUNCTIONS = {}
 
 
+def try_broadcast_shapes(*shapes: Tuple[Int, ...]) -> Tuple[Int, ...]:
+  try:
+    final_shape = np.broadcast_shapes(*shapes)
+  except ValueError as ex:
+    raise ValueError("Broadcasting failed with error message '{}'".format(ex))
+  return final_shape
+
+
 class __NDSpline_implementations__:
   """
   Dummy class for implementing various `NDSpline` ufuncs.
@@ -39,9 +47,18 @@ class __NDSpline_implementations__:
 
   @implements(np.add)
   def add(self, other):
+    """
+    Add two NDSplines sharing the same knotvector. The controlpoints will be
+    added.
+    """
     assert self.knotvector == other.knotvector
+    final_shape = try_broadcast_shapes(self.shape, other.shape)
+    ndims = len(final_shape)
+    n, m = map(len, (self.shape, other.shape))
     # if the knotvectors are the same, simply add the controlpoints together
-    return NDSpline(self.knotvector, self.controlpoints + other.controlpoints)
+    return NDSpline(self.knotvector,
+                    self.controlpoints[(sl,) + (_,) * (ndims - n)]
+                    + other.controlpoints[(sl,) + (_,) * (ndims - m)])
 
   @implements(np.subtract)
   def sub(self, other):
@@ -53,22 +70,17 @@ class __NDSpline_implementations__:
     # tensor knotvector
     knotvector = self.knotvector * other.knotvector
 
-    myshape, othershape = self.shape, other.shape
+    n, m = map(len, (self.shape, other.shape))
 
     # prepend ones to the shorter shaped NDSpline (default numpy behavior)
-    n, m = map(len, (myshape, othershape))
-    if m > n:
-      myshape = (1,) * (m - n) + myshape
-    elif n > m:
-      othershape = (1,) * (n - m) + othershape
-    assert all(i == j or 1 in (i, j) for i, j in zip(myshape, othershape))
+    myshape = (1,) * (m - n) + self.shape
+    othershape = (1,) * (n - m) + other.shape
 
-    # determine final shape of controlpoints after multiplication
-    shape = tuple(map(max, zip(myshape, othershape)))
+    final_shape = try_broadcast_shapes(myshape, othershape)
 
     # take outer product and reshape to (ncontrolpoints,) + shape
     cps = (self.controlpoints.reshape(-1, 1, *myshape) *
-           other.controlpoints.reshape(1, -1, *othershape)).reshape(-1, *shape)
+           other.controlpoints.reshape(1, -1, *othershape)).reshape(-1, *final_shape)
 
     return NDSpline(knotvector, cps)
 
@@ -99,6 +111,24 @@ class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
       The knotvector.
   controlpoints: :class:`np.ndarray`
       The controlpoints.
+
+
+  When performing default ``numpy`` arithmetic on an NDSpline, the operations
+  are by default performed on self.controlpoints[i] for all i. Hence, when
+  performing an airthmetic operation with a :class:`np.ndarray` A,
+  A.shape has to be broadcastable with self.controlpoints.shape[1:] rather than
+  self.controlpoints.shape.
+
+  >>> spline
+  ... NDSpline<4, 5, 3>
+  >>> spline.controlponts.shape
+  ... (10, 4, 5, 3)
+  >>> A.shape
+  ... (2, 4, 1, 3)
+  >>> (spline + A).shape
+  ... (2, 4, 5, 3)
+  >>> spline.controlpoints + A
+  ... ERROR
   """
 
   @classmethod
@@ -233,11 +263,12 @@ class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
     # reshape to matrix shape, if self.shape == (), np.prod((), dtype=int) == 1
     controlpoints = self.controlpoints.reshape(-1, np.prod(self.shape, dtype=int))
 
-    function = {False: call, True: tensor_call}.get(tensor)
+    function = {False: call, True: tensor_call}[tensor]
     ret = [function(positions, self.repeated_knots, self.degree, x, dx)
                                                       for x in controlpoints.T]
 
-    # XXX: np.stack makes a copy, find better solution (possibly do this in numba)
+    # XXX: np.stack makes a copy, find better solution
+    # (possibly do this directly in numba)
     return np.stack(ret, axis=1).reshape(-1, *self.shape)
 
   def tensorcall(self, *args, **kwargs):
@@ -368,8 +399,13 @@ class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
 
   def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
     """
-    All other numpy methods are implemented using the `__array_ufunc__`
-    protocol in combination with a for loop for now.
+    Numpy arithmetic is handled via the __array_ufunc__ protocol.
+    When the inputs are all of type :class:`NDSpline`, the arithmetic operation
+    is delegated to the corresponding function in :class:`dict`
+    ``HANDLED_NDSPLINE_FUNCTIONS``.
+
+    In case arithmetic between ``self`` and some :class:`np.ndarray` is
+    performed, the operation is handled as described in this class's docstring.
     """
     if method != '__call__':
       return NotImplemented

@@ -5,17 +5,18 @@
 @author: Jochen Hinz
 """
 
-from ..util import np, _, frozen, _round_array, round_result, \
-                   isincreasing, flat_meshgrid, freeze, frozen_cached_property, \
-                   augment_by_zeros, sorted_tuple
+from ..util import np, _, frozen, _round_array, isincreasing, flat_meshgrid, \
+                   frozen_cached_property, augment_by_zeros, sorted_tuple
 from ..types import Immutable, FloatArray, IntArray, ensure_same_class, Int
 from ..err import MissingVertexError, HasNoSubMeshError, HasNoBoundaryError, \
                   EmptyMeshError
 from ._refine import refine_structured, _refine_Triangulation
-from .pol import eval_nd_polynomial_local
+from .pol import eval_mesh_local
 from .bool import _issubmesh, mesh_boundary_union, mesh_union, mesh_difference
 from .plot import plot_mesh, plot_pointmesh
 from .meta import MeshMeta
+from .element import ReferenceElement, POINT, LINE, TRIANGLE, QUADRILATERAL, \
+                     HEXAHEDRON
 
 from abc import abstractmethod
 from typing import Callable, Sequence, Self, Tuple, Dict, List, Any
@@ -23,18 +24,11 @@ from functools import cached_property
 from itertools import product
 
 
-# all supported element types (for now)
-simplex_types = ('point', 'line', 'triangle',
-                 'quadrilateral', 'tetrahedron', 'hexahedron')
-
-
 # XXX: write another parent class that allows for mixed element types.
-#      the meshes that have already been implemented are then special cases
+#      The meshes that have already been implemented then become special cases
 #      with only one element type.
-
-
-# XXX: In the long run move away from a Class-level attribute structure to
-#      a factory pattern structure.
+#      To accomplish this, in the long run, move away from a Class-level
+#      a attribute structure to a factory pattern structure.
 
 
 class Mesh(Immutable, metaclass=MeshMeta):
@@ -49,6 +43,9 @@ class Mesh(Immutable, metaclass=MeshMeta):
       Point index array of shape (npoints, 3).
       The element index array must satisfy:
           0 <= elements.min() <= elements.max() < len(points).
+      Not all ``points in self.points`` may be active. Meaning that the mesh
+      can contain points that are not referred-to in `self.elements`.
+      This is to minimize the need for copying arrays.
 
   Attributes
   ----------
@@ -56,34 +53,37 @@ class Mesh(Immutable, metaclass=MeshMeta):
       The element index array.
   points : :class:`np.ndarray`, frozen-array.
       The point array.
-  simplex_type : :class:`str`, class attribute.
-      The name of the simplex associated with the mesh.
-  ndims : :class:`int`.
-      The spatial dimensionality of the reference element. Must satisfy
-      0 <= ndims < 4 (for now).
-  nverts : :class:`int`.
-      Number of vertices per element. `self.elements.shape[1:] == (nverts,)`.
-  is_affine : :class:`bool`.
-      Boolean representing whether the mesh is affine or not
-      (may be removed in the future).
+  reference_element : :class:`ReferenceElement`, class attribute.
+      The type of the mesh's reference element.
+
+  Four class-level attributes are directly inherited from the
+  :class:`ReferenceElement` class-level attribute:
+
+  element_name, ndims, nverts, is_affine
+
+  For instance:
+
+  >>> class Triangulation(AffineMesh):
+  ...   reference_element = TRIANGLE
+  >>> ...
+  >>> mesh
+  ... Triangulation
+  >>> mesh.reference_element.ndims
+  ... 2
+  >>> mesh.ndims
+  ... 2
   """
 
-  # Derived classes NEED to overwrite this.
+  # Derived classes that do not implement `reference_element` cannot
+  # be instantiated
+  reference_element: ReferenceElement
 
-  # The simplex type's name as a string.
-  # For instance, 'triangle'.
-  simplex_type: str
-
-  # Spatial dimensionality of the local reference element
+  # inferred from `reference_element` by `MeshMeta`
+  element_name: str
   ndims: int
-
-  # Number of vertices per simplex.
-  # For instance, simplex_type == 'triangle' means nverts = 3.
   nverts: int
-
-  # A boolean that indicates whether the mesh is piecewise affine.
-  # A piecewise affine mesh has a constant metric tensor on each element.
   is_affine: bool
+  _local_ordinances: Callable
 
   @staticmethod
   def _submesh_elements(mesh: 'Mesh') -> IntArray:
@@ -116,15 +116,16 @@ class Mesh(Immutable, metaclass=MeshMeta):
     # XXX: instead raising an error, implement more graceful empty mesh handling
     if not self.elements.shape[0]:
       raise EmptyMeshError('Found an empty mesh.')
-    assert self.points.shape[1:] == (3,), \
-      NotImplementedError("Meshes are assumed to be manifolds in R^3 by default.")
+    if not self.points.shape[1:] == (3,):
+      raise NotImplementedError("Meshes are assumed to be manifolds in R^3 by default.")
     assert 0 <= self.elements.min() <= self.elements.max() < len(self.points), \
         "Hanging node detected."
     assert np.unique(self.elements, axis=0).shape == self.elements.shape, \
         "Duplicate element detected."
 
   def __repr__(self) -> str:
-    return f"{self.__class__.__name__}[nelems: {len(self.elements)}, npoints: {len(self.points)}]"
+    return f"{self.__class__.__name__}[nelems: {len(self.elements)}, " \
+                                    f"npoints: {len(self.points)}]"
 
   @abstractmethod
   def _refine(self) -> Self:
@@ -137,17 +138,16 @@ class Mesh(Immutable, metaclass=MeshMeta):
     under a single refinement step.
     """
     # each derived class HAS to implement this method
-    pass
+    return self
 
-  @abstractmethod
-  def _local_ordinances(self, order: int) -> FloatArray:
+  def refine(self, n: int = 1) -> Self:
     """
-    Abstract method of the mesh's local ordinances.
-    Given `order >= 1`, the local ordinances refer to the nodal points inside
-    the mesh's reference element of a Lagrangian basis of order `order`.
-    For `order == 1` this should default to the reference element's vertices.
+    Refine the mesh `n` times.
     """
-    pass
+    assert (n := int(n)) >= 0
+    if n == 0:
+      return self
+    return self._refine().refine(n=n-1)
 
   def issubmesh(self, other: 'Mesh') -> bool:
     """
@@ -188,15 +188,6 @@ class Mesh(Immutable, metaclass=MeshMeta):
       raise MissingVertexError("Failed to locate the vertices with indices '{}'.".format(diff))
     return self.points[vertex_indices]
 
-  def refine(self, n: int = 1) -> Self:
-    """
-    Refine the mesh `n` times.
-    """
-    assert (n := int(n)) >= 0
-    if n == 0:
-      return self
-    return self._refine().refine(n=n-1)
-
   def drop_points_and_renumber(self) -> Self:
     """
     Drop all points that are not used by `self.elements` and renumber
@@ -219,7 +210,7 @@ class Mesh(Immutable, metaclass=MeshMeta):
     JK = self.JK(points)
     return (JK.swapaxes(-1, -2)[..., _] * JK[..., _, :, :]).sum(-2)
 
-  def is_valid(self, order: int = 1, thresh=1e-8) -> bool:
+  def is_valid(self, order: int = 1, thresh: float = 1e-8) -> bool:
     """
     Check if a mesh is valid.
     These are some standard checks that work for all mesh types.
@@ -254,10 +245,10 @@ class Mesh(Immutable, metaclass=MeshMeta):
     # we reshape to (nelems, npoints, 3)
 
     # XXX: restructure to avoid swapaxes and maintain contiguous memory layout
-    return eval_nd_polynomial_local(self, points, dx=dx).swapaxes(-1, -2)
+    return eval_mesh_local(self, points, dx=dx).swapaxes(-1, -2)
 
-  @cached_property
-  def _submesh_indices(self) -> Tuple[IntArray, ...]:
+  @frozen_cached_property
+  def _submesh_indices(self) -> Tuple[Tuple[Int, ...], ...]:
     """
     The submesh indices are the columns of `self.elements` that have to be
     extracted to create the mesh's submesh. By default returns a `HasNoSubMeshError`
@@ -265,7 +256,10 @@ class Mesh(Immutable, metaclass=MeshMeta):
     Example: to go from a triangulation to a linmesh, we have to extract the
     columns ([0, 1], [1, 2], [2, 0]) (all edges of each triangle).
     """
-    raise HasNoSubMeshError(f"A mesh of type '{self.__class__.__name__}' has no submesh.")
+    indices = self.reference_element.children_facets
+    if not indices:
+      raise HasNoSubMeshError(f"A mesh of type '{self.__class__.__name__}' has no submesh.")
+    return indices
 
   @property
   def _submesh_type(self):
@@ -281,9 +275,10 @@ class Mesh(Immutable, metaclass=MeshMeta):
     Split all elements of the submesh into boundary and non-boundary elements.
     """
 
-    # get all facets
-    all_facets = np.concatenate([ self.elements[:, indices]
-                                  for indices in self._submesh_indices ], dtype=int)
+    # get all facets and reshape
+    # (nelems, *_submesh_indices.shape) -> (nelems * si.shape[0], si.shape[1])
+    all_facets = self.elements[:, self._submesh_indices]. \
+                                    reshape(-1, self._submesh_indices.shape[1])
 
     # create a unique identifier by sorting the indices
     sorted_facets = np.sort(all_facets, axis=1)
@@ -397,22 +392,14 @@ class Mesh(Immutable, metaclass=MeshMeta):
 
 class MultilinearMesh(Mesh):
   """
-  Derived class providing implementations for the ``_local_ordinances`` which
-  is an abstract method of the :class:`Mesh` base class.
-  Additionally, provides an implementation of the ``_refine`` abstract method
+  Abstract base class for multilinear mesh types.
+  Provides an implementation of the ``_refine`` abstract method
   which is accomplished using the ``_refine_structured`` routine, which works
   for multilinear mesh types of any dimensionality.
   Note that a one-dimensional multilinear mesh is simultaneously affine.
   """
 
   is_affine = False
-
-  @freeze
-  @round_result
-  def _local_ordinances(self, order: int) -> FloatArray:
-    assert (order := int(order)) > 0
-    x = np.linspace(0, 1, order+1)
-    return flat_meshgrid(*[x] * self.ndims, axis=1)
 
   def _refine(self) -> Self:
     return refine_structured(self)
@@ -421,7 +408,6 @@ class MultilinearMesh(Mesh):
 class AffineMesh(Mesh):
   """
   Derived class for affine mesh types.
-  Provides an implementation for the _local_ordinances abstract method.
   """
   # XXX: currently affine meshes require special-tailored refinement methods.
   #      Write a method that can refine any affine mesh type, similar to
@@ -429,18 +415,11 @@ class AffineMesh(Mesh):
   #      as in `MultilinearMixin` while restricting the attention to the plane
   #      x + y + z <= 1
 
-  is_affine = True
-
-  @freeze
-  @round_result
-  def _local_ordinances(self, order: int) -> FloatArray:
-    active_indices = \
-        [i for i, mi in enumerate(product(*[range(2)]*self.ndims)) if sum(mi) <= 1]
-    return MultilinearMesh._local_ordinances(self, order)[active_indices]
-
   def _refine(self) -> Self:
-    raise NotImplementedError('Every affine mesh type needs to implement its own'
-                              ' refinement method.')
+    # XXX: this function is to be replaced by a general affine refinement method.
+    #      For now, we just throw an error if the derived class doesn't overwrite.
+    raise NotImplementedError('Every affine mesh type needs to implement'
+                              ' its own refinement method.')
 
 
 class HexMesh(MultilinearMesh):
@@ -458,18 +437,7 @@ class HexMesh(MultilinearMesh):
   :class:`MultilinearMesh`.
   """
 
-  simplex_type = 'hexahedron'
-  ndims = 3
-  nverts = 8
-
-  @cached_property
-  def _submesh_indices(self):
-    return tuple(map(frozen, [ [0, 1, 2, 3],
-                               [0, 1, 4, 5],
-                               [0, 2, 4, 6],
-                               [4, 5, 6, 7],
-                               [1, 3, 5, 7],
-                               [2, 3, 6, 7], ]))
+  reference_element = HEXAHEDRON
 
   @frozen_cached_property
   def pvelements(self):
@@ -491,13 +459,7 @@ class QuadMesh(MultilinearMesh):
 
   """
 
-  simplex_type = 'quadrilateral'
-  ndims = 2
-  nverts = 4
-
-  @cached_property
-  def _submesh_indices(self):
-    return tuple(map(frozen, [[0, 1], [0, 2], [2, 3], [1, 3]]))
+  reference_element = QUADRILATERAL
 
   @property
   def _submesh_type(self):
@@ -527,19 +489,13 @@ class Triangulation(AffineMesh):
   ``_local_ordinances`` is implemented by inheritance of :class:`AffineMesh`.
   """
 
-  simplex_type = 'triangle'
-  ndims = 2
-  nverts = 3
+  reference_element = TRIANGLE
 
   @classmethod
   def from_polygon(cls, *args, **kwargs):
     """ See the docstring of `triangulation_from_polygon.` """
-    from ._gmsh import triangulation_from_polygon
+    from splico.mesh._gmsh import triangulation_from_polygon
     return cls(*triangulation_from_polygon(*args, **kwargs))
-
-  @cached_property
-  def _submesh_indices(self):
-    return tuple(map(frozen, [[0, 1], [0, 2], [1, 2]]))
 
   @property
   def _submesh_type(self):
@@ -559,16 +515,10 @@ class Triangulation(AffineMesh):
 
 class LineMesh(AffineMesh):
 
-  simplex_type = 'line'
-  ndims = 1
-  nverts = 2
+  reference_element = LINE
 
   def _refine(self):
     return refine_structured(self)
-
-  @cached_property
-  def _submesh_indices(self):
-    return (frozen([0]), frozen([1]))
 
   @property
   def _submesh_type(self):
@@ -577,16 +527,10 @@ class LineMesh(AffineMesh):
 
 class PointMesh(Mesh):
 
-  simplex_type = 'point'
-  ndims = 0
-  nverts = 1
-  is_affine = True
+  reference_element = POINT
 
   def _refine(self):
-    return self
-
-  def _local_ordinances(self, order: int) -> FloatArray:
-    return np.zeros((1,), dtype=float)
+    return super()._refine()
 
   def plot(self):
     plot_pointmesh(self)

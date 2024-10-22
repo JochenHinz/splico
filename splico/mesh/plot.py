@@ -17,9 +17,9 @@ def plot_mesh(mesh: 'Mesh'):
                 'triangle': vtk.VTK_TRIANGLE,
                 'quadrilateral': vtk.VTK_QUAD,
                 'tetrahedron': vtk.VTK_TETRA,
-                'hexahedron': vtk.VTK_HEXAHEDRON }.get(mesh.simplex_type, None)
+                'hexahedron': vtk.VTK_HEXAHEDRON }.get(mesh.element_name, None)
   if cell_type is None:
-    raise NotImplementedError(f"Plotting cells of type {mesh.simplex_type} "
+    raise NotImplementedError(f"Plotting cells of type {mesh.element_name} "
                                "has not been implementd yet.")
 
   mesh = mesh.drop_points_and_renumber()

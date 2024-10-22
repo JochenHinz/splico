@@ -5,7 +5,7 @@ Polynomial routines for evaluating the local element maps.
 from ..util import np, _, freeze
 from ..types import Int, FloatArray, AnyIntSeq
 
-from typing import Tuple, TYPE_CHECKING
+from typing import Tuple, Optional, TYPE_CHECKING
 from functools import lru_cache
 
 from numba import njit
@@ -83,8 +83,8 @@ def _nd_pol_derivative(weights: FloatArray, dx: AnyIntSeq) -> FloatArray:
       The polynomial weights of the derivative.
   """
   dx = np.asarray(dx, dtype=int)
-  # get the number of derivative axes
 
+  # get the number of derivative axes
   nder = len(dx)
   ntot = weights.ndim
 
@@ -93,17 +93,16 @@ def _nd_pol_derivative(weights: FloatArray, dx: AnyIntSeq) -> FloatArray:
   # if weights.shape is shorter than dx this will fail
   assert all(0 <= _dx < n for _dx, n in zip(dx, weights.shape[:nder], strict=True))
 
-  if not nder or (dx == 0).all():
+  if (dx == 0).all():
     return weights
 
   _dweights = lambda shp, _dx: _derivative_weights(shp - 1, _dx)
 
   # shape (weights.shape[0] - dx[0], weights.shape[1] - dx[1], ...)
-  dweights = \
-      np.broadcast_arrays(*np.meshgrid(*map(_dweights, weights.shape, dx),
-                                       copy=False,
-                                       sparse=True,
-                                       indexing='ij'))
+  dweights = np.broadcast_arrays(*np.meshgrid(*map(_dweights, weights.shape, dx),
+                                              copy=False,
+                                              sparse=True,
+                                              indexing='ij'))
 
   # slice out first i = dx[j] entries in the j-th dimension of ``weights``
   # and multiply by the product of `dweights` with appropriate number of
@@ -123,9 +122,8 @@ def _compute_basis_weights(mesh: 'Mesh'):
   # PointMesh ords have shape (1,) so we need to reshape to two dimensions
   ords = np.atleast_2d(mesh._local_ordinances(1).astype(int))
 
-  # set up the matrix we need to solve
-  X = np.stack([ np.multiply.reduce([_x ** i for _x, i in zip(ords.T, mindex)])
-                 for mindex in ords ], axis=1)
+  # set up the matrix we need to invert
+  X = (ords[..., _] ** ords.T[_]).prod(1)
 
   # solve for the nodal basis function's polynomial weights
   # and reshape them to tensorial (nfuncs, x, y, z, ...) shape
@@ -133,7 +131,7 @@ def _compute_basis_weights(mesh: 'Mesh'):
   # shape: (*(2,) * self.ndims, 2 ** self.ndims)
   # (basis_f_index, 2, 2, ...)
   basis_funcs = np.zeros((*(2,) * mesh.ndims, X.shape[0]), dtype=float)
-  basis_funcs[*ords.T] = np.linalg.solve(X, np.eye(X.shape[0]))
+  basis_funcs[*ords.T] = np.linalg.inv(np.atleast_2d(X))
   return basis_funcs
 
 
@@ -157,8 +155,9 @@ def _compute_pol_weights(mesh: 'Mesh', dx: Tuple[Int, ...]) -> FloatArray:
   return _nd_pol_derivative(ret, dx)
 
 
-def eval_nd_polynomial_local(mesh: 'Mesh', points: FloatArray,
-                                           dx: Int | AnyIntSeq = 0) -> FloatArray:
+def _eval_nd_polynomial(weights: FloatArray,
+                        points: FloatArray,
+                        dx: Optional[AnyIntSeq] = None) -> FloatArray:
   """
   Evaluate `(x, y, z, ...)` n-dependency polynomials or their derivatives
   in `points`.
@@ -182,22 +181,9 @@ def eval_nd_polynomial_local(mesh: 'Mesh', points: FloatArray,
       Polynomial (derivative) evaluations of shape (x, y, z, ..., npoints).
   """
 
-  # in case points is one-dimensional (PointMesh)
-  ndim, = (points := np.asarray(points)).shape[1:] or (0,)
-
-  assert mesh.ndims == ndim, "The point array's shape doesn't match the mesh's" \
-                             " dimensionality."
-
-  # we have to convert to new variable to avoid mypy errors ...
-  if isinstance(dx, Int):
-    dx_tpl: Tuple[Int, ...] = (dx,) * ndim
-  else:
-    dx_tpl = tuple(dx)
-
-  assert len(dx_tpl) == ndim
-
-  # take derivative weights
-  weights = _compute_pol_weights(mesh, dx_tpl)
+  # the number of dependencies of the polynomial
+  ndim, = points.shape[1:]
+  assert len((dx := dx or (0,)*ndim)) == ndim
   shape = weights.shape[:ndim]
 
   # compute all x, y, z, ... points raised to all powers
@@ -215,8 +201,54 @@ def eval_nd_polynomial_local(mesh: 'Mesh', points: FloatArray,
   # and (1, 1, r, 1, .., npoints) which are all broadcast to shape
   # (p, q, r, ..., x, y, z, ..., npoints)
   myshape = lambda j: (_,) * j + (sl,) + (_,) * (m - j - 2) + (sl,)
-  barrs = [ np.broadcast_to(mypower[myshape(i)], array_shape)
-                          for i, mypower in enumerate(powers) ]
+  # barrs = [ np.broadcast_to(mypower[myshape(i)], array_shape)
+  #                           for i, mypower in enumerate(powers) ]
+
+  barrs = np.broadcast_arrays(*(pw[myshape(i)] for i, pw in enumerate(powers)))
+  factor = np.broadcast_to(np.multiply.reduce(barrs), array_shape)
 
   # return the result in shape (x, y, z, ..., n)
-  return (weights[..., _] * np.multiply.reduce(barrs)).sum(tuple(range(ndim)))
+  return (weights[..., _] * factor).sum(tuple(range(ndim)))
+
+
+def eval_mesh_local(mesh: 'Mesh', points: FloatArray, dx: Int | AnyIntSeq = 0):
+  """
+  Evaluate the local element map or one of its local derivatives of all
+  elements corresponding to an instantiation of :class:`splico.mesh.Mesh`.
+
+  Parameters
+  ----------
+  mesh : :class:`splico.mesh.Mesh`
+      The input mesh.
+  points : :class:`np.ndarray`
+      The local evaluation points.
+  dx : :class:`int` or sequence of integers of length ``mesh.ndims``
+      The derivative order in each direction. If given by an integer,
+      the integer will be repeated ``mesh.ndims`` times.
+
+  Returns
+  -------
+  :class:`np.ndarray`
+      The evaluation of shape ``(nelems, npoints, 3)``, where
+      ``nelems = len(mesh.elements)`` and ``npoints = len(points)``.
+  """
+  ndim, = (points := np.asarray(points)).shape[1:]
+
+  assert mesh.ndims == ndim, "The point array's shape doesn't match the mesh's" \
+                             " dimensionality."
+
+  # we have to convert to new variable to avoid mypy errors ...
+  if isinstance(dx, Int):
+    dx_tpl: Tuple[Int, ...] = (dx,) * ndim
+  else:
+    dx_tpl = tuple(dx)
+
+  assert len(dx_tpl) == ndim
+
+  # if ndim == 0:  # we simply repeat to shape (npoints, 3, len(points))
+  #   return np.repeat(mesh.points[:, :, _], len(points), axis=2)
+
+  # take derivative weights
+  weights = _compute_pol_weights(mesh, dx_tpl)
+
+  return _eval_nd_polynomial(weights, points, dx_tpl)
