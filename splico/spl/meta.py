@@ -54,10 +54,10 @@ class TensorKnotVectorMeta(ImmutableMeta):
             self.knotvectors = tuple(knotvectors)
   >>> MyClass._vectorize_property('knots')
   >>> kv.knots
-      [0.0, 0.5, 1.0]
+  ... [0.0, 0.5, 1.0]
   >>> A = MyClass([kv, kv, kv])
   >>> A.knots
-      ([0.0, 0.5, 1.0], [0.0, 0.5, 1.0], [0.0, 0.5, 1.0])
+  ... ([0.0, 0.5, 1.0], [0.0, 0.5, 1.0], [0.0, 0.5, 1.0])
 
   """
 
@@ -86,7 +86,7 @@ class TensorKnotVectorMeta(ImmutableMeta):
 
     The resulting function's syntax is the following:
     >>> kv
-      UnivariateKnotVector[...]
+    ... UnivariateKnotVector[...]
     >>> tkv = kv * kv * kv
     >>> tkv.refine(..., n=[1, 0, 1])
 
@@ -99,7 +99,7 @@ class TensorKnotVectorMeta(ImmutableMeta):
     Similarly, we may pass the indices explicitly, for instance:
     >>> tkv.refine([0, 2], [1, 1])
     >>> tkv.refine(..., n=[1, 0, 1]) == tkv.refine([0, 2], [1, 1])
-      True
+    ... True
 
     Here the knotvector corresponding to the i-th entry in `indices` receives
     ``n[i]`` as input.
@@ -126,14 +126,14 @@ class TensorKnotVectorMeta(ImmutableMeta):
     """
     Vectorize an operator operation. For instance __and__.
     >>> kv0
-      UnivariateKnotVector[...]
+    ... UnivariateKnotVector[...]
     >>> kv1
-      UnivariateKnotVector[...]
+    ... UnivariateKnotVector[...]
     >>> kv2 = kv0 & kv1
     >>> tkv0 = TensorKnotVector([kv0] * 3)
     >>> tkv1 = TensorKnotVector([kv1] * 3)
     >>> (tkv0 & tkv1) == TensorKnotVector([kv2] * 3)
-        True
+    ... True
 
     We may optionally pass a return type that differs from ``None``
     in which case the return type defaults to ``self.__class__``.
@@ -173,11 +173,11 @@ class NDSplineMeta(ImmutableMeta):
   For example:
 
   >>> spl
-      NDSpline<4, 5>
+  ... NDSpline<4, 5>
   >>> spl.knotvector.knots
-      ([0, 0.1, 0.2, 0.4, 0.8, 1.0],)
+  ... ([0, 0.1, 0.2, 0.4, 0.8, 1.0],)
   >>> spl.knots
-      ([0, 0.1, 0.2, 0.4, 0.8, 1.0],)
+  ... ([0, 0.1, 0.2, 0.4, 0.8, 1.0],)
   """
   def __new__(mcls, *args, **kwargs):
     cls = super().__new__(mcls, *args, **kwargs)

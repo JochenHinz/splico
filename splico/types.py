@@ -24,7 +24,6 @@ from numpy.typing import NDArray
 
 
 T = TypeVar('T')
-C = TypeVar('C', bound='Singleton')
 
 Int = int | np.integer
 Float = float | np.floating

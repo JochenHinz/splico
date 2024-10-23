@@ -21,6 +21,38 @@ config.NUMBA_NUM_THREADS = multiprocessing.cpu_count()
 
 
 @njit(cache=True)
+def _univariate_prolongation_matrix(kvold, kvnew, p):
+  """
+  NURBS-Book implementation.
+  """
+  # XXX: implement for immediate sparse matrix output
+
+  n, m = len(kvnew) - 1, len(kvold) - 1
+  T = np.zeros((n, m), dtype=np.float64)
+
+  for j in range(m):
+    T[np.where(np.logical_and(kvold[j] <= kvnew[:n],
+                              kvnew[:n] < kvold[j + 1]))[0], j] = 1
+
+  for q in range(1, p + 1):
+    T_new = np.zeros((n - q, m - q), dtype=np.float64)
+    for i in range(n - q):
+      for j in np.where(np.logical_or(T[i, : m - q] != 0,
+                                      T[i, 1: m - q + 1] != 0))[0]:
+        denom0 = kvold[j+q] - kvold[j]
+        fac0 = (kvnew[i + q] - kvold[j]) / denom0 if denom0 != 0 else 0
+
+        denom1 = kvold[j+q+1] - kvold[j+1]
+        fac1 = (kvold[j+1+q] - kvnew[i+q]) / denom1 if denom1 != 0 else 0
+
+        T_new[i, j] = fac0 * T[i, j] + fac1 * T[i, j + 1]
+
+    T = T_new
+
+  return T
+
+
+@njit(cache=True)
 def position_in_knotvector(t, x):
   # XXX: replace by binary search algorithm.
   """

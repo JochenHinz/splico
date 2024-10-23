@@ -85,7 +85,7 @@ class TestNDSpline(unittest.TestCase):
     spl0 = NDSpline(kv, np.random.randn(kv.ndofs, 3, 2, 4))
 
     # make sure but ways of summing are valid
-    spl0_s = spl0.sum((0, 1))
+    spl0_s = spl0.sum(axis=(0, 1))
     spl0_s = spl0.sum(0, 1)
 
     self.assertTrue(spl0_s.controlpoints.shape == (kv.ndofs, 4))

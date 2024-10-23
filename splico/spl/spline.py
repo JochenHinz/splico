@@ -86,7 +86,6 @@ class __NDSpline_implementations__:
 
 
 class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
-
   """
   Class representing an N-dimensional spline.
 
@@ -125,7 +124,7 @@ class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
   ... (10, 4, 5, 3)
   >>> A.shape
   ... (2, 4, 1, 3)
-  >>> (spline + A).shape
+  >>> (spline + A).shape  # (4, 5, 3) becomes (1, 4, 5, 3)
   ... (2, 4, 5, 3)
   >>> spline.controlpoints + A
   ... ERROR
@@ -137,14 +136,15 @@ class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
     Constant one function. Helpful when a function of one variable
     has to be made a function of the other variables as well.
     """
-    return cls(as_TensorKnotVector(knotvector), np.ones(knotvector.ndofs))
+    knotvector = as_TensorKnotVector(knotvector)
+    return cls(knotvector, np.ones(knotvector.ndofs))
 
   @classmethod
   def from_exact_interpolation(cls, verts: AnyFloatSeq,
                                      data: AnyFloatSeq, **scipyargs):
     """
     Classmethod for creating a an exact interpolation of a verts, data pair
-    using scipy. It is then wrapped as a NDSpline.
+    using scipy. It is then wrapped as an NDSpline.
     """
 
     # XXX: parameters
@@ -180,13 +180,13 @@ class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
     self.knotvector = as_TensorKnotVector(knotvector)
 
     # for now we only allow tensorial knotvectors of up to length 3
-    assert 1 <= len(self.knotvector) <= 3, NotImplementedError
+    assert 1 <= len(self.knotvector) <= 3
 
     self.controlpoints = frozen(_round_array(controlpoints), dtype=float)
     assert self.controlpoints.shape[0] == self.knotvector.ndofs
 
   def __repr__(self) -> str:
-    return f"{self.__class__.__name__}<{','.join(map(str, self.shape))}>"
+    return f"{self.__class__.__name__}<{str(self.shape)[1:-1]}>"
 
   @property
   def shape(self) -> Tuple[int, ...]:
@@ -203,11 +203,11 @@ class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
     """
     Represent the controlpoints tensorially.
     >>> spline.controlpoints.shape
-    >>> (36, 2, 3)
+    ... (36, 2, 3)
     >>> spline.knotvector.dim
-    >>> (3, 3, 4)
+    ... (3, 3, 4)
     >>> spline.tcontrolpoints.shape
-    >>> (3, 3, 4, 2, 3)
+    ... (3, 3, 4, 2, 3)
     """
     return self.controlpoints.reshape(self.knotvector.dim + self.shape)
 
@@ -294,7 +294,7 @@ class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
     return self.controlpoints.ndim - 1
 
   def __iter__(self):
-    """ Iterate over the each sub-spline as a numpy array. """
+    """ Iterate over the each sub-spline the same way as a numpy array. """
     if not self.shape:
       raise TypeError('iteration over 0-d array')
     yield from (self._edit(knotvector=self.knotvector, controlpoints=controlpoints)
@@ -305,49 +305,32 @@ class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
     shape = self.controlpoints.shape[:1] + (self.shape and (-1,))
     return self._edit(controlpoints=self.controlpoints.reshape(shape))
 
-  def __neg__(self):
+  def __neg__(self) -> Self:
     return -1 * self
-
-  def __matmul__(self, other):
-    # XXX: docstring
-    # XXX: possibly remove this one in favor of numpy broadcasting
-    if isinstance(other, np.ndarray):
-      return self._edit(controlpoints=self.controlpoints @ other)
-    assert isinstance(other, NDSpline)
-    kv1 = other.knotvector
-    other = NDSpline.one(self.knotvector) * other
-    self = self * NDSpline.one(kv1)
-    return self._edit(controlpoints=(self.tcontrolpoints @
-                                     other.tcontrolpoints).reshape(-1, *self.shape))
 
   def sum(self, *args, axis=None) -> Self:
     """
     Same as np.sum but applied to the tail of self.controlpoints.
     >>> type(spl0)
-        splico.spl.spline.NDSpline
+    ... splico.spl.spline.NDSpline
     >>> spl0.shape
-        (2, 3)
+    ... (2, 3)
     >>> spl0.controlpoints.shape
-        (54, 2, 3)
+    ... (54, 2, 3)
     >>> spl1 = spl0.sum(1)
     >>> spl1.shape
-        (2,)
+    ... (2,)
     >>> spl1.controlpoints.shape
-        (54, 2)
+    ... (54, 2)
     """
     if args:
       assert axis is None
-      if len(args) == 1:
-        args, = args
-        if isinstance(args, tuple):
-          axis = args
-        else:
-          axis = (args,)
-      else:
-        axis = args
+      axis = args[0] if len(args) == 1 else args
     # if axis is None sum over all axes
     if axis is None:
       axis = tuple(range(self.controlpoints.ndim-1))
+    if isinstance(axis, Int):
+      axis = axis,
     assert all(ax > -self.ndim for ax in axis)
 
     # increment all summation axes by one in order to apply summation to
@@ -360,14 +343,14 @@ class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
   def T(self) -> Self:
     """
     >>> spl0.shape
-        (2, 3, 4)
+    ... (2, 3, 4)
     >>> spl0.controlpoints.shape
-        (54, 2, 3, 4)
+    ... (54, 2, 3, 4)
     >>> spl1 = spl0.T
     >>> spl1.shape
-        (4, 3, 2)
+    ... (4, 3, 2)
     >>> spl1.controlpoints.shape
-        (54, 4, 3, 2)
+    ... (54, 4, 3, 2)
     """
     return self.__class__(self.knotvector, np.moveaxis(self.controlpoints.T, -1, 0))
 
@@ -407,15 +390,9 @@ class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
     In case arithmetic between ``self`` and some :class:`np.ndarray` is
     performed, the operation is handled as described in this class's docstring.
     """
-    if method != '__call__':
-      return NotImplemented
-
     # XXX: add support for kwargs. This is tricky because some cannot be
     #      supported by immutable classes.
-    if kwargs:
-      return NotImplemented
-
-    if ufunc not in IMPLEMENTED_UFUNCS:
+    if method != '__call__' or kwargs or ufunc not in IMPLEMENTED_UFUNCS:
       return NotImplemented
 
     # split into instances of the same class and of other classes
@@ -425,11 +402,11 @@ class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
       (myclass if isinstance(inp, NDSpline) else notmyclass).append(inp)
 
     if len(myclass) > 1:  # this block handles interactions between NDSplines
-      # interactions between >= 2 NDSplines and other inputs are not handled
+      # interactions between 2 or more NDSplines and numpy arrays are not implemented
       if notmyclass or kwargs or ufunc not in HANDLED_NDSPLINE_FUNCTIONS:
         return NotImplemented
       func = HANDLED_NDSPLINE_FUNCTIONS[ufunc]
-      return reduce(lambda x, y: func(x, y), myclass)
+      return reduce(lambda x, y: func(x, y), myclass)  # use a reduce for now
 
     # What follows handles NDSpline and np.ndarray-like
 
