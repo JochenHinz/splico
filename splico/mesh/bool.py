@@ -3,18 +3,24 @@ This module's purpose is performing various boolean operations on meshes.
 """
 
 
-from ..util import np
+from ..util import np, _
+from ..types import FloatArray
 from ..err import HasNoSubMeshError
 from ..log import logger as log
 from ._bool import make_numba_indexmap, _remap_elements, _match_active, \
                    renumber_elements_from_indexmap as renumber_elements
 
+from typing import TYPE_CHECKING, List
 from functools import lru_cache
 from itertools import product
 
 
+if TYPE_CHECKING:
+  from .mesh import Mesh
+
+
 @lru_cache(maxsize=8)
-def _issubmesh(mesh0, mesh1):
+def _issubmesh(mesh0: 'Mesh', mesh1: 'Mesh') -> bool:
   """
   Check if ``mesh0`` is a submesh of ``mesh1``.
   A submesh is defined as a mesh that contains the same or a subset of the
@@ -74,7 +80,7 @@ def _issubmesh(mesh0, mesh1):
     return False
 
 
-def mesh_union(*meshes):
+def mesh_union(*meshes: 'Mesh') -> 'Mesh':
   """
   Take the union of several meshes.
   Duplicate points and elements are detected using a hashmap. Therefore only
@@ -90,43 +96,42 @@ def mesh_union(*meshes):
   assert all(mesh.__class__ is meshes[0].__class__ for mesh in meshes)
 
   # get all unique points
-  allpoints = np.unique(np.concatenate([mesh.points for mesh in meshes]), axis=0)
+  allpoints = np.unique(np.concatenate([mesh.points
+                                        for mesh in meshes]), axis=0)
 
   # map each unique point to an index
   indexmap = make_numba_indexmap(allpoints)
 
-  # create all new elements (counting different orderings twice) by mapping element indices to new indices
+  # create all new elements (counting different orderings twice)
+  # by mapping element indices to new indices
   newelems = np.concatenate([renumber_elements(mesh.elements,
                                                mesh.points,
                                                indexmap) for mesh in meshes])
 
-  # keep get the indices of the unique elements, not counting different orderings twice
-  _, unique_indices = np.unique(np.sort(newelems, axis=1), return_index=True, axis=0)
+  # keep get the indices of the unique elements, not counting different
+  # orderings twice
+  _, unique_indices = np.unique(np.sort(newelems, axis=1), axis=0,
+                                                           return_index=True)
 
   # return new mesh
   return meshes[0].__class__(newelems[unique_indices], allpoints)
 
 
-def mesh_difference(mesh0, mesh1):
-  """ mesh0 - mesh1. """
-  # XXX: some parts still need to be JIT compiled
-  assert mesh0.__class__ is mesh1.__class__, NotImplementedError
+def lexsort_meshpoints(mesh: 'Mesh') -> FloatArray:
+  """
+  Given an instantiation of :class:`Mesh`, sort the :class:`np.ndarray`
+  ``mesh_points`` of shape ``(nelems, nverts_per_elem, 3)``, where
+  ``mesh_points[i]`` contains the ``(nverts, 3)``-shaped array of points of
+  the ``i``-th element, lexicographically along the first axis.
 
-  allpoints = np.unique(np.concatenate([mesh.points for mesh in (mesh0, mesh1)]), axis=0)
-
-  indexmap = make_numba_indexmap(allpoints)
-
-  elems0 = renumber_elements(mesh0.elements, mesh0.points, indexmap)
-  elems1 = renumber_elements(mesh1.elements, mesh1.points, indexmap)
-
-  identifiers0 = np.sort(elems0, axis=1)
-  identifiers1 = np.sort(elems1, axis=1)
-
-  setelems0 = set(map(tuple, identifiers0)) - set(map(tuple, identifiers1))
-
-  keepindices = [i for i, identifier in enumerate(map(tuple, identifiers0)) if identifier in setelems0]
-
-  return mesh0.__class__(mesh0.elements[keepindices], mesh0.points)
+  >>> mesh.points[mesh.elements]
+  ... [[[1, 0, 0], [0, 0, 1], [0, 1, 0]], [[1, 0, 0], [0, 2, 0], [0, 0, 2]]]
+  >>> lexsort_meshpoints(mesh)
+  ... [[[0, 0, 1], [0, 1, 0], [1, 0, 0]], [[0, 0, 2], [0, 2, 0], [1, 0, 0]]]
+  """
+  mesh_points = mesh.points[mesh.elements]
+  shuffle = np.lexsort(tuple(mesh_points[..., i] for i in range(3)))
+  return np.take_along_axis(mesh_points, shuffle[..., _], 1)
 
 
 def mesh_boundary_union(*meshes, eps=1e-8, return_matches=False):
@@ -161,7 +166,7 @@ def mesh_boundary_union(*meshes, eps=1e-8, return_matches=False):
     log.warning("Warning, inactive points detected in at least one mesh,"
                 " they will be removed.")
 
-  meshes = [mesh.drop_points_and_renumber() for mesh in meshes]
+  meshes = tuple(mesh.drop_points_and_renumber() for mesh in meshes)
 
   # the local patch index is offset by a certain amount to assign a global
   # index.
@@ -170,7 +175,7 @@ def mesh_boundary_union(*meshes, eps=1e-8, return_matches=False):
 
   # make all matchings between differing meshes (i < j)
   # XXX: find a more efficient solution
-  all_matches = []
+  all_matches: List = []
   for (i, dmesh0), (j, dmesh1) in product(enumerate(dmeshes), enumerate(dmeshes)):
     if j <= i: continue
     # add offset to the two columns of the matches to reflect global indexing

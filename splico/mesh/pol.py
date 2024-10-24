@@ -5,7 +5,7 @@ Polynomial routines for evaluating the local element maps.
 from ..util import np, _, freeze
 from ..types import Int, FloatArray, AnyIntSeq
 
-from typing import Tuple, Optional, TYPE_CHECKING
+from typing import Tuple, TYPE_CHECKING
 from functools import lru_cache
 
 from numba import njit
@@ -157,7 +157,7 @@ def _compute_pol_weights(mesh: 'Mesh', dx: Tuple[Int, ...]) -> FloatArray:
 
 def _eval_nd_polynomial(weights: FloatArray,
                         points: FloatArray,
-                        dx: Optional[AnyIntSeq] = None) -> FloatArray:
+                        dx: Int | AnyIntSeq = ()) -> FloatArray:
   """
   Evaluate `(x, y, z, ...)` n-dependency polynomials or their derivatives
   in `points`.
@@ -183,7 +183,11 @@ def _eval_nd_polynomial(weights: FloatArray,
 
   # the number of dependencies of the polynomial
   ndim, = points.shape[1:]
-  assert len((dx := dx or (0,)*ndim)) == ndim
+
+  if isinstance(dx, Int):
+    dx = (dx,) * ndim
+
+  assert len((dx := tuple(dx))) == ndim
   shape = weights.shape[:ndim]
 
   # compute all x, y, z, ... points raised to all powers
@@ -213,7 +217,7 @@ def _eval_nd_polynomial(weights: FloatArray,
   return (weights[..., _] * factor).sum(tuple(range(ndim)))
 
 
-def eval_mesh_local(mesh: 'Mesh', points: FloatArray, dx: Int | AnyIntSeq = 0):
+def eval_mesh_local(mesh: 'Mesh', points: FloatArray, dx: Int | AnyIntSeq = ()):
   """
   Evaluate the local element map or one of its local derivatives of all
   elements corresponding to an instantiation of :class:`splico.mesh.Mesh`.
@@ -240,14 +244,14 @@ def eval_mesh_local(mesh: 'Mesh', points: FloatArray, dx: Int | AnyIntSeq = 0):
                              " dimensionality."
 
   if isinstance(dx, Int):
-    dx = dx,
+    dx = (dx,) * ndim
 
-  assert len(dx) == ndim
+  assert len((dx := tuple(dx))) == ndim
 
   # if ndim == 0:  # we simply repeat to shape (npoints, 3, len(points))
   #   return np.repeat(mesh.points[:, :, _], len(points), axis=2)
 
   # take derivative weights
-  weights = _compute_pol_weights(mesh, tuple(dx))
+  weights = _compute_pol_weights(mesh, dx)
 
   return _eval_nd_polynomial(weights, points, dx)

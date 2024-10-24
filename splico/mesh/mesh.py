@@ -8,11 +8,10 @@
 from ..util import np, _, frozen, _round_array, isincreasing, flat_meshgrid, \
                    frozen_cached_property, augment_by_zeros, sorted_tuple
 from ..types import Immutable, FloatArray, IntArray, ensure_same_class, Int
-from ..err import MissingVertexError, HasNoSubMeshError, HasNoBoundaryError, \
-                  EmptyMeshError
+from ..err import MissingVertexError, HasNoSubMeshError, HasNoBoundaryError
 from ._refine import refine_structured, _refine_Triangulation
 from .pol import eval_mesh_local
-from .bool import _issubmesh, mesh_boundary_union, mesh_union, mesh_difference
+from .bool import _issubmesh, mesh_boundary_union, mesh_union, lexsort_meshpoints
 from .plot import plot_mesh, plot_pointmesh
 from .meta import MeshMeta
 from .element import ReferenceElement, POINT, LINE, TRIANGLE, QUADRILATERAL, \
@@ -101,9 +100,11 @@ class Mesh(Immutable, metaclass=MeshMeta):
     for elem in map(tuple, elements):
       sorted_elements.setdefault(sorted_tuple(elem), []).append(elem)
 
+    nverts = mesh._submesh_type.nverts
+
     # for each list of equivalent elements (differing only by a permutation)
     # retain the minimum one. Example [(2, 3, 1), (1, 2, 3)] -> (1, 2, 3)
-    elements = sorted(map(min, sorted_elements.values()))
+    elements = sorted(map(min, sorted_elements.values())) or np.zeros((0, nverts), dtype=int)
     return frozen(elements)
 
   def __init__(self, elements: IntArray | Sequence[Sequence[int]], points: FloatArray):
@@ -114,18 +115,22 @@ class Mesh(Immutable, metaclass=MeshMeta):
     # sanity checks
     assert self.elements.shape[1:] == (self.nverts,)
     # XXX: instead raising an error, implement more graceful empty mesh handling
-    if not self.elements.shape[0]:
-      raise EmptyMeshError('Found an empty mesh.')
     if not self.points.shape[1:] == (3,):
       raise NotImplementedError("Meshes are assumed to be manifolds in R^3 by default.")
-    assert 0 <= self.elements.min() <= self.elements.max() < len(self.points), \
-        "Hanging node detected."
+
     assert np.unique(self.elements, axis=0).shape == self.elements.shape, \
         "Duplicate element detected."
+
+    if self:  # avoid this check for empty meshes
+      assert 0 <= self.elements.min() <= self.elements.max() < len(self.points), \
+          "Hanging node detected."
 
   def __repr__(self) -> str:
     return f"{self.__class__.__name__}[nelems: {len(self.elements)}, " \
                                     f"npoints: {len(self.points)}]"
+
+  def __bool__(self):
+    return bool(self.elements.shape[0])
 
   @abstractmethod
   def _refine(self) -> Self:
@@ -147,7 +152,7 @@ class Mesh(Immutable, metaclass=MeshMeta):
     assert (n := int(n)) >= 0
     if n == 0:
       return self
-    return self._refine().refine(n=n-1)
+    return self and self._refine().refine(n=n-1)
 
   def issubmesh(self, other: 'Mesh') -> bool:
     """
@@ -161,7 +166,9 @@ class Mesh(Immutable, metaclass=MeshMeta):
 
   @frozen_cached_property
   def active_indices(self) -> IntArray:
-    """ The indices of the points in self.points that are used in self.elements """
+    """
+    The indices of the points in self.points that are used in self.elements.
+    """
     return np.unique(self.elements)
 
   def lexsort_elements(self) -> Self:
@@ -178,7 +185,7 @@ class Mesh(Immutable, metaclass=MeshMeta):
   def get_points(self, vertex_indices: Sequence[int] | IntArray) -> IntArray:
     """
     Same as self.points[vertex_indices] with the difference that it first checks
-    if `vertex_indices` is a subset of self.elements.
+    if ``vertex_indices`` is a subset of self.elements.
     The rationale behind this is that the self.points array may contain points
     that are not in self.elements.
     """
@@ -190,9 +197,12 @@ class Mesh(Immutable, metaclass=MeshMeta):
 
   def drop_points_and_renumber(self) -> Self:
     """
-    Drop all points that are not used by `self.elements` and renumber
-    `self.elements` to reflect the renumbering of the points from 0 to npoints-1.
+    Drop all points that are not used by ``self.elements`` and renumber
+    ``self.elements`` to reflect the renumbering of the points from
+    ``0`` to ``npoints-1``.
     """
+    if not self:
+      return self
     unique_vertices = self.active_indices
     if len(unique_vertices) == unique_vertices[-1] + 1 == len(self.points):
       return self
@@ -317,21 +327,55 @@ class Mesh(Immutable, metaclass=MeshMeta):
     """
     Subtract ``other`` from ``self`` creating a new (usually smaller) mesh.
     """
-    # XXX: avoid for loops using numpy
-    other_elems = set(map(sorted_tuple, other.elements))
 
-    keep_elems = []
-    for ielem, elem in enumerate(map(sorted_tuple, self.elements)):
-      if elem in other_elems and \
-         (self.points[(_elem := list(elem))] == other.points[_elem]).all():
-          continue
-      keep_elems.append(ielem)
+    # sort each elements' points lexicographically for both meshes
+    all_identifiers = np.concatenate([lexsort_meshpoints(mesh)
+                                      for mesh in (self, other)])
 
-    return self.take(keep_elems)
+    # keep only the unique ones, their first occurence and the times counted
+    _, unique_indices, counts = np.unique(all_identifiers, return_index=True,
+                                                           return_counts=True,
+                                                           axis=0)
+
+    # keep only the first occurences that were counted once
+    keep_indices = unique_indices[counts == 1]
+
+    # keep only those indices corresponding to elements in `self`
+    return self.take(keep_indices[keep_indices < len(self.elements)])
 
   @ensure_same_class
   def __or__(self, other):
     return mesh_union(self, other)
+
+  def _and(self, other: Any, return_type=None):
+    """
+    Take the intersection of two meshes.
+    The meshes must be of the same type or the same type must be obtainable
+    upon taking submeshes for the intersection to be nonempty.
+    If no intersection was found (neither on the mesh itself or its submeshes),
+    we return an empty mesh if type `self.__class__`.
+    """
+    if not isinstance(other, Mesh):
+      return NotImplemented
+    if return_type is None:
+      return_type = self.__class__
+    try:
+      if self.ndims > other.ndims:
+        return self.submesh._and(other, return_type=return_type)
+      elif self.ndims < other.ndims:
+        return self._and(other.submesh, return_type=return_type)
+      if self.__class__ is other.__class__:
+        ret = self - (self - other)  # normal union
+      # same dimension but different mesh type or empty intersection found
+      if self.__class__ is not other.__class__ or not ret:
+        return self.submesh._and(other.submesh, return_type=return_type)
+      return ret
+    except HasNoSubMeshError:
+      return return_type(np.zeros((0, return_type.nverts), dtype=int), self.points)
+
+  def __and__(self, other: Any):
+    """ See ``_and`` """
+    return self._and(other)
 
   @cached_property
   def interfaces(self):
@@ -388,6 +432,10 @@ class Mesh(Immutable, metaclass=MeshMeta):
       if selecter(*points):
         keep_elements.append(ielem)
     return self.take(sorted(set(keep_elements)))
+
+
+def empty_like(mesh: Mesh) -> Mesh:
+  return mesh._edit(elements=np.zeros((0, mesh.nverts), dtype=int))
 
 
 class MultilinearMesh(Mesh):
@@ -530,7 +578,7 @@ class PointMesh(Mesh):
   reference_element = POINT
 
   def _refine(self):
-    return super()._refine()
+    return super()._refine()  # return self
 
   def plot(self):
     plot_pointmesh(self)
