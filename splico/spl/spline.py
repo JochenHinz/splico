@@ -8,7 +8,7 @@ from .kv import UnivariateKnotVector, TensorKnotVector, as_TensorKnotVector, \
 from .aux import tensorial_prolongation_matrix
 from .meta import NDSplineMeta
 
-from typing import Sequence, Callable, Tuple, Self
+from typing import Sequence, Callable, Tuple, Self, List, Any
 from types import GenericAlias
 from functools import reduce
 
@@ -23,7 +23,7 @@ IMPLEMENTED_UFUNCS = (np.add, np.subtract, np.multiply, np.divide)
 HANDLED_NDSPLINE_FUNCTIONS = {}
 
 
-def try_broadcast_shapes(*shapes: Tuple[Int, ...]) -> Tuple[Int, ...]:
+def try_broadcast_shapes(*shapes: AnyIntSeq) -> Tuple[int, ...]:
   try:
     final_shape = np.broadcast_shapes(*shapes)
   except ValueError as ex:
@@ -48,8 +48,8 @@ class __NDSpline_implementations__:
   @implements(np.add)
   def add(self, other):
     """
-    Add two NDSplines sharing the same knotvector. The controlpoints will be
-    added.
+    Add two :class:`NDSpline`s sharing the same knotvector. The controlpoints
+    will be added.
     """
     assert self.knotvector == other.knotvector
     final_shape = try_broadcast_shapes(self.shape, other.shape)
@@ -97,8 +97,11 @@ class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
       tensorial, will be converted to tensorial.
   controlpoints : :class:`np.ndarray` or any array-like
       Numpy array or any array-like that can be converted to Numpy array
-      representing the controlpoints. Upon conversion, self.controlpoints
-      must satisfy self.controlpoints.shape[0] == self.knotvector.ndofs.
+      representing the controlpoints. Upon conversion, ``self.controlpoints``
+      must satisfy ``self.controlpoints.shape[0] == self.knotvector.ndofs``.
+      Here, ``self.controlpoints[i]`` denotes the (potentially tensorial)
+      control point assigned to the i-th spline function in the basis that
+      corresponds to ``self.knotvector``.
       Is rounded to the current precision as set by `splico.util.GlobalPrecision`
       and then frozen.
       self.controlpoints.shape[1:] can be anything and then simply represents
@@ -113,10 +116,10 @@ class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
 
 
   When performing default ``numpy`` arithmetic on an NDSpline, the operations
-  are by default performed on self.controlpoints[i] for all i. Hence, when
-  performing an airthmetic operation with a :class:`np.ndarray` A,
-  A.shape has to be broadcastable with self.controlpoints.shape[1:] rather than
-  self.controlpoints.shape.
+  are by default performed on ``self.controlpoints[i]`` for all i. Hence, when
+  performing an airthmetic operation with a :class:`np.ndarray` ``A``,
+  ``A.shape`` has to be broadcastable with ``self.controlpoints.shape[1:]``
+  rather than ``self.controlpoints.shape``.
 
   >>> spline
   ... NDSpline<4, 5, 3>
@@ -129,6 +132,19 @@ class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
   >>> spline.controlpoints + A
   ... ERROR
   """
+
+  # methods inherited from `self.knotvector`
+  refine: Callable
+  ref_by: Callable
+  add_knots: Callable
+  raise_multiplicities: Callable
+
+  # properties inherited from `self.knotvector`
+  km: tuple
+  knots: tuple
+  degree: tuple
+  greville: tuple
+  repeated_knots: tuple
 
   @classmethod
   def one(cls, knotvector):
@@ -152,6 +168,7 @@ class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
     verts = np.asarray(verts, dtype=float)
     data = np.asarray(data, dtype=float)
 
+    # For now only 1D
     assert verts.ndim == data.ndim == 1, NotImplementedError
 
     k = scipyargs.setdefault('k', 3)
@@ -166,6 +183,7 @@ class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
     """
     Docstring: see `splico.spl.kv.TensorKnotVector.fit`.
     """
+    # Contrary to ``from_exact_interpolation`` this one works for any dimension
     # convert to TensorKnotVector if not alreay
     knotvector = as_TensorKnotVector(knotvector)
     # forward to `TensorKnotVector.fit` routine
@@ -180,13 +198,15 @@ class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
     self.knotvector = as_TensorKnotVector(knotvector)
 
     # for now we only allow tensorial knotvectors of up to length 3
-    assert 1 <= len(self.knotvector) <= 3
+    if not 0 <= len(self.knotvector) <= 3:
+      raise NotImplementedError("Currently only between 0 and 3 dependencies"
+                                " are supported.")
 
     self.controlpoints = frozen(_round_array(controlpoints), dtype=float)
     assert self.controlpoints.shape[0] == self.knotvector.ndofs
 
   def __repr__(self) -> str:
-    return f"{self.__class__.__name__}<{str(self.shape)[1:-1]}>"
+    return f"{self.__class__.__name__}<{', '.join(map(str, self.shape))}>"
 
   @property
   def shape(self) -> Tuple[int, ...]:
@@ -220,7 +240,7 @@ class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
 
   def __call__(self, *positions: FloatArray,
                      tensor: bool = False,
-                     dx: Int | AnyIntSeq = 0):
+                     dx: Int | AnyIntSeq = ()):
     """
     Evaluate the spline in a set of points.
 
@@ -241,7 +261,6 @@ class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
 
     Returns
     -------
-
     ret : :class:`np.ndarray``
         The evaluation array. Has shape
           (len(positions[0]),) + self.controlpoints.shape[1:]
@@ -250,8 +269,13 @@ class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
         else.
     """
     if isinstance(dx, Int):
+      assert self.nvars
       dx = (dx,) * self.nvars
-    assert len((dx := tuple(map(int, dx)))) == self.nvars
+    dx = dx or (0,) * self.nvars
+    assert len((dx := tuple(map(int, dx)))) == len(positions) == self.nvars
+
+    if not positions:  # 0-D spline
+      return self.controlpoints[0].copy()
 
     positions = tuple(map(np.asarray, positions))
     assert all( len((y := pos.shape)) == 1 for pos in positions )
@@ -286,7 +310,7 @@ class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
     """
     if not isinstance(item, tuple):
       item = item,
-    return self._edit(controlpoints=np.ndarray.__getitem__(self.controlpoints, (slice(None),) + item))
+    return self._edit(controlpoints=self.controlpoints[(slice(None),) + item])
 
   @property
   def ndim(self):
@@ -297,7 +321,7 @@ class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
     """ Iterate over the each sub-spline the same way as a numpy array. """
     if not self.shape:
       raise TypeError('iteration over 0-d array')
-    yield from (self._edit(knotvector=self.knotvector, controlpoints=controlpoints)
+    yield from (self._edit(controlpoints=controlpoints)
                         for controlpoints in self.controlpoints.swapaxes(0, 1))
 
   def ravel(self) -> Self:
@@ -374,13 +398,13 @@ class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
         The sampled mesh. Has the same type as `mesh`.
     """
     assert self.shape == (3,), 'Mesh export requires the target space to be R^3.'
-    assert self.nvars == mesh.ndims <= 3
+    assert 0 < self.nvars == mesh.ndims <= 3
     points = _round_array( self(*mesh.points.T[:self.nvars]) )
     if points.shape[1:] != (3,):
       points = augment_by_zeros(points, axis=1)
     return mesh._edit(points=points)
 
-  def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
+  def __array_ufunc__(self, ufunc, method, *inputs, **kwargs) -> Self:
     """
     Numpy arithmetic is handled via the __array_ufunc__ protocol.
     When the inputs are all of type :class:`NDSpline`, the arithmetic operation
@@ -397,7 +421,8 @@ class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
 
     # split into instances of the same class and of other classes
     # if of other class type, needs to be convertable to np.ndarray
-    myclass, notmyclass = [], []
+    myclass: List[Self] = []
+    notmyclass: List[Any] = []
     for inp in inputs:
       (myclass if isinstance(inp, NDSpline) else notmyclass).append(inp)
 
@@ -426,26 +451,27 @@ class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
                                           *map(np.asarray, notmyclass),
                                           **kwargs)
 
-    return NDSpline(self.knotvector, controlpoints)
+    return self.__class__(self.knotvector, controlpoints)
 
 
-def _vectorize_first_axis(op: Callable, controlpoints: np.ndarray, *args: NumericArray, **kwargs):
+def _vectorize_first_axis(op: Callable, controlpoints: np.ndarray,
+                                        *args: NumericArray, **kwargs):
   """
   Vectorization along the first axis.
-  Inputs are broadcast to a form that the operation is performed len(controlpoints)
-  times along all axes in controlpoints.shape[1:].
+  Inputs are broadcast to a form that the operation is performed
+  len(controlpoints) times along all axes in controlpoints.shape[1:].
   """
   n, *shape_tail = controlpoints.shape
-  output_shape_tail = np.broadcast_shapes(shape_tail, *(arr.shape for arr in args))
+  output_shape_tail = try_broadcast_shapes(shape_tail, *(arr.shape for arr in args))
 
   # add artificial axes after the first axis if necessary
   controlpoints = controlpoints[(sl,) + (_,) * (len(output_shape_tail) - len(shape_tail))]
   controlpoints = np.broadcast_to(controlpoints, (n,) + output_shape_tail)
 
   # first broadcast to shape (1,) + output_shape_tail, then to (n,) + output_shape_tail
-  args = tuple(np.broadcast_to(np.broadcast_to(arr, output_shape_tail)[_], (n,) + output_shape_tail)
+  args = tuple(np.broadcast_to( np.broadcast_to(arr, output_shape_tail)[_], (n,) + output_shape_tail )
                for arr in args)
-  return op(controlpoints, *args)
+  return op(controlpoints, *args, **kwargs)
 
 
 def as_NDSpline(spln) -> NDSpline:
@@ -458,7 +484,9 @@ def as_NDSpline(spln) -> NDSpline:
   elem0, *elems_rav = (y := elems.ravel())
   assert all(elem.knotvector == elem0.knotvector for elem in elems_rav)
   controlpoints = np.stack([_y.controlpoints for _y in y], axis=1) \
-    .reshape(elem0.controlpoints.shape[0], *elems.shape, *elem0.controlpoints.shape[1:])
+                  .reshape(elem0.controlpoints.shape[0],
+                           *elems.shape,
+                           *elem0.controlpoints.shape[1:])
   return NDSpline(elem0.knotvector, controlpoints)
 
 
@@ -490,7 +518,8 @@ class SplineCollection(np.ndarray):
     el0, *ignore = ret_raveled = ret.ravel()
     if not all(isinstance(element, NDSpline) for element in ret_raveled):
       raise TypeError("All entries need to be an instantiation of `NDSpline`.")
-    # fail switch that ensures that each NDSpline's shape is such that the evaluation can be reshaped properly
+    # fail switch that ensures that each NDSpline's shape is such that
+    # the evaluation can be reshaped properly
     # XXX: not sure if this catches all situations
     assert all((element.nvars, element.shape) == (el0.nvars, el0.shape)
                for element in ret_raveled)

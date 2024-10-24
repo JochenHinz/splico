@@ -63,4 +63,5 @@ def tensorial_prolongation_matrix(kvold,
   #      to sparse format.
   assert kvold <= kvnew
   # XXX: implement a variant that never explicitly carries out the kronecker product
-  return sparse_kron(*starmap(univariate_prolongation_matrix, zip(kvold, kvnew)))
+  return sparse_kron(sparse.eye(1),
+                     *starmap(univariate_prolongation_matrix, zip(kvold, kvnew)))

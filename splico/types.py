@@ -49,31 +49,31 @@ def ensure_same_class(fn: Callable) -> Callable:
   ``self.__class__ is not other.__class__``.
 
   >>> @ensure_same_class
-      def __le__(self, other):
-        return self.attr <= other.attr
+  ... def __le__(self, other):
+  ...   return self.attr <= other.attr
 
   >>> @ensure_same_class
-      def __eq__(self, other):
-        return self.attr == other.attr
+  ... def __eq__(self, other):
+  ...   return self.attr == other.attr
 
   >>> a = MyClass(attr=5)  # derives from Immutable
   >>> b = MyClass(attr=5)
   >>> a <= b
-      True
+  ... True
   >>> a == b
-      True
+  ... True
   >>> c = MyClass(attr=4)
   >>> a <= c
-      False
+  ... False
   >>> a <= 'foo'  # inequality not resolved
-      ERROR
+  ... ERROR
   >>> a == 'foo'  # equality not resolved
-      False
+  ... False
   >>> c = MyOtherClass(attr=5)  # derives from Immutable
   >>> a <= c
-      ERROR
+  ... ERROR
   >>> a == c
-      False
+  ... False
   """
   @wraps(fn)
   def wrapper(self, other: Any):
@@ -127,32 +127,32 @@ class ImmutableMeta(ABCMeta):
   -------
 
   >>> class MyClass(metaclass=ImmutableMeta):
-        def __init__(self, a: float, b: float):
-          self.a = float(a)
-          self.b = float(b)
+  ...   def __init__(self, a: float, b: float):
+  ...     self.a = float(a)
+  ...     self.b = float(b)
 
   >>> MyClass._field_names
-      ('a', 'b')
+  ... ('a', 'b')
 
   Similarly
 
   >>> class MyClass(metaclass=ImmutableMeta):
-        def __init__(self, *args, **kwargs):
-          pass
+  ...   def __init__(self, *args, **kwargs):
+  ...     pass
 
   >>> MyClass._field_names
-      ERROR
+  ... ERROR
 
   If a derived class has an `__init__` of the form `(self, *args, **kwargs)`
   and doesn't implement `_field_names`` explicitly, it is inferred from the parent
   class or its parent classes.
 
   >>> class MyDerivedClass(MyClass):  # MyClass._field_names == ('a', 'b')
-        def __init__(self, *args, **kwargs):
-          super().__init__(*args, **kwargs)
+  ...   def __init__(self, *args, **kwargs):
+  ...     super().__init__(*args, **kwargs)
 
   >>> MyDerivedClass._field_names
-      ('a', 'b')
+  ... ('a', 'b')
   """
 
   def __new__(mcls, name, bases, attrs, *args, **kwargs):
@@ -230,35 +230,35 @@ class Immutable(metaclass=ImmutableMeta):
   ``util.frozen`` or ``util.freeze``.
 
   >>> class MyClass(Immutable):
-        _field_names = 'a', 'b'
-        def __init__(self, a: np.ndarray, b: Tuple[int, ...]):
-          self.a = frozen(a, dtype=float)
-          self.b = tuple(map(int, b))
+  ...   _field_names = 'a', 'b'
+  ...   def __init__(self, a: np.ndarray, b: Tuple[int, ...]):
+  ...     self.a = frozen(a, dtype=float)
+  ...     self.b = tuple(map(int, b))
 
   Or with signature inference:
 
   >>> class MyClass(Immutable):
-        def __init__(self, a: np.ndarray, b: Tuple[int, ...]):
-          self.a = frozen(a, dtype=float)
-          self.b = tuple(map(int, b))
+  ...   def __init__(self, a: np.ndarray, b: Tuple[int, ...]):
+  ...     self.a = frozen(a, dtype=float)
+  ...     self.b = tuple(map(int, b))
 
   >>> MyClass._field_names
-      ('a', 'b')
+  ... ('a', 'b')
 
   >>> A = MyClass( np.linspace(0, 1, 11), (1, 2, 3) )
   >>> hash(A)
-      5236462403644277461
+  ... 5236462403644277461
 
   >>> B = MyClass( np.linspace(0, 1, 11), (1, 2, 3) )
   >>> A == B
-      True
+  ... True
 
   >>> B = MyClass( np.linspace(1, 2, 11), (1, 2, 3) )
   >>> A == B
-      False
+  ... False
 
   >>> A._edit(a=np.linspace(1, 2, 11)) == B
-      True
+  ... True
   """
 
   _field_names: Tuple[str, ...]
@@ -370,14 +370,14 @@ class Singleton(Immutable, metaclass=SingletonMeta):
   eligible for hashing.
 
   >>> class MySingleton(Singleton):
-        def __init__(self, a: float, b: float):
-          self.a = float(a)
-          self.b = float(b)
+  ...   def __init__(self, a: float, b: float):
+  ...     self.a = float(a)
+  ...     self.b = float(b)
 
   >>> A = MySingleton(5, 3)
   >>> B = MySingleton(a=5.0, b=3.0)  # integer floats behave equivalent to ints
   >>> A is B
-      True
+  ... True
   """
 
   _cache: WeakValueDictionary
@@ -409,7 +409,7 @@ class NanVec(np.ndarray):
     >>> vec = NanVec(5)
     >>> vec[[1, 2, 3]] = 7
     >>> vec.where
-        [False, True, True, True, False]
+    ... [False, True, True, True, False]
     """
     return ~np.isnan(self.view(np.ndarray))
 
@@ -422,13 +422,13 @@ class NanVec(np.ndarray):
     >>> vec[[0, 4]] = 5
     >>> vec |= np.array([0, 1, 2, 3, 4])
     >>> print(vec)
-        [5, 1, 2, 3, 5]
+    ... [5, 1, 2, 3, 5]
 
     >>> vec = NanVec(5)
     >>> vec[[0, 4]] = 5
     >>> vec |= 0
     >>> print(vec)
-        [5, 0, 0, 0, 5]
+    ... [5, 0, 0, 0, 5]
     """
     wherenot = ~self.where
     self[wherenot] = other if np.isscalar(other) else other[wherenot]

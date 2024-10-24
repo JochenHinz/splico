@@ -7,8 +7,11 @@
 
 from ..util import np
 from .mesh import LineMesh, Mesh
-from numpy import linalg
+
 from typing import Tuple
+
+from numpy import linalg
+
 
 IMPLEMENTED_MESH_TYPES = ('triangle', 'tetrahedron', 'quadrilateral', 'hexahedron')
 

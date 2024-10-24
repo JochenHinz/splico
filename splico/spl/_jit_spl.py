@@ -1,13 +1,16 @@
 """
 Various jit-compiled routines for spline evaluation.
+All taken from the NURBS book.
 """
 
 
 from ..util import np, flat_meshgrid
 from .._jit import arange_product, ravel_multi_index
 
-from numba import njit, float64, int64, prange, config
 import multiprocessing
+
+from numba import njit, float64, int64, prange, config
+from numba.typed import List
 
 config.NUMBA_NUM_THREADS = multiprocessing.cpu_count()
 
@@ -15,9 +18,6 @@ config.NUMBA_NUM_THREADS = multiprocessing.cpu_count()
 # XXX: this scipt requires a formatting overhaul and some docstrings need
 #      need to be adjusted to the default format.
 #      Some functions' positional arguments are in a confusing order.
-#      Lastly, we need to write one function for N-D evaluation of splines
-#      rather than dedicated routines for 1, 2 and 3D.
-#      This can be accomplished by using the product routines from splico._jit.
 
 
 @njit(cache=True)
@@ -31,19 +31,19 @@ def _univariate_prolongation_matrix(kvold, kvnew, p):
   T = np.zeros((n, m), dtype=np.float64)
 
   for j in range(m):
-    T[np.where(np.logical_and(kvold[j] <= kvnew[:n],
-                              kvnew[:n] < kvold[j + 1]))[0], j] = 1
+    rows = np.where(np.logical_and(kvold[j] <= kvnew[:n], kvnew[:n] < kvold[j+1]))[0]
+    T[rows, j] = 1
 
   for q in range(1, p + 1):
     T_new = np.zeros((n - q, m - q), dtype=np.float64)
     for i in range(n - q):
       for j in np.where(np.logical_or(T[i, : m - q] != 0,
                                       T[i, 1: m - q + 1] != 0))[0]:
-        denom0 = kvold[j+q] - kvold[j]
+        denom0 = kvold[j + q] - kvold[j]
         fac0 = (kvnew[i + q] - kvold[j]) / denom0 if denom0 != 0 else 0
 
-        denom1 = kvold[j+q+1] - kvold[j+1]
-        fac1 = (kvold[j+1+q] - kvnew[i+q]) / denom1 if denom1 != 0 else 0
+        denom1 = kvold[j + q + 1] - kvold[j + 1]
+        fac1 = (kvold[j + 1 + q] - kvnew[i + q]) / denom1 if denom1 != 0 else 0
 
         T_new[i, j] = fac0 * T[i, j] + fac1 * T[i, j + 1]
 
@@ -411,7 +411,7 @@ def call(list_of_abscissae,
   assert len(list_of_abscissae) == len(list_of_knotvectors) == len(list_of_degrees)
 
   return _callND(Xi,
-                 list_of_knotvectors,
+                 List(list_of_knotvectors),
                  degrees,
                  controlpoints, dx)
 

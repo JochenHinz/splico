@@ -55,17 +55,17 @@ def global_precision(precision: int):
   -------
 
   >>> class MyClass:
-      def __init__(self, a: np.ndarray):
-        self.a = frozen(_round_array(a))  # round and freeze array
+  ... def __init__(self, a: np.ndarray):
+  ...   self.a = frozen(_round_array(a))  # round and freeze array
 
   >>> A = MyClass(np.linspace(0, 1, 4))
   >>> A.a
-      [0, 0.333333333333, 0.666666666667, 1]
+  ... [0, 0.333333333333, 0.666666666667, 1]
 
   >>> with global_precision(4):
   >>>   A = MyClass(np.linspace(0, 1, 4))
   >>> A.a
-      [0, 0.3333, 0.6667, 1]
+  ... [0, 0.3333, 0.6667, 1]
   """
   global GLOBAL_PRECISION
   old_precision = int(GLOBAL_PRECISION)
@@ -86,20 +86,21 @@ def frozen(array: np.ndarray | Sequence[Any], dtype=None) -> np.ndarray:
 
   >>> arr = np.zeros((10,), dtype=int)
   >>> print(arr[0])
-      0
+  ... 0
   >>> arr[0] = 1
   >>> print(arr[0])
-      1
+  ... 1
   >>> arr = np.zeros((10,), dtype=int)
   >>> arr = frozen(arr)
   >>> arr[0] = 1
-      ERROR
+  ... ERROR
 
-  Both in and out of place will work.
+  If the input is and array of the desired dtype alread, Both in and out of
+  place will work.
   >>> arr = np.zeros((10,), dtype=int)
   >>> frozen(arr)
   >>> arr[0] = 1
-      ERROR
+  ... ERROR
   """
   array = np.asarray(array, dtype=dtype)
   array.flags.writeable = False
@@ -119,10 +120,10 @@ def freeze(fn: Callable, dtype=None) -> Callable:
   >>> arr = np.ones((5,), dtype=int)
   >>> new_arr = multiply(arr, 2)
   >>> print(new_arr)
-      [2, 2, 2, 2, 2]
+  ... [2, 2, 2, 2, 2]
   >>> new_arr[0] = 10
   >>> print(new_arr)
-      [10, 2, 2, 2, 2]
+  ... [10, 2, 2, 2, 2]
 
   @freeze
   def multiply(arr, val):
@@ -131,9 +132,9 @@ def freeze(fn: Callable, dtype=None) -> Callable:
   >>> arr = np.ones((5,), dtype=int)
   >>> new_arr = multiply(arr, 2)
   >>> print(new_arr)
-      [2, 2, 2, 2, 2]
+  ... [2, 2, 2, 2, 2]
   >>> new_arr[0] = 10
-      ERROR
+  ... ERROR
   """
   @wraps(fn)
   def wrapper(*args, **kwargs):
@@ -149,7 +150,7 @@ def frozen_cached_property(fn: Callable) -> cached_property:
   >>> @cached_property
   >>> @freeze
   >>> def myfunc(self):
-        return np.arange(self.n)
+  ...   return np.arange(self.n)
   """
   return cached_property(freeze(fn))
 

@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 
 
 @njit(cache=True)
-def _derivative_weights(pol_order: Int, dx: Int):
+def _derivative_weights(pol_order: Int, dx: Int) -> FloatArray:
   """
   Accumulated ``dx``-th derivative multiplicative weights of a
   ``pol_order``-th polynomial.
@@ -205,6 +205,8 @@ def _eval_nd_polynomial(weights: FloatArray,
   #                           for i, mypower in enumerate(powers) ]
 
   barrs = np.broadcast_arrays(*(pw[myshape(i)] for i, pw in enumerate(powers)))
+
+  # the additional broadcast is redundant unless the mesh is zero-dimensional
   factor = np.broadcast_to(np.multiply.reduce(barrs), array_shape)
 
   # return the result in shape (x, y, z, ..., n)
@@ -237,18 +239,15 @@ def eval_mesh_local(mesh: 'Mesh', points: FloatArray, dx: Int | AnyIntSeq = 0):
   assert mesh.ndims == ndim, "The point array's shape doesn't match the mesh's" \
                              " dimensionality."
 
-  # we have to convert to new variable to avoid mypy errors ...
   if isinstance(dx, Int):
-    dx_tpl: Tuple[Int, ...] = (dx,) * ndim
-  else:
-    dx_tpl = tuple(dx)
+    dx = dx,
 
-  assert len(dx_tpl) == ndim
+  assert len(dx) == ndim
 
   # if ndim == 0:  # we simply repeat to shape (npoints, 3, len(points))
   #   return np.repeat(mesh.points[:, :, _], len(points), axis=2)
 
   # take derivative weights
-  weights = _compute_pol_weights(mesh, dx_tpl)
+  weights = _compute_pol_weights(mesh, tuple(dx))
 
-  return _eval_nd_polynomial(weights, points, dx_tpl)
+  return _eval_nd_polynomial(weights, points, dx)

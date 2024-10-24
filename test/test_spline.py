@@ -12,6 +12,14 @@ import numpy as np
 
 class TestNDSpline(unittest.TestCase):
 
+  def test0D(self):
+    knotvector = TensorKnotVector(())
+    data = np.random.randn(4, 3)[_]
+
+    spline = knotvector.fit([], data)
+
+    self.assertTrue(spline().shape == (4, 3))
+
   def test1D(self):
 
     uknotvector = UnivariateKnotVector(np.linspace(0, 1, 51), 3)
