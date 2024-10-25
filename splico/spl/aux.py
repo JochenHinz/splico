@@ -16,7 +16,8 @@ from scipy import sparse
 def freeze_csr(fn):
   """
   Decorator for freezing a :class:`sparse.csr_matrix` before it is returned
-  to avoid accidental overwrites, for instance when returning from cached functions.
+  to avoid accidental overwrites, for instance when returning from cached
+  functions.
 
   If a mutable instance of the matrix is desired, the matrix has to be copied.
   """

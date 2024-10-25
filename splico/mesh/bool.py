@@ -175,7 +175,7 @@ def mesh_boundary_union(*meshes, eps=1e-8, return_matches=False):
 
   # make all matchings between differing meshes (i < j)
   # XXX: find a more efficient solution
-  all_matches: List = []
+  all_matches = []
   for (i, dmesh0), (j, dmesh1) in product(enumerate(dmeshes), enumerate(dmeshes)):
     if j <= i: continue
     # add offset to the two columns of the matches to reflect global indexing

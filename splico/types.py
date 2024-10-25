@@ -166,7 +166,7 @@ class ImmutableMeta(ABCMeta):
       _field_names = attrs['_field_names']
       assert all(isinstance(element, str) for element in _field_names), \
           'Received invalid type for the _item class-level argument.'
-      cls._field_names = tuple(_field_names)  # make sure it's converted to a tuple
+      cls._field_names = tuple(_field_names)  # ensure it's converted to a tuple
 
       if is_valid_signature(cls.__signature__):
         if set(_field_names) != set(cls.__signature__.parameters.keys()):

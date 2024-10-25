@@ -24,6 +24,7 @@ from scipy.sparse import linalg as splinalg
 # XXX: I would like to use functools.total_ordering but it is slightly out of
 #      place here because two knotvectors can simultaneously satisfy a < b is
 #      False and b < a is False.
+#      Couldn't quite get it to work as intended with total_ordering.
 class UnivariateKnotVector(Immutable):
   """
   Basic knot-vector object.
@@ -130,8 +131,8 @@ class UnivariateKnotVector(Immutable):
     Collocation matrix X over the abscissae ``abscissae``.
     Generates a sparse matrix X such that the solution x of the system
     (X @ X.T) @ x = X @ data contains the control points with respect
-    to the basis associated with ``self`` of the least squares problem of fitting
-    the abscissae against data.
+    to the basis associated with ``self`` of the least squares problem of
+    fitting the abscissae against data.
 
     Parameters
     ----------
@@ -152,7 +153,8 @@ class UnivariateKnotVector(Immutable):
     # XXX: obviously we need to find a better solution for this.
     ret = _round_array(np.stack([_call1D(abscissae,
                                          self.repeated_knots,
-                                         self.degree, e, dx) for e in np.eye(self.dim)], axis=0))
+                                         self.degree, e, dx)
+                                 for e in np.eye(self.dim)], axis=0))
     return sparse.csr_matrix(ret)
 
   def _refine(self) -> Self:

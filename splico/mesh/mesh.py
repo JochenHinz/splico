@@ -104,10 +104,10 @@ class Mesh(Immutable, metaclass=MeshMeta):
 
     # for each list of equivalent elements (differing only by a permutation)
     # retain the minimum one. Example [(2, 3, 1), (1, 2, 3)] -> (1, 2, 3)
-    elements = sorted(map(min, sorted_elements.values())) or np.zeros((0, nverts), dtype=int)
-    return frozen(elements)
+    return frozen(sorted(map(min, sorted_elements.values())) or
+                  np.zeros((0, nverts), dtype=int))
 
-  def __init__(self, elements: IntArray | Sequence[Sequence[int]], points: FloatArray):
+  def __init__(self, elements: IntArray | Sequence, points: FloatArray):
 
     self.elements = frozen(elements, dtype=int)
     self.points = frozen(_round_array(points), dtype=float)
@@ -116,7 +116,8 @@ class Mesh(Immutable, metaclass=MeshMeta):
     assert self.elements.shape[1:] == (self.nverts,)
     # XXX: instead raising an error, implement more graceful empty mesh handling
     if not self.points.shape[1:] == (3,):
-      raise NotImplementedError("Meshes are assumed to be manifolds in R^3 by default.")
+      raise NotImplementedError("Meshes are assumed to be manifolds in"
+                                " R^3 by default.")
 
     assert np.unique(self.elements, axis=0).shape == self.elements.shape, \
         "Duplicate element detected."
@@ -184,15 +185,16 @@ class Mesh(Immutable, metaclass=MeshMeta):
 
   def get_points(self, vertex_indices: Sequence[int] | IntArray) -> IntArray:
     """
-    Same as self.points[vertex_indices] with the difference that it first checks
-    if ``vertex_indices`` is a subset of self.elements.
+    Same as self.points[vertex_indices] with the difference that it first
+    checks if ``vertex_indices`` is a subset of self.elements.
     The rationale behind this is that the self.points array may contain points
     that are not in self.elements.
     """
     vertex_indices = np.asarray(vertex_indices, dtype=int)
     diff = np.setdiff1d(vertex_indices, self.active_indices)
     if len(diff) != 0:
-      raise MissingVertexError("Failed to locate the vertices with indices '{}'.".format(diff))
+      raise MissingVertexError("Failed to locate the vertices"
+                               " with indices '{}'.".format(diff))
     return self.points[vertex_indices]
 
   def drop_points_and_renumber(self) -> Self:
@@ -261,19 +263,21 @@ class Mesh(Immutable, metaclass=MeshMeta):
   def _submesh_indices(self) -> Tuple[Tuple[Int, ...], ...]:
     """
     The submesh indices are the columns of `self.elements` that have to be
-    extracted to create the mesh's submesh. By default returns a `HasNoSubMeshError`
-    but can be overwritten.
+    extracted to create the mesh's submesh. By default returns a
+    `HasNoSubMeshError` but can be overwritten.
     Example: to go from a triangulation to a linmesh, we have to extract the
     columns ([0, 1], [1, 2], [2, 0]) (all edges of each triangle).
     """
     indices = self.reference_element.children_facets
     if not indices:
-      raise HasNoSubMeshError(f"A mesh of type '{self.__class__.__name__}' has no submesh.")
+      raise HasNoSubMeshError(f"A mesh of type '{self.__class__.__name__}'"
+                              " has no submesh.")
     return indices
 
   @property
   def _submesh_type(self):
-    raise HasNoSubMeshError(f"A mesh of type '{self.__class__.__name__}' has no submesh.")
+    raise HasNoSubMeshError(f"A mesh of type '{self.__class__.__name__}'"
+                            " has no submesh.")
 
   @cached_property
   def submesh(self):
@@ -459,13 +463,14 @@ class AffineMesh(Mesh):
   """
   # XXX: currently affine meshes require special-tailored refinement methods.
   #      Write a method that can refine any affine mesh type, similar to
-  #      _refine_structured. This should be possible by taking the same approach
-  #      as in `MultilinearMixin` while restricting the attention to the plane
-  #      x + y + z <= 1
+  #      _refine_structured. This should be possible by taking the same
+  #      approach as in `MultilinearMixin` while restricting the attention
+  #      to the plane x + y + z <= 1
 
   def _refine(self) -> Self:
-    # XXX: this function is to be replaced by a general affine refinement method.
-    #      For now, we just throw an error if the derived class doesn't overwrite.
+    # XXX: this function is to be replaced by a general affine refinement
+    #      method. For now, we just throw an error if the derived class
+    #      doesn't overwrite.
     raise NotImplementedError('Every affine mesh type needs to implement'
                               ' its own refinement method.')
 
@@ -602,9 +607,9 @@ def rectilinear(_points: Sequence) -> LineMesh | QuadMesh | HexMesh:
   Returns
   -------
   ret : :class:`LineMesh` or :class:`QuadMesh` or :class:`HexMesh`
-      A rectilinear mesh whose dimensionality follows from the length of `_points`.
-      The mesh vertices follow from a tensor product of all values generated
-      by the conversion of `_points`.
+      A rectilinear mesh whose dimensionality follows from the length
+      of `_points`. The mesh vertices follow from a tensor product of all
+      values generated by the conversion of `_points`.
   """
 
   if (0 < (dim := len(_points)) <= 3) is False:
