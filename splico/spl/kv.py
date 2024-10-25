@@ -282,22 +282,15 @@ class UnivariateKnotVector(Immutable):
     if not other.degree == self.degree:
       raise NotImplementedError("Found differing polynomial degrees.")
 
-    all_knots = np.concatenate([self.knots, other.knots])
-    all_kms = np.concatenate([self.km, other.km])
+    knots = np.unique(np.concatenate([self.knots, other.knots]))
+    km = np.zeros(len(knots), dtype=int)
 
-    map_knots_km: Dict[np.float_, List[Int]] = {}
-    for val, km in zip(all_knots, all_kms):
-      map_knots_km.setdefault(val, []).append(km)
-
-    # mypy still complains after recasting type ... nothing I can do.
-    map_knots_km = cast(Dict[np.float_, Int],
-                        {key: max(val) for key, val in map_knots_km.items()})
-
-    knots = np.unique(all_knots)
-    knotmultiplicities = np.array([map_knots_km[val] for val in knots], dtype=int)
+    for kv in (self, other):
+      my_ind = np.searchsorted(knots, kv.knots)
+      km[my_ind] = np.maximum(km[my_ind], kv.km)
 
     return UnivariateKnotVector(knots, degree=self.degree,
-                                       knotmultiplicities=knotmultiplicities)
+                                       knotmultiplicities=km)
 
   @ensure_same_class
   def __lt__(self, other):
