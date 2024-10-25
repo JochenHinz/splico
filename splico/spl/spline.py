@@ -24,6 +24,10 @@ HANDLED_NDSPLINE_FUNCTIONS = {}
 
 
 def try_broadcast_shapes(*shapes: AnyIntSeq) -> Tuple[int, ...]:
+  """
+  Try to broadcast the shapes of the input arrays. Throws a ValueError if
+  broadcasting fails.
+  """
   try:
     final_shape = np.broadcast_shapes(*shapes)
   except ValueError as ex:
@@ -66,6 +70,11 @@ class __NDSpline_implementations__:
 
   @implements(np.multiply)
   def mul(self, other):
+    """
+    Multiply two :class:`NDSpline`s. Creates a tensor product of the
+    knotvector and controlpoints. The number of dependencies of the resulting
+    spline is the sum of the dependencies of the input splines.
+    """
 
     # tensor knotvector
     knotvector = self.knotvector * other.knotvector
@@ -101,9 +110,8 @@ class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
       must satisfy ``self.controlpoints.shape[0] == self.knotvector.ndofs``.
       Here, ``self.controlpoints[i]`` denotes the (potentially tensorial)
       control point assigned to the i-th spline function in the basis that
-      corresponds to ``self.knotvector``.
-      Is rounded to the current precision as set by `splico.util.GlobalPrecision`
-      and then frozen.
+      corresponds to ``self.knotvector``. Is rounded to the current precision
+      as set by `splico.util.GlobalPrecision` and then frozen.
       self.controlpoints.shape[1:] can be anything and then simply represents
       a vectorial / tensorial set of splines all with the same knotvector.
 
@@ -232,6 +240,9 @@ class NDSpline(Immutable, NDArrayOperatorsMixin, metaclass=NDSplineMeta):
     return self.controlpoints.reshape(self.knotvector.dim + self.shape)
 
   def prolong_to(self, knotvector_to: TensorKnotVector) -> Self:
+    """
+    Prolong the spline to a refined knotvector.
+    """
     T = tensorial_prolongation_matrix(self.knotvector, knotvector_to)
     n, m = T.shape
     controlpoints = T @ self.controlpoints.reshape(m, -1)

@@ -118,10 +118,10 @@ class ImmutableMeta(ABCMeta):
   """
   Metaclass for immutable types. For use in the :class:`Immutable` base class.
   If a class does not implement the ``_field_names`` class-level attribute, it
-  is inferred from the ``__init__``'s signature. The signature cannot be inferred
-  if it contains ``*args`` or ``**kwargs``. If ``_field_names`` is not implemented
-  or cannot be inferred from the base classes' signatures, the base class
-  prevents instantiation.
+  is inferred from the ``__init__``'s signature. The signature cannot be
+  inferred if it contains ``*args`` or ``**kwargs``. If ``_field_names`` is not
+  implemented or cannot be inferred from the base classes' signatures, the
+  base class prevents instantiation.
 
   Example
   -------
@@ -144,8 +144,8 @@ class ImmutableMeta(ABCMeta):
   ... ERROR
 
   If a derived class has an `__init__` of the form `(self, *args, **kwargs)`
-  and doesn't implement `_field_names`` explicitly, it is inferred from the parent
-  class or its parent classes.
+  and doesn't implement `_field_names`` explicitly, it is inferred from the
+  parent class or its parent classes.
 
   >>> class MyDerivedClass(MyClass):  # MyClass._field_names == ('a', 'b')
   ...   def __init__(self, *args, **kwargs):
@@ -174,10 +174,11 @@ class ImmutableMeta(ABCMeta):
                        " match its `_field_names` implementation which will lead"
                        " to errors when using `self._edit` or `hash(self)`.")
     except KeyError:
-      # _field_names has not been implemented as a class-level attribute -> try to infer
-      # it first from the __init__ signature. The signature may not contain
-      # *args or **kwargs. If this fails, try to infer the signature from the
-      # parent classes. If that fails too and `_field_names` isn't implemented,
+      # _field_names has not been implemented as a class-level attribute
+      # -> try to infer  it first from the __init__ signature. The signature
+      # may not contain  *args or **kwargs.
+      # If this fails, try to infer the signature from the parent classes.
+      # If that fails too and `_field_names` isn't implemented,
       # an error is thrown upon trying to instantiate the class.
 
       for pclass in cls.__mro__:
@@ -189,14 +190,14 @@ class ImmutableMeta(ABCMeta):
 
   def __call__(cls, *args, **kwargs):
     """
-    Overwrite the __call__ method to prevent instantiation if the class does not
-    implement the `_field_names` class-level attribute.
+    Overwrite the __call__ method to prevent instantiation if the class does
+    not implement the `_field_names` class-level attribute.
     """
     # make sure that if _field_names is not implemented or inferred, the class is not
     # instantiated.
     if not hasattr(cls, '_field_names'):
-      raise TypeError("The class's `_field_names` class-level attribute has not"
-                      " been implemented or could not be inferred. Cannot "
+      raise TypeError("The class's `_field_names` class-level attribute has"
+                      " not been implemented or could not be inferred. Cannot "
                       "instantiate a class that does not implement this attribute.")
     ret = type.__call__(cls, *args, **kwargs)
     ret._is_initialized = True  # private variable to prevent overwriting attributes
@@ -277,7 +278,8 @@ class Immutable(metaclass=ImmutableMeta):
 
   def _edit(self, **kwargs) -> Self:
     """
-    Edit single or multiple attributes of the class while keeping all others intact.
+    Edit single or multiple attributes of the class while keeping
+    all others intact.
     """
     return self.__class__(**ChainMap(kwargs, self._lib))
 

@@ -105,6 +105,7 @@ class Mesh(Immutable, metaclass=MeshMeta):
 
     # for each list of equivalent elements (differing only by a permutation)
     # retain the minimum one. Example [(2, 3, 1), (1, 2, 3)] -> (1, 2, 3)
+    # in case of an empty list, return an empty array
     return frozen(sorted(map(min, sorted_elements.values())) or
                   np.zeros((0, nverts), dtype=int))
 
@@ -115,7 +116,6 @@ class Mesh(Immutable, metaclass=MeshMeta):
 
     # sanity checks
     assert self.elements.shape[1:] == (self.nverts,)
-    # XXX: instead raising an error, implement more graceful empty mesh handling
     if not self.points.shape[1:] == (3,):
       raise NotImplementedError("Meshes are assumed to be manifolds in"
                                 " R^3 by default.")
@@ -205,7 +205,7 @@ class Mesh(Immutable, metaclass=MeshMeta):
     ``0`` to ``npoints-1``.
     """
     if not self:
-      return self
+      return self._edit(points=np.zeros((0, 3), dtype=float))
     unique_vertices = self.active_indices
     if len(unique_vertices) == unique_vertices[-1] + 1 == len(self.points):
       return self

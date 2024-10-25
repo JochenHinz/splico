@@ -48,7 +48,7 @@ def _derivative_weights(pol_order: Int, dx: Int) -> FloatArray:
   >>> _derivative_weights(5, 5)
   ... [120.0]
   >>> _derivative_weights(5, 6)
-  ... []                              (null-function)
+  ... [0.0]                           (null-function)
   """
   assert pol_order >= 0 and dx >= 0
   if dx > pol_order:
@@ -96,10 +96,10 @@ def _nd_pol_derivative(weights: FloatArray, dx: AnyIntSeq) -> FloatArray:
   if (dx == 0).all():
     return weights
 
-  _dweights = lambda shp, _dx: _derivative_weights(shp - 1, _dx)
+  _rshp = lambda shp, _dx: _derivative_weights(shp - 1, _dx)
 
   # shape (weights.shape[0] - dx[0], weights.shape[1] - dx[1], ...)
-  dweights = np.broadcast_arrays(*np.meshgrid(*map(_dweights, weights.shape, dx),
+  dweights = np.broadcast_arrays(*np.meshgrid(*map(_rshp, weights.shape, dx),
                                               copy=False,
                                               sparse=True,
                                               indexing='ij'))
@@ -247,9 +247,6 @@ def eval_mesh_local(mesh: 'Mesh', points: FloatArray, dx: Int | AnyIntSeq = ()):
     dx = (dx,) * ndim
 
   assert len((dx := tuple(dx))) == ndim
-
-  # if ndim == 0:  # we simply repeat to shape (npoints, 3, len(points))
-  #   return np.repeat(mesh.points[:, :, _], len(points), axis=2)
 
   # take derivative weights
   weights = _compute_pol_weights(mesh, dx)

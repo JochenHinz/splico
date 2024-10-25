@@ -116,9 +116,9 @@ class UnivariateKnotVector(Immutable):
     >>> knots = np.array([1.0, 1.2, 1.6, 2.0])
     >>> kv = UnivariateKnotVector(knots)
     >>> kv.knots
-    >>> np.array([1.0, 1.2, 1.6, 2.0])
+    ... np.array([1.0, 1.2, 1.6, 2.0])
     >>> kv.flip().knots
-    >>> np.array([1.0, 1.4, 1.8, 2.0])
+    ... np.array([1.0, 1.4, 1.8, 2.0])
     """
     return self.__class__(degree=self.degree,
                           knotmultiplicities=self.knotmultiplicities[::-1],
@@ -226,16 +226,23 @@ class UnivariateKnotVector(Immutable):
 
   @property
   def M(self):
+    """
+    Parametric mass matrix.
+    """
     return self.integrate(dx=0)
 
   @property
   def A(self):
-    """ Parametric stiffness matrix. """
+    """
+    Parametric stiffness matrix.
+    """
     return self.integrate(dx=1)
 
   @property
   def D(self):
-    """ Parametric second-order equivalent of the stiffness matrix. """
+    """
+    Parametric second-order equivalent of the stiffness matrix.
+    """
     return self.integrate(dx=2)
 
   def __mul__(self, other):
@@ -350,6 +357,9 @@ def univariate_integral(uknotvector: UnivariateKnotVector, dx: Int = 0) -> spars
 
 
 def as_UnivariateKnotVector(kv: UnivariateKnotVector | Any) -> UnivariateKnotVector:
+  """
+  Convert a knotvector to a :class:`UnivariateKnotVector` if not already.
+  """
   if isinstance(kv, UnivariateKnotVector):
     return kv
   return UnivariateKnotVector(*kv)
@@ -406,7 +416,8 @@ class TensorKnotVector(Immutable, metaclass=TensorKnotVectorMeta):
     yield from self.knotvectors
 
   def __repr__(self) -> str:
-    return f"{self.__class__.__name__}[degree: {self.degree}, nknots: {tuple(map(len, self.knots))}]"
+    return f"{self.__class__.__name__}[degree: {self.degree}, " \
+                                     f"nknots: {tuple(map(len, self.knots))}]"
 
   def __bool__(self):
     return bool(len(self))
@@ -440,7 +451,7 @@ class TensorKnotVector(Immutable, metaclass=TensorKnotVectorMeta):
 
   @property
   def M(self):
-    """ Tensor-product version of ``UnivariateKnotVector.A`` """
+    """ Tensor-product version of ``UnivariateKnotVector.M`` """
     return sparse_kron(sparse.eye(1), *(kv.M for kv in self))
 
   @property
@@ -468,7 +479,8 @@ class TensorKnotVector(Immutable, metaclass=TensorKnotVectorMeta):
     Parameters
     ----------
 
-    list_of_abscissae: Container-like of fitting abscissae in each parametric direction
+    list_of_abscissae: Container-like of fitting abscissae in each parametric
+                       direction
         The number must match the dimensionality of the knotvector.
         The vertices follow from a tensor product.
     data: Sequence of Array-likes of data points
@@ -496,7 +508,7 @@ class TensorKnotVector(Immutable, metaclass=TensorKnotVectorMeta):
     >>> data = np.stack([x, 1 + x + y], axis=1)
     >>> spline = kv.fit([absc, absc], data)
     >>> (np.abs(spline(x, y) - data) < 1e-2).all()
-        True
+    ... True
     """
 
     list_of_abscissae = list(map(np.asarray, list_of_abscissae))
@@ -537,6 +549,9 @@ KnotVectorType = UnivariateKnotVector | TensorKnotVector | \
 
 
 def as_TensorKnotVector(kv: KnotVectorType) -> TensorKnotVector:
+  """
+  Convert a knotvector to a :class:`TensorKnotVector` if not already.
+  """
   if isinstance(kv, TensorKnotVector):
     return kv
   if isinstance(kv, UnivariateKnotVector):
