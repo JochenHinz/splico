@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
+This module contains functions to compute mesh quality metrics.
 @author: Fabio Marcinno'
 """
 

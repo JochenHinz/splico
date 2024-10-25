@@ -7,18 +7,30 @@ Module defining various custom errors.
 
 
 class MissingVertexError(Exception):
+  """
+  Raised when a vertex is not found in the mesh.
+  """
   pass
 
 
 class HasNoSubMeshError(Exception):
+  """
+  Raised when a mesh has no submesh.
+  """
   pass
 
 
 class HasNoBoundaryError(Exception):
+  """
+  Raised when a mesh has no boundary.
+  """
   pass
 
 
 class EmptyMeshError(Exception):
+  """
+  Deprecated. Raised when a mesh is empty. Empty meshes are now supported.
+  """
   pass
 
 
@@ -31,5 +43,8 @@ class UnequalLengthError(Exception):
 
 
 class EmptyContainerError(Exception):
-  """ For preventing instantiations of empty container-types. """
+  """
+  For preventing instantiations of empty container-types.
+  No longer used because empty :class:`NDSpline` objects are now supported.
+  """
   pass

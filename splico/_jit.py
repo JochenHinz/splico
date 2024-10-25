@@ -1,4 +1,4 @@
-""" Routines for use in general JIT-compiled functions. """
+""" Numba implementations of various utility functions. """
 
 
 from .util import np
@@ -58,11 +58,19 @@ def product(list_of_arrays):
   >>> np.allclose(X, Y)
       True
   """
-  # XXX: make a Numba equivalent of consecutive iterator creation
+  # XXX: This is a workaround for the fact that Numba does not support
+  #      itertools.product. This implementation creates all products at once.
+  #      This is not a problem for small arrays, but can be for
+  #      large ones. In the long run, we should implement a more efficient
+  #      version of this function. For now, this is a good enough solution.
+
   assert len(list_of_arrays) >= 1
+  # If there is only one array, we need to add a dimension to it
   if len(list_of_arrays) == 1:
     return list_of_arrays[0][:, None]
+  # Reverse the list of arrays to get the correct order
   list_of_arrays = list_of_arrays[::-1]
+  # Call the recursive function
   return _product(list_of_arrays[0][:, None], list_of_arrays[1:])
 
 
@@ -97,7 +105,9 @@ Formatting to strings for homogeneous string-based Numba hashing.
 
 @njit
 def cut_trail(f_str):
-  # XXX: docstring
+  """
+  Given a string representation of a float, remove trailing zeros.
+  """
   cut = 0
   for c in f_str[::-1]:
     if c == "0":
@@ -120,7 +130,10 @@ def cut_trail(f_str):
 
 @njit
 def float2str(value):
-  # XXX: docstring
+  """
+  Numba implementation of a float to string conversion.
+  Credit to norok2 for the original implementation.
+  """
   if math.isnan(value):
     return "nan"
   elif value == 0.0:
@@ -156,6 +169,9 @@ def float2str(value):
 
 @njit
 def mul_reduce(tpl):
+  """
+  Numba equivalent of np.multiply.reduce.
+  """
   ret = 1
   for fac in tpl:
     ret *= fac
@@ -164,6 +180,9 @@ def mul_reduce(tpl):
 
 @njit
 def add_reduce(tpl):
+  """
+  Numba equivalent of np.add.reduce.
+  """
   ret = 0
   for item in tpl:
     ret += item
@@ -177,6 +196,9 @@ Various custom implementations of numpy functions not yet supported in Numba
 
 @njit
 def ravel_multi_index(multi_index, dims):
+  """
+  Numba implementation of np.ravel_multi_index.
+  """
   flat_index = 0
   stride = 1
 

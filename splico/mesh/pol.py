@@ -36,19 +36,19 @@ def _derivative_weights(pol_order: Int, dx: Int) -> FloatArray:
   ``pol_order``-th polynomial.
 
   >>> _derivative_weights(5, 0)
-      [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]  (identity)
+  ... [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]  (identity)
   >>> _derivative_weights(5, 1)
-      [1.0, 2.0, 3.0, 4.0, 5.0]
+  ... [1.0, 2.0, 3.0, 4.0, 5.0]
   >>> _derivative_weights(5, 2)
-      [2.0, 6.0, 12.0, 20.0]
+  ... [2.0, 6.0, 12.0, 20.0]
   >>> _derivative_weights(5, 3)
-      [6.0, 24.0, 60.0]
+  ... [6.0, 24.0, 60.0]
   >>> _derivative_weights(5, 4)
-      [24.0, 120.0]
+  ... [24.0, 120.0]
   >>> _derivative_weights(5, 5)
-      [120.0]
+  ... [120.0]
   >>> _derivative_weights(5, 6)
-      [0.0]                           (null-function)
+  ... []                              (null-function)
   """
   assert pol_order >= 0 and dx >= 0
   if dx > pol_order:

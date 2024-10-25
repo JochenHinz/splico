@@ -28,6 +28,7 @@ from itertools import product
 #      with only one element type.
 #      To accomplish this, in the long run, move away from a Class-level
 #      a attribute structure to a factory pattern structure.
+#      This will allow for more flexibility in the future.
 
 
 class Mesh(Immutable, metaclass=MeshMeta):
@@ -349,6 +350,9 @@ class Mesh(Immutable, metaclass=MeshMeta):
 
   @ensure_same_class
   def __or__(self, other):
+    """
+    Take the union of two meshes.
+    """
     return mesh_union(self, other)
 
   def _and(self, other: Any, return_type=None):
@@ -451,8 +455,6 @@ class MultilinearMesh(Mesh):
   Note that a one-dimensional multilinear mesh is simultaneously affine.
   """
 
-  is_affine = False
-
   def _refine(self) -> Self:
     return refine_structured(self)
 
@@ -460,12 +462,16 @@ class MultilinearMesh(Mesh):
 class AffineMesh(Mesh):
   """
   Derived class for affine mesh types.
+  Currently only used to group affine mesh types together. The ``_refine``
+  method has to be overwritten by the derived class for it to function as
+  intended. In the long run, we are opting for a more general approach to
+  affine refinement as in ``MultilinearMesh``.
   """
   # XXX: currently affine meshes require special-tailored refinement methods.
   #      Write a method that can refine any affine mesh type, similar to
-  #      _refine_structured. This should be possible by taking the same
-  #      approach as in `MultilinearMixin` while restricting the attention
-  #      to the plane x + y + z <= 1
+  #      ``_refine_structured``. This should be possible by taking the same
+  #      approach as in `MultilinearMesh` while restricting the attention
+  #      to the plane x + y + z <= 1.
 
   def _refine(self) -> Self:
     # XXX: this function is to be replaced by a general affine refinement
@@ -478,6 +484,8 @@ class AffineMesh(Mesh):
 class HexMesh(MultilinearMesh):
 
   """
+  Represents a hexahedral mesh.
+
               3_______ 7
              /|      /|
            1 _|____ 5 |
@@ -504,6 +512,8 @@ class HexMesh(MultilinearMesh):
 class QuadMesh(MultilinearMesh):
 
   """
+  Represents a quadrilateral mesh.
+
      1 _____ 3
       |     |
       |     |
@@ -530,6 +540,8 @@ class QuadMesh(MultilinearMesh):
 class Triangulation(AffineMesh):
 
   """
+  Represents a triangulation.
+
       1
       |\
       |  \
@@ -567,6 +579,11 @@ class Triangulation(AffineMesh):
 
 
 class LineMesh(AffineMesh):
+  """
+  Represents a line mesh.
+  Is both affine and multilinear.
+  Uses `refine_structured` for refinement.
+  """
 
   reference_element = LINE
 
@@ -579,6 +596,13 @@ class LineMesh(AffineMesh):
 
 
 class PointMesh(Mesh):
+  """
+  Represents a point mesh.
+  Is always valid and has no submesh (calling submesh raises an error).
+  Refinement returns itself.
+  Evaluating it locally returns the points themselves.
+  Neither affine nor multilinear.
+  """
 
   reference_element = POINT
 

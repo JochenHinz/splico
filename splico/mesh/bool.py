@@ -10,7 +10,7 @@ from ..log import logger as log
 from ._bool import make_numba_indexmap, _remap_elements, _match_active, \
                    renumber_elements_from_indexmap as renumber_elements
 
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING
 from functools import lru_cache
 from itertools import product
 
@@ -199,6 +199,7 @@ def mesh_boundary_union(*meshes, eps=1e-8, return_matches=False):
   # remap the elements from the matches
   elements, points = _remap_elements(all_elements, all_points, all_matches)
 
+  # create the new mesh object from the remapped elements and points
   ret = meshes[0].__class__(elements, points)
 
   if return_matches:

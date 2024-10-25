@@ -188,6 +188,10 @@ class ImmutableMeta(ABCMeta):
     return cls
 
   def __call__(cls, *args, **kwargs):
+    """
+    Overwrite the __call__ method to prevent instantiation if the class does not
+    implement the `_field_names` class-level attribute.
+    """
     # make sure that if _field_names is not implemented or inferred, the class is not
     # instantiated.
     if not hasattr(cls, '_field_names'):
@@ -266,13 +270,22 @@ class Immutable(metaclass=ImmutableMeta):
 
   @property
   def _lib(self) -> dict:
+    """
+    Return a dictionary of all relevant attributes.
+    """
     return {item: getattr(self, item) for item in self._field_names}
 
   def _edit(self, **kwargs) -> Self:
+    """
+    Edit single or multiple attributes of the class while keeping all others intact.
+    """
     return self.__class__(**ChainMap(kwargs, self._lib))
 
   @property
   def _tobytes(self) -> Tuple[Hashable, ...]:
+    """
+    Serialize all relevant attributes and return them as a tuple.
+    """
     ret: List[Hashable] = []
     for i, attr in enumerate(map(self.__getattribute__, self._field_names)):
       if isinstance(attr, np.ndarray):
@@ -292,6 +305,9 @@ class Immutable(metaclass=ImmutableMeta):
     return tuple(ret)
 
   def __setattr__(self, name: str, value: Any) -> None:
+    """
+    Prevent overwriting of attributes after initialization.
+    """
     if hasattr(self, '_is_initialized'):  # __init__ is complete
       if name in self._field_names or name == '_is_initialized':
         raise AttributeError(f"The {self.__class__.__name__}'s immutability"
@@ -312,6 +328,10 @@ class Immutable(metaclass=ImmutableMeta):
     self.__init__(**args)
 
   def __hash__(self) -> int:
+    """
+    Default implementation of __hash__ for hashing of immutable objects.
+    Once computed, the hash is cached for future use.
+    """
     if not hasattr(self, '_hash'):
       self._hash = hash(self._tobytes)
     return self._hash
@@ -350,11 +370,18 @@ class SingletonMeta(ImmutableMeta):
     return bound.args, tuple(bound.kwargs.items())
 
   def __new__(mcls, *args, **kwargs):
+    """
+    Overwrite the __new__ method to add a weakref cache to the class.
+    """
     cls = super().__new__(mcls, *args, **kwargs)
     cls._cache = WeakValueDictionary()
     return cls
 
   def __call__(cls, *args, **kwargs):
+    """
+    The __call__ method is overwritten to ensure that only one instance
+    per set of inputs can exist at a time.
+    """
     _args = cls._canonicalize_args(cls, *args, **kwargs)
     try:
       return cls._cache[_args]

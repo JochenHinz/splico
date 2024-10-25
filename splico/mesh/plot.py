@@ -1,3 +1,8 @@
+"""
+This module provides functions to plot a mesh.
+We use the `pyvista` library to plot the mesh interactively.
+"""
+
 from ..util import np
 
 from typing import TYPE_CHECKING

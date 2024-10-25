@@ -7,6 +7,13 @@ from itertools import product
 
 
 class ReferenceElementMeta(SingletonMeta):
+  """
+  Metaclass for reference elements.
+  The `ReferenceElement` class is a singleton class, i.e. there is only one
+  instance of each reference element type. The metaclass ensures that the
+  input to the class is in the correct format and that the class is called
+  with the correct arguments.
+  """
 
   def __call__(cls, *args, children_facets):
     # sort the children_facets to avoid duplicates resulting from passing
@@ -39,6 +46,7 @@ class ReferenceElement(Singleton, metaclass=ReferenceElementMeta):
       element's facets in the right order.
   """
 
+  # slots are used to reduce memory usage
   __slots__ = 'element_name', 'ndims', 'nverts', 'is_affine', 'children_facets'
 
   def __init__(self, element_name: str,
@@ -66,10 +74,21 @@ class ReferenceElement(Singleton, metaclass=ReferenceElementMeta):
 
   @abstractmethod
   def _local_ordinances(self, order: int = 1):
+    """
+    Abstract method to be implemented by subclasses.
+    Returns the local ordinances of the reference element
+    for a given order of the Lagrangian basis.
+    """
     pass
 
 
 class MultilinearElement(ReferenceElement):
+  """
+  Multilinear reference element.
+  The multilinear reference element is a reference element with a Cartesian
+  product structure. The local ordinances are the Cartesian product of the
+  local ordinances of the one-dimensional reference element.
+  """
 
   def __init__(self, ndims: int, children_facets: Tuple[Tuple[Int, ...], ...]):
     assert (ndims := int(ndims)) >= 2
@@ -87,6 +106,13 @@ class MultilinearElement(ReferenceElement):
 
 
 class SimplexElement(ReferenceElement):
+  """
+  Simplex reference element.
+  The simplex reference element is a reference element with a simplex structure.
+  The local ordinances are a subset of the Cartesian product of the local
+  ordinances of the one-dimensional reference element. Namely, the local
+  ordinances whose coordinates sum up to at most 1.
+  """
 
   def __init__(self, ndims: int, children_facets: Tuple[Tuple[Int, ...], ...]):
     ndims = int(ndims)

@@ -38,6 +38,9 @@ def _round_array(arr: np.ndarray | Sequence[Any], precision: Optional[Any] = Non
 
 
 def round_result(fn: Callable) -> Callable:
+  """
+  Decorator that rounds the returned array to the global precision.
+  """
   @wraps(fn)
   def wrapper(*args, **kwargs):
     return _round_array(fn(*args, **kwargs))
@@ -171,6 +174,9 @@ def deserialize_array(serial: serialized_array) -> np.ndarray:
 
 
 def serialize_input(fn: Callable) -> Callable:
+  """
+  Serialize the input array before passing it to the function.
+  """
   @wraps(fn)
   def wrapper(arr, *args, **kwargs):
     return fn(serialize_array(arr), *args, **kwargs)
@@ -234,7 +240,10 @@ def gauss_quadrature(a: int | float, b: int | float, order: int = 3) -> Tuple[np
 
 
 def clparam(points: Sequence | np.ndarray) -> np.ndarray:
-  # XXX: docstring
+  """
+  Compute the cumulative relative length parameter of a curve defined by the
+  points. Returns the parameter as a 1D array from 0 to 1.
+  """
   points = np.asarray(points)
   assert points.ndim
   if points.ndim == 1:
@@ -245,16 +254,25 @@ def clparam(points: Sequence | np.ndarray) -> np.ndarray:
 
 
 def normalize(array: np.ndarray) -> np.ndarray:
+  """
+  Normalize an array of vectors.
+  """
   array = np.asarray(array)
   return array / np.linalg.norm(array, axis=-1, ord=2, keepdims=True)
 
 
 def flat_meshgrid(*arrays, indexing: Literal['xy', 'ij'] = 'ij', axis: int = 0) -> np.ndarray:
+  """
+  Create a meshgrid and flatten it along the specified axis.
+  """
   meshgrid = tuple(np.meshgrid(*arrays, indexing=indexing))
   return np.stack(list(map(np.ravel, meshgrid)), axis=axis)
 
 
 def augment_by_zeros(points: np.ndarray, axis_target=3, axis=1):
+  """
+  Augment the points with zeros along the specified axis to reach the target.
+  """
   n = (points := np.asarray(points)).shape[axis]
   if n > axis_target:
     raise AssertionError('Cannot augment zeros to axis whose length exceeds `axis_target`.')
@@ -266,4 +284,7 @@ def augment_by_zeros(points: np.ndarray, axis_target=3, axis=1):
 
 
 def sorted_tuple(tpl):
+  """
+  Return a tuple with sorted elements.
+  """
   return tuple(sorted(tpl))
