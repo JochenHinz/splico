@@ -270,7 +270,7 @@ class UnivariateKnotVector(Immutable):
     if self.degree != other.degree or not len(knots):
       raise EmptyContainerError("Found empty intersection.")
     km0, km1 = map(lambda x: x.km[np.searchsorted(x.knots, knots)], (self, other))
-    km = np.max(np.stack([km0, km1], axis=0), axis=0)
+    km = np.maximum(km0, km1)
     return UnivariateKnotVector(knots, degree=self.degree,
                                        knotmultiplicities=km)
 
