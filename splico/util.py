@@ -1,5 +1,6 @@
 """
 Various utility functions.
+@author: Jochen Hinz
 """
 
 import sys

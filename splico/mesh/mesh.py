@@ -1,7 +1,6 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 """
+Module defining the abstract base class for all mesh types and some
+concrete mesh types.
 @author: Jochen Hinz
 """
 
@@ -362,6 +361,9 @@ class Mesh(Immutable, metaclass=MeshMeta):
     upon taking submeshes for the intersection to be nonempty.
     If no intersection was found (neither on the mesh itself or its submeshes),
     we return an empty mesh if type `self.__class__`.
+
+    We implement it under the name `_and` because mypy doesn't like the
+    additional keyword argument in the `__and__` method.
     """
     if not isinstance(other, Mesh):
       return NotImplemented

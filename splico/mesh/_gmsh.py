@@ -1,5 +1,6 @@
 """
 Gmsh routines for creating mesh types.
+@author: Jochen Hinz
 """
 
 from ..util import np

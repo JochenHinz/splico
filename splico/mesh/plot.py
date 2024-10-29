@@ -1,6 +1,7 @@
 """
 This module provides functions to plot a mesh.
 We use the `pyvista` library to plot the mesh interactively.
+@author: Jochen Hinz
 """
 
 from ..util import np

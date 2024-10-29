@@ -1,5 +1,6 @@
 """
 This module's purpose is performing various boolean operations on meshes.
+@author: Jochen Hinz
 """
 
 

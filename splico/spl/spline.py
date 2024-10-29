@@ -1,3 +1,8 @@
+"""
+Module defining the NDSpline class and related functions.
+@author: Jochen Hinz
+"""
+
 from ..util import _round_array, np, frozen, augment_by_zeros, _
 from ..types import Immutable, FloatArray, Index, MultiIndex, NumericArray, \
                     Int, AnyIntSeq, AnyFloatSeq

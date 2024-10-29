@@ -1,6 +1,7 @@
 """
 Various jit-compiled routines for spline evaluation.
 All taken from the NURBS book.
+@author: Jochen Hinz
 """
 
 

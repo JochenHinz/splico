@@ -1,3 +1,8 @@
+"""
+Reference elements. Used to define various mesh types in the `Mesh` class.
+@author: Jochen Hinz
+"""
+
 from ..types import Singleton, SingletonMeta, FloatArray, Int
 from ..util import freeze, round_result, np, flat_meshgrid
 

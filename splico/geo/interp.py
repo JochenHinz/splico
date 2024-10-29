@@ -1,3 +1,8 @@
+"""
+Module for spline interpolation. Either linear or higher order interpolation.
+@author: Jochen Hinz
+"""
+
 from splico.spl import NDSpline, UnivariateKnotVector, TensorKnotVector
 from ..util import np, _
 

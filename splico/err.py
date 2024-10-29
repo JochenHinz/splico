@@ -1,5 +1,6 @@
 """
 Module defining various custom errors.
+@author: Jochen Hinz
 """
 
 

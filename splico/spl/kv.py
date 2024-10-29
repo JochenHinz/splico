@@ -1,6 +1,7 @@
 """
 Module defining knotvectors. The main objects are :class:`UnivariateKnotVector`
 and :class:`TensorKnotVector`. The latter is a vectorized version of the former.
+@author: Jochen Hinz
 """
 
 from ..util import _round_array, isincreasing, np, _, \

@@ -4,6 +4,7 @@ In particular, this module introduces :class:`Immutable`, a general purpose
 base class for immutable and hashable classes. It also introduces the
 :class:`Singleton` base class which is a variant of :class:`Immutable` that
 can only create one instance per input.
+@author: Jochen Hinz
 """
 
 

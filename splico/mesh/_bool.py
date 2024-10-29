@@ -1,5 +1,6 @@
 """
 Module containing various JIT-compiled helper routines for use in `bool.py`
+@author: Jochen Hinz
 """
 
 

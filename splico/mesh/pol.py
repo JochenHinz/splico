@@ -1,5 +1,6 @@
 """
 Polynomial routines for evaluating the local element maps.
+@author: Jochen Hinz
 """
 
 from ..util import np, _, freeze
@@ -60,7 +61,8 @@ def _derivative_weights(pol_order: Int, dx: Int) -> FloatArray:
 
 
 @freeze
-def _nd_pol_derivative(weights: FloatArray, dx: AnyIntSeq) -> FloatArray:
+def _nd_pol_derivative(weights: FloatArray, dx: AnyIntSeq,
+                                            keepdims: bool = False) -> FloatArray:
   """
   Given a :class:`np.ndarray` of shape (p, q, r, ..., x, y, z, ...)
   respresening `(x, y, z, ...)` n-dependency polynomials of order
@@ -76,6 +78,10 @@ def _nd_pol_derivative(weights: FloatArray, dx: AnyIntSeq) -> FloatArray:
   dx : :class:`np.ndarray` or Sequence of integers
       The derivative orders. Must be (non-strictly) positive. The first
       len(dx) axes of `weights` are interpreted as polynomial weight axes.
+  keepdims : :class:`bool`
+      Boolean flag to keep the dimensions of the output array the same as
+      the input array. If `False`, the output array will have dimensions
+      reduced by the number of derivative axes.
 
   Returns
   -------
@@ -107,8 +113,15 @@ def _nd_pol_derivative(weights: FloatArray, dx: AnyIntSeq) -> FloatArray:
   # slice out first i = dx[j] entries in the j-th dimension of ``weights``
   # and multiply by the product of `dweights` with appropriate number of
   # one axes appended at the end.
-  return weights[tuple(slice(i, _) for i in dx)] * \
-         np.multiply.reduce(dweights)[(...,) + (_,) * (ntot - nder)]
+  ret = weights[tuple(slice(i, _) for i in dx)] * \
+        np.multiply.reduce(dweights)[(...,) + (_,) * (ntot - nder)]
+
+  if not keepdims or all(_dx == 0 for _dx in dx):
+    return ret
+
+  # pad with zeros
+  return np.pad(ret, tuple((0, shp - i) for i, shp in zip(ret.shape, weights.shape)),
+                mode='constant', constant_values=0)
 
 
 @lru_cache(maxsize=8)

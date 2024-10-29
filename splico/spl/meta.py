@@ -1,5 +1,6 @@
 """
 Metaclasses specific to the `splico.spl` package.
+@author: Jochen Hinz
 """
 
 from ..types import ImmutableMeta, ensure_same_length, ensure_same_class

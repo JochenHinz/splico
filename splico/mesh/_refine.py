@@ -1,5 +1,6 @@
 """
 Routines dedicated to refining various mesh types.
+@author: Jochen Hinz
 """
 
 
