@@ -85,7 +85,7 @@ class Mesh(Immutable, metaclass=MeshMeta):
   _local_ordinances: Callable
 
   @staticmethod
-  def _submesh_elements(mesh: 'Mesh') -> IntArray:
+  def _compute_submesh_elements(mesh: 'Mesh') -> IntArray:
     """
     Compute the mesh's submesh elements without duplicates.
     Requres `self._submesh_indices` to be implemented by the class.
@@ -228,6 +228,8 @@ class Mesh(Immutable, metaclass=MeshMeta):
     These are some standard checks that work for all mesh types.
     Can be overwritten for mesh-type specific validty checks.
     """
+    # XXX: this function should eventually get outsourced to a separate module
+    #      with more sophisticated validity checks for different mesh types.
     points = self._local_ordinances(order)
     if self.ndims == 3:
       return (np.linalg.det(self.JK(points)) > 0).all()
@@ -281,7 +283,7 @@ class Mesh(Immutable, metaclass=MeshMeta):
 
   @cached_property
   def submesh(self):
-    return self._submesh_type(self._submesh_elements(self), self.points)
+    return self._submesh_type(self._compute_submesh_elements(self), self.points)
 
   @cached_property
   def _boundary_nonboundary_elements(self) -> Tuple[IntArray, IntArray]:
@@ -394,7 +396,7 @@ class Mesh(Immutable, metaclass=MeshMeta):
     except HasNoBoundaryError:
       return self.submesh
     if dself == self.submesh:
-      raise NotImplementedError("The mesh has no interfaces.")
+      raise TypeError("The mesh has no interfaces.")
     return self.submesh - dself
 
   @property
@@ -423,25 +425,33 @@ class Mesh(Immutable, metaclass=MeshMeta):
   def plot(self):
     plot_mesh(self)
 
-  def take(self, elemindices: Sequence[int] | IntArray):
+  def take(self, elemindices: Sequence[Int] | IntArray):
     return self._edit(elements=self.elements[np.asarray(elemindices, dtype=int)])
 
-  def take_elements(self, selecter: Callable, complement: bool = False):
+  def take_elements(self, selecter: Callable, complement: bool = False) -> Self:
     """
-    Given a Callable `selecter` iterate over all of the mesh's elements
-    and keep only those elements for which selecter(*points) evaluates
-    to `True`, where `points` are the element's points.
+    Keep only those elements for which `selecter` evaluates to `True`.
+    If `complement` is `True`, keep only those elements for which `selecter`
+    evaluates to `False`.
+
+    Parameters
+    ----------
+    selecter : :class:`Callable`
+        A function that takes the vertices of an element as input and returns
+        a boolean. Needs to be vectorized and return a boolean array of shape
+        (len(self.elements),). Takes as input the array
+        `self.points[self.elements]` of shape (nelems, nverts, 3).
+    complement : :class:`bool`
+        If `True`, keep only those elements for which `selecter` evaluates to
+        `False`.
     """
-    # XXX: re-implement `selecter` to apply to all elements at once to allow
-    #      for proper vectorization (avoid element for loop).
     if complement:
-      _selecter = selecter
-      selecter = lambda *args, **kwargs: not _selecter(*args, **kwargs)
-    keep_elements = []
-    for ielem, points in enumerate(self.points_iter()):
-      if selecter(*points):
-        keep_elements.append(ielem)
-    return self.take(sorted(set(keep_elements)))
+      return self - self.take_elements(selecter)
+    return self.take(elements=selecter(self.points[self.elements]))
+
+  def export_gmsh(self, *args, **kwargs):
+    from .export import export_gmsh
+    export_gmsh(self, *args, **kwargs)
 
 
 def empty_like(mesh: Mesh) -> Mesh:
@@ -484,7 +494,6 @@ class AffineMesh(Mesh):
 
 
 class HexMesh(MultilinearMesh):
-
   """
   Represents a hexahedral mesh.
 
