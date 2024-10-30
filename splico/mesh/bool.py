@@ -92,6 +92,8 @@ def mesh_union_depr(*meshes: 'Mesh') -> 'Mesh':
   Very sensitive to numerical round-off errors. To reduce sensitivity,
   use in combination with the ``splico.util.global_precision`` context manager.
   """
+  log.warning("This function is deprecated and will be removed in the future.")
+
   assert meshes
 
   if len(meshes) == 1:
