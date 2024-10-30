@@ -4,6 +4,21 @@ In particular, this module introduces :class:`Immutable`, a general purpose
 base class for immutable and hashable classes. It also introduces the
 :class:`Singleton` base class which is a variant of :class:`Immutable` that
 can only create one instance per input.
+
+In its current development phase, the ``Splico`` library prioritizes robustness
+over performance. As such, we prioritize the use of immutable types to avoid
+side effects and to ensure that objects can be hashed. The slight
+re-instantiation overhead is negligible compared to the benefits of immutability.
+The potential performance gains from using mutable classes are currently
+negligible compared to the benefits of immutability, particularly as
+performance-critical routines already leverage extensive Numpy vectorization
+and JIT compilation in Numba.
+
+While we currently discourage classes that forgo the advantages of immutability,
+more permissive design patterns may be introduced in the future.
+An example of this is the `splico.spl.NDSpline` class which may permit inplace
+modifications to enhance interoperability with the Numpy API in the future.
+
 @author: Jochen Hinz
 """
 
@@ -24,6 +39,8 @@ from inspect import signature, Signature, Parameter
 from numpy.typing import NDArray
 
 
+# Various fused types for type hinting
+
 T = TypeVar('T')
 
 Int = int | np.integer
@@ -41,6 +58,9 @@ AnySequence = Sequence[T] | Tuple[T, ...]
 AnyIntSeq = AnySequence[Int] | IntArray
 AnyFloatSeq = AnySequence[Float] | FloatArray
 AnyNumericSeq = AnySequence[Numeric] | NumericArray
+
+
+# Decorators for use in classes' instance methods
 
 
 def ensure_same_class(fn: Callable) -> Callable:
@@ -98,6 +118,9 @@ def ensure_same_length(fn: Callable) -> Callable:
   return wrapper
 
 
+# Various signature methods for use in metaclasses
+
+
 def remove_self(signature: Signature) -> Signature:
   """
   Remove the ``self`` argument from a bound method signature.
@@ -113,6 +136,11 @@ def is_valid_signature(signature: Signature) -> bool:
   """
   return bool(set(map(lambda x: x.kind, signature.parameters.values())) &
               {Parameter.VAR_KEYWORD, Parameter.VAR_POSITIONAL}) is False
+
+
+# Metaclasses and various base classes forming the core of most of the
+# library's class structure, in particular the `splico.mesh.Mesh` and
+# the `splico.spl.NDSpline` base class.
 
 
 class ImmutableMeta(ABCMeta):
@@ -267,6 +295,7 @@ class Immutable(metaclass=ImmutableMeta):
   ... True
   """
 
+  # class-level annotation to avoid mypy errors
   _field_names: Tuple[str, ...]
   __signature__: Signature
 
@@ -356,8 +385,8 @@ class SingletonMeta(ImmutableMeta):
   """
   Singleton meta class.
   The same as :type:`ImmutableMeta` but adds a weakref cache to the class
-  for memorizing class instances while avoiding memory leaks.
-  Each separate class with this metaclass receives its own unique cache.
+  for memoizing class instances while avoiding memory leaks.
+  Each separate class using this metaclass receives its own unique cache.
   """
 
   @staticmethod

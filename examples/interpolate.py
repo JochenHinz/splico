@@ -1,6 +1,6 @@
 from splico.geo import interp, CrossSectionMaker
 from splico.spl import NDSpline
-from splico.mesh import rectilinear, mesh_boundary_union
+from splico.mesh import rectilinear, mesh_union
 
 import numpy as np
 
@@ -30,10 +30,12 @@ def main(spl0: NDSpline, spl1: NDSpline, t0: np.ndarray, t1=None) -> NDSpline:
   sample_mesh = rectilinear([np.linspace(0, 1, 21)] * 3)
 
   linear_interp = interp.linear_interpolation(spl0, spl1, zdegree=1)
-  mesh_boundary_union(*(myspline.sample_mesh(sample_mesh) for myspline in linear_interp)).plot()
+  mesh_union(*(myspline.sample_mesh(sample_mesh) for myspline in linear_interp),
+             boundary=True).plot()
 
   hermite_interp = interp.cubic_hermite_interpolation(spl0, spl1, t0, t1)
-  mesh_boundary_union(*(myspline.sample_mesh(sample_mesh) for myspline in hermite_interp)).plot()
+  mesh_union(*(myspline.sample_mesh(sample_mesh) for myspline in hermite_interp),
+             boundary=True).plot()
 
 
 if __name__ == '__main__':

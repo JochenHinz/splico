@@ -172,6 +172,8 @@ def mul_reduce(tpl):
   """
   Numba equivalent of np.multiply.reduce.
   """
+  # it seems that initializing the value to 1 works fine for any (relevant)
+  # array type contained in `tpl`.
   ret = 1
   for fac in tpl:
     ret *= fac

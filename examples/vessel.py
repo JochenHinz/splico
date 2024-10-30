@@ -1,5 +1,5 @@
 from splico.geo import CrossSectionMaker, compute_notwistframe_from_spline
-from splico.mesh import rectilinear, mesh_boundary_union
+from splico.mesh import rectilinear, mesh_union
 from splico.spl import UnivariateKnotVector, TensorKnotVector
 from splico.util import np, _, clparam
 
@@ -63,7 +63,7 @@ def main(nelems_centerline, nelems_cross_section, radii, centerline_points):
 
   # create a mesh sampled from each patch and take its boundary union
   # to provide one hexmesh for the entire geometry.
-  mesh = mesh_boundary_union(*(v.sample_mesh(eval_mesh) for v in vessel))
+  mesh = mesh_union(*(v.sample_mesh(eval_mesh) for v in vessel), boundary=True)
 
   # plot
   mesh.plot()

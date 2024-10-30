@@ -1,2 +1,2 @@
 from .mesh import Mesh, PointMesh, LineMesh, Triangulation, QuadMesh, HexMesh, \
-                  rectilinear, mesh_union, mesh_boundary_union
+                  rectilinear, mesh_union

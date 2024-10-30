@@ -1,6 +1,9 @@
 """
 Module defining the abstract base class for all mesh types and some
 concrete mesh types.
+Based on the `Mesh` class which itself derives from the `Immutable` base class
+and a modified version of the `ImmutableMeta` metaclass.
+
 @author: Jochen Hinz
 """
 
@@ -10,7 +13,7 @@ from ..types import Immutable, FloatArray, IntArray, ensure_same_class, Int
 from ..err import MissingVertexError, HasNoSubMeshError, HasNoBoundaryError
 from ._refine import refine_structured, _refine_Triangulation
 from .pol import eval_mesh_local
-from .bool import _issubmesh, mesh_boundary_union, mesh_union, lexsort_meshpoints
+from .bool import _issubmesh, mesh_union, lexsort_meshpoints
 from .plot import plot_mesh, plot_pointmesh
 from .meta import MeshMeta
 from .element import ReferenceElement, POINT, LINE, TRIANGLE, QUADRILATERAL, \
@@ -22,12 +25,42 @@ from functools import cached_property
 from itertools import product
 
 
-# XXX: write another parent class that allows for mixed element types.
-#      The meshes that have already been implemented then become special cases
-#      with only one element type.
-#      To accomplish this, in the long run, move away from a Class-level
-#      a attribute structure to a factory pattern structure.
-#      This will allow for more flexibility in the future.
+# TODO: write another parent class that allows for mixed element types.
+#       The meshes that have already been implemented then become special cases
+#       with only one element type.
+#       To accomplish this, in the long run, move away from a Class-level
+#       a attribute structure to a factory pattern structure.
+#       This will allow for more flexibility.
+
+
+# XXX: `np.ndarray` instance attributes are rounded to the environment
+#      precision `splico.util.GLOBAL_PRECISION` which can be locally adjusted
+#      using the `splico.util.global_precision` context manager.
+#      This is to enhance the robustness of point coordinate-based boolean
+#      operations. The rounding makes a copy of the array which may not be
+#      necessary in all cases but is kept for now or the sake of robustness.
+#
+#      In the long run, avoid copying the point array whenever possible to
+#      prevent unnecessary memory consumption, in particular since the `Mesh`
+#      class is structured in a way that not all the mesh's points may be used
+#      by its elements. The decision to keep the same point array for different
+#      meshes, which aims at reducing memory consumption, currently actually
+#      increases memory consumption because a typically larger point array is
+#      copied for each mesh instance.
+#
+#      For instance, taking a subset of the mesh's elements creates a new mesh
+#      with a new (smaller) element array but the same (too large) point array.
+#      The purpose of this is that `frozen` arrays can be shared by more than
+#      one instance.
+#
+#      To take advantage of this, the point array should not be copied when
+#      an operation is performed that only affects the element array.
+#
+#      One (still non-optimal but better and reasonably safe) way to accomplish
+#      this is checking if the array is already rounded to the desired
+#      precision using a for-cycle in Numba to avoid making
+#      a rounded copy of the array and compare the rounded array to the
+#      original. This is also straightforward to parallelize.
 
 
 class Mesh(Immutable, metaclass=MeshMeta):
@@ -48,11 +81,11 @@ class Mesh(Immutable, metaclass=MeshMeta):
 
   Attributes
   ----------
-  elements : :class:`np.ndarray`, frozen-array.
+  elements : :class:`np.ndarray`, frozen
       The element index array.
-  points : :class:`np.ndarray`, frozen-array.
+  points : :class:`np.ndarray`, frozen
       The point array.
-  reference_element : :class:`ReferenceElement`, class attribute.
+  reference_element : :class:`ReferenceElement`, class attribute
       The type of the mesh's reference element.
 
   Four class-level attributes are directly inherited from the
@@ -362,7 +395,7 @@ class Mesh(Immutable, metaclass=MeshMeta):
     The meshes must be of the same type or the same type must be obtainable
     upon taking submeshes for the intersection to be nonempty.
     If no intersection was found (neither on the mesh itself or its submeshes),
-    we return an empty mesh if type `self.__class__`.
+    we return an empty mesh of type `self.__class__`.
 
     We implement it under the name `_and` because mypy doesn't like the
     additional keyword argument in the `__and__` method.
@@ -371,19 +404,20 @@ class Mesh(Immutable, metaclass=MeshMeta):
       return NotImplemented
     if return_type is None:
       return_type = self.__class__
+    kwargs = {'return_type': return_type}
     try:
       if self.ndims > other.ndims:
-        return self.submesh._and(other, return_type=return_type)
+        return self.submesh._and(other, **kwargs)
       elif self.ndims < other.ndims:
-        return self._and(other.submesh, return_type=return_type)
+        return self._and(other.submesh, **kwargs)
       if self.__class__ is other.__class__:
         ret = self - (self - other)  # normal union
       # same dimension but different mesh type or empty intersection found
       if self.__class__ is not other.__class__ or not ret:
-        return self.submesh._and(other.submesh, return_type=return_type)
+        return self.submesh._and(other.submesh, **kwargs)
       return ret
     except HasNoSubMeshError:
-      return return_type(np.zeros((0, return_type.nverts), dtype=int), self.points)
+      return empty_like(self)
 
   def __and__(self, other: Any):
     """ See ``_and`` """
@@ -447,7 +481,7 @@ class Mesh(Immutable, metaclass=MeshMeta):
     """
     if complement:
       return self - self.take_elements(selecter)
-    return self.take(elements=selecter(self.points[self.elements]))
+    return self.take(elemindices=selecter(self.points[self.elements]))
 
   def export_gmsh(self, *args, **kwargs):
     from .export import export_gmsh
@@ -483,7 +517,7 @@ class AffineMesh(Mesh):
   #      Write a method that can refine any affine mesh type, similar to
   #      ``_refine_structured``. This should be possible by taking the same
   #      approach as in `MultilinearMesh` while restricting the attention
-  #      to the plane x + y + z <= 1.
+  #      to the (hyper-)plane `x_0 + x_1 + x_2 + ... <= 1`.
 
   def _refine(self) -> Self:
     # XXX: this function is to be replaced by a general affine refinement

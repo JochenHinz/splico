@@ -171,23 +171,23 @@ def _renumber_elements_from_indexmap3(elements, points, map_coord_index):
 
 
 @njit(cache=True)
-def _make_matching(points0, points1, eps):
+def _make_matching(V, col_index, row_index):
   """
-  Given two sets of points and a threshold ``eps``, create a correspondence
-  between points in pairs if they are sufficiently close, i.e., if their
-  Euclidean distance is below ``eps``.
-  If two points have been matched their indices will be removed from the
-  set of indices that are still eligible for matching to avoid duplicate
-  matching.
+  Given a sparse distance matrix in CSR format, create a correspondence
+  between points in pairs. If two points have been matched their indices
+  will be removed from the set of indices that are still eligible for
+  matching to avoid duplicate matching.
+  Whether two points are close enough to be eligible for matching is
+  the ``eps`` parameter in ``compute_distance_matrix``.
 
   Parameters
   ----------
-  points0 : :class:`np.ndarray`
-      The array containing the first mesh's points.
-  points1 : :class:`np.ndarray`
-      The array containing the second mesh's points.
-  eps : :class:`float`
-      The matching tolerance.
+  V : :class:`np.ndarray`
+      The array containing the distances between the two meshes' points.
+  colIndex : :class:`np.ndarray`
+      The column index of the distance matrix in CSR format.
+  row_index : :class:`np.ndarray`
+      The row index of the distance matrix in CSR format.
 
   Returns
   -------
@@ -195,66 +195,45 @@ def _make_matching(points0, points1, eps):
       An `(nmatchings, 2)` - shaped integer array containing the matches
       as rows.
   """
-  # XXX: the efficiency of this routine would benefit greatly from parallelization.
+  # TODO: the efficiency of this routine would benefit greatly from
+  #       parallelization.
 
-  assert points0.ndim == 2 and points0.shape[1:] == points1.shape[1:]
-  assert eps >= 0
-  n = points0.shape[1]
+  # empty input => immediately return empty array
+  if len(V) == 0:
+    return np.empty((0, 2), dtype=np.int64)
 
   # make set of available right matches
-  indices = np.arange(len(points1))
+  matched = np.zeros(col_index.max(), dtype=np.bool_)
 
   match0, match1 = [], []
 
   # for all points in point0
-  for i, point in enumerate(points0):
+  for i, (row_start, row_end) in enumerate(zip(row_index, row_index[1:])):
 
-    # set the candidates to the currently available indices
-    candidates = indices
+    # smallest match and distance initialized to dummy values
+    smallest_match = -1
+    smallest_distance = np.inf
 
-    # retain only candidates that satisfy the necessary condition
-    # abs(point0[i] - point1[i]) <= eps for all i in (0, n-1)
-    candidates_found = True  # keep track if candidates were found
-    for j in range(n):
-      myslice = points1[:, j][candidates]
-      candidates = candidates[ np.where(np.abs(myslice - point[j]) <= eps)[0] ]
+    for index, distance in zip(col_index[row_start: row_end],
+                               V[row_start: row_end]):
+      # index already matched ? Go to next
+      if matched[index]:
+        continue
 
-      # no candidates left ? => candidates_found = False; break
-      if len(candidates) == 0:
-        candidates_found = False
-        break
+      # if distance is smaller than the smallest distance, update
+      # smallest distance and smallest match index
+      if distance < smallest_distance:
+        smallest_distance = distance
+        smallest_match = index
 
-    # no candidates ? => continue
-    if not candidates_found:
+    # no match found
+    if smallest_match == -1:
       continue
-
-    # of the ones left behind, retain only those whose Euclidean distance is
-    # truly less than eps
-
-    # compute Euclidean distance (squared, for some reason I can't vectorize)
-    distances = np.empty((len(candidates),), dtype=np.float64)
-
-    for k, candidate in enumerate(candidates):
-      distances[k] = ((points1[candidate] - point)**2).sum()
-
-    # retain only indices that are below the threshold
-    # XXX: for stability reasons it will probably be better in the long run
-    #      to require that the number of retained indices is at most one.
-    retain = np.where(distances <= eps ** 2)[0]
-
-    # no indices left ? => continue
-    if len(retain) == 0:
-      continue
-
-    # get the minimum distance global index
-    j = candidates[np.argmin(distances)]
 
     match0.append(i)
-    match1.append(j)
+    match1.append(smallest_match)
 
-    # find local_index of j in `indices` and remove it from the available indices
-    local_index = np.searchsorted(indices, j)
-    indices = np.delete(indices, local_index)
+    matched[smallest_match] = True
 
   if len(match0) == 0:
     return np.empty((0, 2), dtype=np.int64)
@@ -266,19 +245,6 @@ def _make_matching(points0, points1, eps):
     ret[i, 1] = match1[i]
 
   return ret
-
-
-def _match_active(mesh0, mesh1, eps=1e-8):
-  """
-  Match a matching of two meshs' points based on proximity.
-  As opposed to ``_make_matching``, only the mesh's active points are matched
-  and the global rather than local matching indices are returned.
-  """
-  active0, active1 = mesh0.active_indices, mesh1.active_indices
-  return np.stack([active[ind] for active, ind
-                   in zip((active0, active1),
-                          _make_matching(mesh0.points[active0],
-                                         mesh1.points[active1], eps).T)], axis=1)
 
 
 @njit(cache=True)

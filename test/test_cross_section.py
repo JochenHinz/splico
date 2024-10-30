@@ -1,5 +1,5 @@
 from splico.geo import CrossSectionMaker
-from splico.mesh import rectilinear, mesh_boundary_union
+from splico.mesh import rectilinear, mesh_union
 
 import unittest
 
@@ -15,7 +15,7 @@ class TestDisc(unittest.TestCase):
         rmesh = rectilinear([n, n])
 
         all_meshes = [spl.sample_mesh(rmesh) for spl in sol]
-        mesh = mesh_boundary_union(*all_meshes)
+        mesh = mesh_union(*all_meshes, boundary=True)
 
         # 5 faces, 12 edges, 8 vertices
         npoints = 5 * (n-2)**2 + 12 * (n-2) + 8

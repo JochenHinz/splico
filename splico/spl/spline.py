@@ -478,15 +478,19 @@ def _vectorize_first_axis(op: Callable, controlpoints: np.ndarray,
   len(controlpoints) times along all axes in controlpoints.shape[1:].
   """
   n, *shape_tail = controlpoints.shape
-  output_shape_tail = try_broadcast_shapes(shape_tail, *(arr.shape for arr in args))
+  output_shape_tail = try_broadcast_shapes(shape_tail,
+                                           *(arr.shape for arr in args))
 
   # add artificial axes after the first axis if necessary
-  controlpoints = controlpoints[(sl,) + (_,) * (len(output_shape_tail) - len(shape_tail))]
+  p, q = len(output_shape_tail), len(shape_tail)
+  controlpoints = controlpoints[(sl,) + (_,) * (p - q)]
   controlpoints = np.broadcast_to(controlpoints, (n,) + output_shape_tail)
 
-  # first broadcast to shape (1,) + output_shape_tail, then to (n,) + output_shape_tail
-  args = tuple(np.broadcast_to( np.broadcast_to(arr, output_shape_tail)[_], (n,) + output_shape_tail )
-               for arr in args)
+  # first broadcast to shape (1,) + output_shape_tail, then to
+  # (n,) + output_shape_tail
+  args = tuple(np.broadcast_to(
+      np.broadcast_to(arr, output_shape_tail)[_], (n,) + output_shape_tail)
+      for arr in args)
   return op(controlpoints, *args, **kwargs)
 
 

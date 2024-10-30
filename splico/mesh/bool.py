@@ -8,12 +8,15 @@ from ..util import np, _
 from ..types import FloatArray
 from ..err import HasNoSubMeshError
 from ..log import logger as log
-from ._bool import make_numba_indexmap, _remap_elements, _match_active, \
-                   renumber_elements_from_indexmap as renumber_elements
+from ._bool import make_numba_indexmap, _remap_elements, \
+                   renumber_elements_from_indexmap as renumber_elements, \
+                   _make_matching
 
 from typing import TYPE_CHECKING
 from functools import lru_cache
 from itertools import product
+
+from scipy.spatial import cKDTree
 
 
 if TYPE_CHECKING:
@@ -81,7 +84,7 @@ def _issubmesh(mesh0: 'Mesh', mesh1: 'Mesh') -> bool:
     return False
 
 
-def mesh_union(*meshes: 'Mesh') -> 'Mesh':
+def mesh_union_depr(*meshes: 'Mesh') -> 'Mesh':
   """
   Take the union of several meshes.
   Duplicate points and elements are detected using a hashmap. Therefore only
@@ -135,53 +138,110 @@ def lexsort_meshpoints(mesh: 'Mesh') -> FloatArray:
   return np.take_along_axis(mesh_points, shuffle[..., _], 1)
 
 
-def mesh_boundary_union(*meshes, eps=1e-8, return_matches=False):
+@lru_cache(maxsize=8)
+def _compute_kdtree(mesh):
   """
-  Take the union of several meshes at once, only matching points on the
-  boundary. Optionally return the computed matched vertex pairs for re-use
-  in other meshes with the same mutual conncetivity. Note that the matched
-  vertex pairs are based on a global index which is the local index plus
-  and offset that depends on the position in ``meshes``.
+  Compute the KDTree of a mesh's points.
+  """
+  return cKDTree(mesh.points)
+
+
+@lru_cache(maxsize=8)
+def compute_distance_matrix(mesh0: 'Mesh', mesh1: 'Mesh', eps: float = 1e-6):
+  """
+  Compute the distance matrix between two meshes.
+  """
+  tree0 = _compute_kdtree(mesh0)
+  tree1 = _compute_kdtree(mesh1)
+
+  mat = tree0.sparse_distance_matrix(tree1, max_distance=eps).tocsr()
+
+  return mat.data, mat.indices, mat.indptr
+
+
+def make_matching(mesh0, mesh1, eps=1e-8):
+  """
+  Make a matching of two meshes' points based on proximity.
+  """
+  return _make_matching(*compute_distance_matrix(mesh0, mesh1, eps))
+
+
+def match_active(mesh0, mesh1, eps=1e-8):
+  """
+  Match a matching of two meshs' points based on proximity.
+  As opposed to ``_make_matching``, only the mesh's active points are matched
+  and the global rather than local matching indices are returned.
+  """
+  act0, act1 = mesh0.active_indices, mesh1.active_indices
+  mesh0, mesh1 = mesh0.drop_points_and_renumber(), mesh1.drop_points_and_renumber()
+  return np.stack([active[ind] for active, ind
+                   in zip((act0, act1), make_matching(mesh0, mesh1, eps).T)],
+                   axis=1)
+
+
+def mesh_union(*_meshes: 'Mesh', eps: float = 1e-6,
+                                 return_matches: bool = False,
+                                 boundary: bool = False) -> 'Mesh':
+  """
+  Take the union of several meshes using a KDTree to match points.
 
   Parameters
   ----------
   meshes : :class:`splico.mesh.Mesh`
-      The input meshes. All need to be of the same type and need to possess
-      a boundary mesh.
+      The input meshes. All need to be of the same type.
   eps: :class:`float`
       Matching tolerance that is forwarded to ``_match_active``.
+      Determines how close two points need to be to be considered eligible
+      for matching.
   return_matches : :class:`bool`
-      Boolean indicating whether the integer array of shape ``(nmatches, 2)``
-      containing matching pairs should be returned. This enables its re-use
-      in case many meshes with the same topology need to be unified.
+      Whether to return the matched vertex pair indices for re-use in other
+      meshes with the same mutual connectivity.
+  boundary : :class:`bool`
+      Whether to only consider boundary points eligible for matching.
+      This is useful for reducing the computational cost of the matching
+      in case it is known that the meshes are only connected at the boundary.
 
   Returns
   -------
-  union_mesh : :class:`splico.mesh.Mesh`
-      The mesh union.
-  all_matches : :class:`np.ndarray[int, 2]`
-      Optionally return the matching integer array.
+  union : :class:`splico.mesh.Mesh`
+      The union of all input meshes.
+  matches : :class:`np.ndarray`
+      The matched vertex pairs. Only returned if ``return_matches`` is
+      ``True``.
   """
 
-  if any( len(mesh.active_indices) != len(mesh.points) for mesh in meshes ):
+  assert _meshes
+
+  if len(_meshes) == 1:
+    return _meshes[0]
+
+  assert all(mesh.__class__ is _meshes[0].__class__ for mesh in _meshes)
+
+  if any( len(mesh.active_indices) != len(mesh.points) for mesh in _meshes ):
     log.warning("Warning, inactive points detected in at least one mesh,"
                 " they will be removed.")
 
-  meshes = tuple(mesh.drop_points_and_renumber() for mesh in meshes)
+  _meshes = tuple(mesh.drop_points_and_renumber() for mesh in _meshes)
+
+  if boundary:
+    meshes = tuple(mesh.boundary for mesh in _meshes)
+    fmatch = match_active
+  else:
+    meshes = _meshes
+    fmatch = make_matching
 
   # the local patch index is offset by a certain amount to assign a global
   # index.
-  offsets = np.array([0, *map(lambda x: len(x.points), meshes)]).cumsum()
-  dmeshes = [mesh.boundary for mesh in meshes]
+  offsets = np.array([0, *map(lambda x: len(x.points), _meshes)]).cumsum()
 
   # make all matchings between differing meshes (i < j)
   # XXX: find a more efficient solution
   all_matches = []
-  for (i, dmesh0), (j, dmesh1) in product(enumerate(dmeshes), enumerate(dmeshes)):
+  for (i, mesh0), (j, mesh1) in product(enumerate(meshes), enumerate(meshes)):
     if j <= i: continue
     # add offset to the two columns of the matches to reflect global indexing
-    all_matches.append( _match_active(dmesh0, dmesh1, eps) +
-                        np.array([[offsets[i], offsets[j]]]) )
+    mymatch = fmatch(mesh0, mesh1, eps) + np.array([offsets[i], offsets[j]])[_]
+    all_matches.append(mymatch)
 
   # concatenate all matches into one array
   all_matches = np.concatenate(all_matches)
@@ -191,17 +251,17 @@ def mesh_boundary_union(*meshes, eps=1e-8, return_matches=False):
   all_matches = all_matches[shuffle]
 
   # concatenate all elements and add offset
-  all_elements = np.concatenate([ mesh.elements + myoffset
-                                  for mesh, myoffset in zip(meshes, offsets)])
+  all_elements = np.concatenate([mesh.elements + myoffset
+                                 for mesh, myoffset in zip(_meshes, offsets)])
 
   # concatenate all points
-  all_points = np.concatenate([mesh.points for mesh in meshes])
+  all_points = np.concatenate([mesh.points for mesh in _meshes])
 
   # remap the elements from the matches
   elements, points = _remap_elements(all_elements, all_points, all_matches)
 
   # create the new mesh object from the remapped elements and points
-  ret = meshes[0].__class__(elements, points)
+  ret = _meshes[0].__class__(elements, points)
 
   if return_matches:
     return ret, all_matches
