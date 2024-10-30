@@ -5,7 +5,7 @@ This module's purpose is performing various boolean operations on meshes.
 
 
 from ..util import np, _
-from ..types import FloatArray
+from ..types import FloatArray, IntArray
 from ..err import HasNoSubMeshError
 from ..log import logger as log
 from ._bool import make_numba_indexmap, _remap_elements, \
@@ -141,7 +141,7 @@ def lexsort_meshpoints(mesh: 'Mesh') -> FloatArray:
 
 
 @lru_cache(maxsize=8)
-def _compute_kdtree(mesh):
+def _compute_kdtree(mesh: 'Mesh'):
   """
   Compute the KDTree of a mesh's points.
   """
@@ -161,14 +161,14 @@ def compute_distance_matrix(mesh0: 'Mesh', mesh1: 'Mesh', eps: float = 1e-6):
   return mat.data, mat.indices, mat.indptr
 
 
-def make_matching(mesh0, mesh1, eps=1e-8):
+def make_matching(mesh0: 'Mesh', mesh1: 'Mesh', eps: float = 1e-8) -> IntArray:
   """
   Make a matching of two meshes' points based on proximity.
   """
   return _make_matching(*compute_distance_matrix(mesh0, mesh1, eps))
 
 
-def match_active(mesh0, mesh1, eps=1e-8):
+def match_active(mesh0: 'Mesh', mesh1: 'Mesh', eps: float = 1e-8) -> IntArray:
   """
   Match a matching of two meshs' points based on proximity.
   As opposed to ``_make_matching``, only the mesh's active points are matched
@@ -183,7 +183,7 @@ def match_active(mesh0, mesh1, eps=1e-8):
 
 def mesh_union(*_meshes: 'Mesh', eps: float = 1e-6,
                                  return_matches: bool = False,
-                                 boundary: bool = False) -> 'Mesh':
+                                 boundary: bool = False):
   """
   Take the union of several meshes using a KDTree to match points.
 
@@ -249,6 +249,7 @@ def mesh_union(*_meshes: 'Mesh', eps: float = 1e-6,
   all_matches = np.concatenate(all_matches)
 
   # lexicographically sort all matches
+  # XXX: recasting all_matches from list to np.array gives mypy errors
   shuffle = np.lexsort(all_matches.T[::-1])
   all_matches = all_matches[shuffle]
 
