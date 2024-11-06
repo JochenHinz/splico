@@ -16,7 +16,7 @@ from .aux import freeze_csr, sparse_kron
 
 from itertools import starmap
 from functools import partial, lru_cache
-from typing import List, Sequence, Self, Any, Optional, Dict, cast, Callable
+from typing import Sequence, Self, Any, Optional, Callable
 
 from scipy import sparse
 from scipy.sparse import linalg as splinalg

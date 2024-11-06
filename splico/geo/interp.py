@@ -1,5 +1,6 @@
 """
 Module for spline interpolation. Either linear or higher order interpolation.
+
 @author: Jochen Hinz
 """
 
@@ -7,7 +8,8 @@ from splico.spl import NDSpline, UnivariateKnotVector, TensorKnotVector
 from ..util import np, _
 
 
-def linear_interpolation(spl0: NDSpline, spl1: NDSpline, zdegree: int = 1) -> NDSpline:
+def linear_interpolation(spl0: NDSpline,
+                         spl1: NDSpline, zdegree: int = 1) -> NDSpline:
   """
   Perform a linear interpolation between two :class:`splico.spl.NDSpline`s.
   This introduces a new parametric dependency which is appended at the end,

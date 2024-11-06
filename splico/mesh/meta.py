@@ -1,6 +1,7 @@
 """
 Module containing the :type:`MeshMeta` metaclass for use in
 :class:`splico.mesh.Mesh`.
+
 @author: Jochen Hinz
 """
 

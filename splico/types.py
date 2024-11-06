@@ -5,7 +5,7 @@ base class for immutable and hashable classes. It also introduces the
 :class:`Singleton` base class which is a variant of :class:`Immutable` that
 can only create one instance per input.
 
-In its current development phase, the ``Splico`` library prioritizes robustness
+In its current development phase, the ``SpliCo`` library prioritizes robustness
 over performance. As such, we prioritize the use of immutable types to avoid
 side effects and to ensure that objects can be hashed. The slight
 re-instantiation overhead is negligible compared to the benefits of immutability.
@@ -29,7 +29,7 @@ from .log import logger as log
 
 from functools import wraps
 from collections import ChainMap
-from collections.abc import Hashable
+from collections.abc import Hashable, Mapping
 from abc import ABCMeta
 from typing import Any, Self, Tuple, List, Dict, TypeVar, Sequence, Callable
 from types import EllipsisType
@@ -210,8 +210,8 @@ class ImmutableMeta(ABCMeta):
       # If that fails too and `_field_names` isn't implemented,
       # an error is thrown upon trying to instantiate the class.
 
-      for pclass in cls.__mro__:
-        if is_valid_signature((sig := remove_self(signature(pclass.__init__)))):
+      for pcls in cls.__mro__:
+        if is_valid_signature((sig := remove_self(signature(pcls.__init__)))):
           cls._field_names = tuple(sig.parameters.keys())
           break
 
@@ -222,27 +222,30 @@ class ImmutableMeta(ABCMeta):
     Overwrite the __call__ method to prevent instantiation if the class does
     not implement the `_field_names` class-level attribute.
     """
-    # make sure that if _field_names is not implemented or inferred, the class is not
-    # instantiated.
+    # make sure that if _field_names is not implemented or inferred,
+    # the class is not instantiated.
     if not hasattr(cls, '_field_names'):
-      raise TypeError("The class's `_field_names` class-level attribute has"
-                      " not been implemented or could not be inferred. Cannot "
-                      "instantiate a class that does not implement this attribute.")
+      raise TypeError("The class's `_field_names` class-level attribute has "
+                      "not been implemented or could not be inferred. Cannot "
+                      "instantiate a class that does not implement this "
+                      "attribute.")
     ret = type.__call__(cls, *args, **kwargs)
-    ret._is_initialized = True  # private variable to prevent overwriting attributes
+
+    # set private variable to prevent overwriting attributes
+    ret._is_initialized = True
     return ret
 
 
 class Immutable(metaclass=ImmutableMeta):
   """
   Generic base class for immutable types.
-  Has the ``_field_names`` class-level attribute. The ``_field_names`` attribute
-  is a tuple of strings where each string represents the name of a class
-  attribute (typically set in ``__init__``) that contributes to the class's hash.
-  If the class does not explicitly implement `_field_names`,
-  it is inferred from the `__init__`'s signature. So, if a class stores the
+  Has the ``_field_names`` class-level attribute. The ``_field_names``
+  attribute is a tuple of strings where each string represents the name of a
+  class attribute (typically set in ``__init__``) that contributes to the
+  class's hash. If the class does not explicitly implement ``_field_names``,
+  it is inferred from the ``__init__``'s signature. So, if a class stores the
   inputs it gets as attributes of the same name, it is possible to skip the
-  implementation of `_field_names`.
+  implementation of ``_field_names``.
   Each element in ``_field_names`` needs to refer to a hashable type with the
   exception of :class:`np.ndarray` which is serialized using ``serialize_array``.
 
@@ -324,9 +327,9 @@ class Immutable(metaclass=ImmutableMeta):
 
         if attr.flags.writeable is True:
           log.warning("Warning, attempting to hash the attribute "
-                      f"`{self._field_names[i]}` which is a writeable `np.ndarray`."
-                      "Ensure that all `np.ndarray` attributes are read-only"
-                      " using `util.frozen` or `util.freeze`.")
+                      f"`{self._field_names[i]}` which is a writeable"
+                      " `np.ndarray`. Ensure that all `np.ndarray` attributes"
+                      " are read-only using `util.frozen` or `util.freeze`.")
 
         ret.append(serialize_array(attr))
       elif isinstance(attr, Hashable):
@@ -343,7 +346,8 @@ class Immutable(metaclass=ImmutableMeta):
     if hasattr(self, '_is_initialized'):  # __init__ is complete
       if name in self._field_names or name == '_is_initialized':
         raise AttributeError(f"The {self.__class__.__name__}'s immutability"
-                              " prohibits overwriting attributes in `_field_names`.")
+                              " prohibits overwriting attributes in "
+                              " `_field_names`.")
     super().__setattr__(name, value)
 
   def __getstate__(self) -> Tuple[Hashable, ...]:
@@ -361,7 +365,7 @@ class Immutable(metaclass=ImmutableMeta):
 
   def __hash__(self) -> int:
     """
-    Default implementation of __hash__ for hashing of immutable objects.
+    Default implementation of ``__hash__`` for hashing of immutable objects.
     Once computed, the hash is cached for future use.
     """
     if not hasattr(self, '_hash'):
@@ -370,7 +374,7 @@ class Immutable(metaclass=ImmutableMeta):
 
   def __eq__(self, other: Any) -> bool:
     """
-    Default implementation of __eq__ for comparison between same types.
+    Default implementation of ``__eq__`` for comparison between same types.
     """
     if self.__class__ is not other.__class__:
       return NotImplemented  # Liskov substitution principle
@@ -440,6 +444,60 @@ class Singleton(Immutable, metaclass=SingletonMeta):
   """
 
   _cache: WeakValueDictionary
+
+
+class LockableDict(Mapping):
+  """
+  A dictionary that can be locked after initialization.
+  If all values are hashable, the dictionary itself is hashable.
+  Must be locked to be hashable.
+  """
+
+  def __new__(cls, *args, locked=False, **kwargs):
+    if args:
+      assert not kwargs
+      if len(args) > 1:
+        raise TypeError(f'Expected at most 1 argument, got {len(args)}')
+      args, = args
+      if isinstance(args, LockableDict):
+        return LockableDict(**args, locked=locked)
+      kwargs = dict(args)
+    self = super().__new__(cls)
+    self._locked = False
+    self._wrapped_dict = kwargs
+    return self
+
+  def lock(self):
+    """
+    Lock the dictionary after initialization.
+    """
+    self._locked = True
+
+  __getitem__ = lambda self, item: self._wrapped_dict.__getitem__(item)
+  __iter__ = lambda self: self._wrapped_dict.__iter__()
+  __len__ = lambda self: self._wrapped_dict.__len__()
+
+  def __setitem__(self, name, value):
+    if self._locked:
+      raise KeyError(f'{self.__class__.__name__} is frozen')
+    self._wrapped_dict.__setitem__(name, value)
+
+  def __hash__(self):
+    if not self._locked:
+      raise TypeError(f'Cannot hash a {self.__class__.__name__}'
+                      ' that is not locked')
+    if not hasattr(self, '_hash'):
+      self._hash = hash(tuple(sorted(self.items(), key=lambda x: x[0])))
+    return self._hash
+
+  def __eq__(self, other):
+    if not isinstance(other, Mapping):
+      return NotImplemented
+    if self is other:
+      return True
+    return dict(self.items()) == dict(other.items())
+
+  __repr__ = lambda self: f'{self.__class__.__name__}({self._wrapped_dict})'
 
 
 class NanVec(np.ndarray):

@@ -564,7 +564,6 @@ class QuadMesh(MultilinearMesh):
       |     |
       |_____|
      0       2
-
   """
 
   reference_element = QUADRILATERAL

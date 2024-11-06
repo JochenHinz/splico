@@ -1,6 +1,5 @@
 from splico.util import _
-from splico.spl import UnivariateKnotVector, TensorKnotVector
-from splico.spl import NDSpline, SplineCollection
+from splico.spl import UnivariateKnotVector, TensorKnotVector, NDSpline, NDSplineArray
 from splico.mesh import rectilinear
 from splico.geo import ellipse
 
@@ -151,7 +150,7 @@ class TestFitSample(unittest.TestCase):
     self.assertTrue( (np.abs(sampled_mesh.points - np.stack([x, 1 + x + y, z], axis=1)) < 1e-2).all() )
 
 
-class TestSplineCollection(unittest.TestCase):
+class TestNDSplineArray(unittest.TestCase):
 
   def test_new(self):
     xi = np.linspace(0, 1, 11)
@@ -161,13 +160,16 @@ class TestSplineCollection(unittest.TestCase):
     spline = NDSpline(kv, np.random.randn(kv.ndofs, 2, 3))
     spline0 = NDSpline(kv, np.random.randn(kv.ndofs, 2, 3, 4))
 
-    splcollection = SplineCollection([ [spline, spline], [spline, spline] ])
-    self.assertTrue(splcollection(xi, xi).shape == (11, *splcollection.shape, 2, 3))
+    arr = NDSplineArray([ [spline, spline], [spline, spline] ])
+    self.assertTrue(arr(xi, xi).shape == (11, *arr.shape, 2, 3))
 
     with self.assertRaises(AssertionError):
-      test = SplineCollection([[spline, spline0], [spline, spline]])
+      test = NDSplineArray([[spline, spline0], [spline, spline]])
 
     self.assertTrue( all(np.allclose( spl0.controlpoints, 2 * spl1.controlpoints ) for spl0, spl1 in zip((spline + spline).ravel(), spline.ravel())) )
+
+  # XXX: test for arithmetic operations and delegation of numpy functionality
+  #      to the `elements` attribute
 
 
 if __name__ == '__main__':

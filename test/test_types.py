@@ -1,6 +1,9 @@
-from splico.types import Immutable, ensure_same_class
+from splico.types import Immutable, ensure_same_class, Singleton
+from splico.mesh import rectilinear
 
 import unittest
+import tempfile
+import pickle
 
 
 class A(Immutable):
@@ -45,7 +48,13 @@ class C:
     return self.a >= other.a
 
 
-class TestHashMixinEquality(unittest.TestCase):
+class D(Singleton):
+
+  def __init__(self, a):
+    self.a = a
+
+
+class TestImmutable(unittest.TestCase):
 
   def test_equal_hashable(self):
     a = A(50)
@@ -72,6 +81,30 @@ class TestHashMixinEquality(unittest.TestCase):
     # are not the same, since the first comparison returns NotImplemented,
     # Python should fall back on `__ge__` which should return False.
     self.assertFalse(a <= c)
+
+
+class TestSingleton(unittest.TestCase):
+
+  def test_singleton(self):
+    d = D(50)
+    e = D(50.0)  # integer float gives the same hash
+    self.assertIs(d, e)
+
+
+class TestPickle(unittest.TestCase):
+
+  def test_pickle(self):
+    mesh0 = rectilinear((4, 5, 6))
+    with tempfile.TemporaryDirectory() as temp_dir:
+      path = temp_dir + '/test.pkl'
+
+      with open(path, 'wb') as f:
+        pickle.dump(mesh0, f)
+
+      with open(path, 'rb') as f:
+        mesh1 = pickle.load(f)
+
+    self.assertEqual(mesh0, mesh1)
 
 
 if __name__ == '__main__':

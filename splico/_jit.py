@@ -7,7 +7,8 @@ from typing import Sequence
 from functools import partial
 import math
 
-from numba import njit
+from numba import njit, vectorize
+from numba.types import int32, int64, float32, float64
 
 
 # cache enabled by default
@@ -107,6 +108,8 @@ Formatting to strings for homogeneous string-based Numba hashing.
 def cut_trail(f_str):
   """
   Given a string representation of a float, remove trailing zeros.
+
+  Used in the float2str function.
   """
   cut = 0
   for c in f_str[::-1]:
@@ -133,6 +136,9 @@ def float2str(value):
   """
   Numba implementation of a float to string conversion.
   Credit to norok2 for the original implementation.
+
+  Numba does not provide a built-in way to convert floats to strings, hence
+  this (not so pretty) custom implementation.
   """
   if math.isnan(value):
     return "nan"
@@ -171,6 +177,8 @@ def float2str(value):
 def mul_reduce(tpl):
   """
   Numba equivalent of np.multiply.reduce.
+
+  Deprecated in favor of the `multiply` ufunc.
   """
   # it seems that initializing the value to 1 works fine for any (relevant)
   # array type contained in `tpl`.
@@ -180,15 +188,36 @@ def mul_reduce(tpl):
   return ret
 
 
+# numba throws an experimental feature warning when using multiply.reduce
+# but everything seems to work fine in practice
+@vectorize([int32(int32, int32),
+            int64(int64, int64),
+            float32(float32, float32),
+            float64(float64, float64)], nopython=True, cache=True)
+def multiply(x, y):
+  return x * y
+
+
 @njit
 def add_reduce(tpl):
   """
   Numba equivalent of np.add.reduce.
+
+  Deprecated in favor of the `add` ufunc.
   """
   ret = 0
   for item in tpl:
     ret += item
   return ret
+
+
+# Same warning as for multiply.reduce. Works fine in practice.
+@vectorize([int32(int32, int32),
+            int64(int64, int64),
+            float32(float32, float32),
+            float64(float64, float64)], nopython=True, cache=True)
+def add(x, y):
+  return x + y
 
 
 """

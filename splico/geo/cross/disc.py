@@ -72,15 +72,17 @@ class CrossSectionMaker:
 
   # XXX: docstring
 
-  def __init__(self, nelems, degree=3, reparam=True, **templatekwargs):
+  def __init__(self, nelems, degree=3, reparam=True):
     assert nelems > 0
-    patches, patchverts = trampoline_template(**templatekwargs)
+    patches, patchverts = trampoline_template()
 
     # make a multipatch topology with the structure of ``trampoline_template``
     # and ``nelems`` elements per side
     # ``geom`` is the parameterisation of the parametric domain
     # ``localgeom`` maps each patch back onto the reference patch (0, 1)^2
-    domain, geom, localgeom = multipatch(patches=patches, patchverts=patchverts, nelems=nelems)
+    domain, geom, localgeom = multipatch(patches=patches,
+                                         patchverts=patchverts,
+                                         nelems=nelems)
     basis = domain.basis('spline', degree=degree)
     basis_disc = domain.basis('spline', degree=degree, patchcontinuous=False)
 
@@ -92,10 +94,13 @@ class CrossSectionMaker:
     self.localgeom = localgeom
     self.nelems = nelems
     self.degree = degree
-    self.knotvector = UnivariateKnotVector( np.linspace(0, 1, nelems+1), degree=degree )
+    self.knotvector = UnivariateKnotVector(np.linspace(0, 1, nelems+1),
+                                           degree=degree)
     self.tknotvector = self.knotvector * self.knotvector
 
-    controlmap = make_unit_disc(domain, basis, geom, localgeom, patches, reparam=reparam)
+    controlmap = make_unit_disc(domain, basis, geom, localgeom,
+                                                     patches,
+                                                     reparam=reparam)
 
     self.controlmap = controlmap
 
@@ -104,10 +109,15 @@ class CrossSectionMaker:
 
     # assemble the stiffness matrix
     # convert it to csr for efficiency
-    self.A = nutils_to_scipy(domain.integrate( (dbasis[:, None] * dbasis[None]).sum([2]) * function.J(controlmap), degree=10 ))
+    self.A = nutils_to_scipy(domain.integrate((dbasis[:, None] *
+                                               dbasis[None]).sum([2]) *
+                                               function.J(controlmap), degree=10))
 
     # get a boolean array that gives True for indices of basis functions that are nonzero on the boundary
-    self.freezemask = ~np.isnan( domain.boundary.project(1, geometry=geom, onto=basis, ischeme='gauss6') )
+    self.freezemask = ~np.isnan( domain.boundary.project(1,
+                                                         onto=basis,
+                                                         geometry=geom,
+                                                         ischeme='gauss6') )
 
     # get the associated boolean array that is True for functions NOT on the boundary
     self.freemask = ~self.freezemask
@@ -120,15 +130,21 @@ class CrossSectionMaker:
     self.basis_b = basis[self.freezemask]
 
     # assemble the mass matrix for projecting data onto the boundary DOFs
-    self.M = nutils_to_scipy(domain.boundary.integrate(function.outer(self.basis_b) * function.J(geom), degree=10 ))
+    self.M = nutils_to_scipy(domain.
+                             boundary.
+                             integrate(function.outer(self.basis_b) * function.J(geom),
+                                                                            degree=10 ))
 
     # compute the Cholesky of it
     self.CM = splinalg.splu(self.M.tocsc())
 
     # compute the matrices necessary for the prolongation to the discontinuous basis
     self.M_disc, self.T_disc = map(nutils_to_scipy,
-                                   domain.integrate([function.outer(self.basis_disc) * function.J(geom),
-                                                     self.basis_disc[:, None] * self.basis[None] * function.J(geom)], degree=10))
+                                   domain.
+                                   integrate([function.outer(self.basis_disc) *
+                                                              function.J(geom),
+                                              self.basis_disc[:, None] *
+                                              self.basis[None] * function.J(geom)], degree=10))
     # unit disc
     self._reference_sol = frozen(self.domain.project(self.controlmap,
                                                      self.basis.vector(2),
@@ -179,10 +195,11 @@ class CrossSectionMaker:
     J = function.J(self.geom)
 
     # the boundary sides are patch 1 right side, patch 4 right side, patch 3 top, patch0 top
-    for (ipatch, side), theta in zip([ (1, 'right'),
-                                       (4, 'right'),
-                                       (3, 'top'),
-                                       (0, 'top') ], [theta_bottom, theta_right, theta_top, theta_left] ):
+    for (ipatch, side), theta in zip( [ (1, 'right'),
+                                        (4, 'right'),
+                                        (3, 'top'),
+                                        (0, 'top') ],
+                                      [theta_bottom, theta_right, theta_top, theta_left] ):
 
       _domain = domain._topos[ipatch].boundary[side]
       _fcos, _fsin = _domain.integrate( [basis_b * a * np.cos(theta) * J,

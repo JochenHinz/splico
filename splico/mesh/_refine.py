@@ -5,7 +5,7 @@ Routines dedicated to refining various mesh types.
 
 
 from ..util import np
-from .._jit import product, arange_product, ravel_multi_index, mul_reduce, float2str
+from .._jit import product, arange_product, ravel_multi_index, mul_reduce, float2str, multiply
 
 from functools import lru_cache
 from itertools import count
@@ -34,7 +34,7 @@ def _format_indices_weights(indices, weights):
 def _formatter(point: np.ndarray):
   ret = np.empty((2 ** len(point),), dtype=point.dtype)
   for i, weights in enumerate(product([np.array((1 - x, x)) for x in point])):
-    ret[i] = mul_reduce(weights)
+    ret[i] = multiply.reduce(weights, axis=0)
   return ret
 
 

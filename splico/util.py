@@ -262,7 +262,8 @@ def normalize(array: np.ndarray) -> np.ndarray:
   return array / np.linalg.norm(array, axis=-1, ord=2, keepdims=True)
 
 
-def flat_meshgrid(*arrays, indexing: Literal['xy', 'ij'] = 'ij', axis: int = 0) -> np.ndarray:
+def flat_meshgrid(*arrays, indexing: Literal['xy', 'ij'] = 'ij',
+                           axis: int = 0) -> np.ndarray:
   """
   Create a meshgrid and flatten it along the specified axis.
   """
@@ -276,7 +277,8 @@ def augment_by_zeros(points: np.ndarray, axis_target=3, axis=1):
   """
   n = (points := np.asarray(points)).shape[axis]
   if n > axis_target:
-    raise AssertionError('Cannot augment zeros to axis whose length exceeds `axis_target`.')
+    raise AssertionError('Cannot augment zeros to axis whose length'
+                         ' exceeds `axis_target`.')
   if n == axis_target:
     return points
   zeros_shape = tuple(dim if i != axis else axis_target - n

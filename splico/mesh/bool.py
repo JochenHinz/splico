@@ -1,5 +1,6 @@
 """
 This module's purpose is performing various boolean operations on meshes.
+
 @author: Jochen Hinz
 """
 
@@ -171,7 +172,7 @@ def make_matching(mesh0: 'Mesh', mesh1: 'Mesh', eps: float = 1e-8) -> IntArray:
 def match_active(mesh0: 'Mesh', mesh1: 'Mesh', eps: float = 1e-8) -> IntArray:
   """
   Match a matching of two meshs' points based on proximity.
-  As opposed to ``_make_matching``, only the mesh's active points are matched
+  As opposed to ``make_matching``, only the mesh's active points are matched
   and the global rather than local matching indices are returned.
   """
   act0, act1 = mesh0.active_indices, mesh1.active_indices
@@ -181,9 +182,9 @@ def match_active(mesh0: 'Mesh', mesh1: 'Mesh', eps: float = 1e-8) -> IntArray:
                    axis=1)
 
 
-def mesh_union(*_meshes: 'Mesh', eps: float = 1e-6,
-                                 return_matches: bool = False,
-                                 boundary: bool = False):
+def mesh_union(*meshes: 'Mesh', eps: float = 1e-6,
+                                return_matches: bool = False,
+                                boundary: bool = False):
   """
   Take the union of several meshes using a KDTree to match points.
 
@@ -212,37 +213,37 @@ def mesh_union(*_meshes: 'Mesh', eps: float = 1e-6,
       ``True``.
   """
 
-  assert _meshes
+  assert meshes
 
-  if len(_meshes) == 1:
-    return _meshes[0]
+  if len(meshes) == 1:
+    return meshes[0]
 
-  assert all(mesh.__class__ is _meshes[0].__class__ for mesh in _meshes)
+  assert all(mesh.__class__ is (rt := meshes[0].__class__) for mesh in meshes)
 
-  if any( len(mesh.active_indices) != len(mesh.points) for mesh in _meshes ):
+  if any( len(mesh.active_indices) != len(mesh.points) for mesh in meshes ):
     log.warning("Warning, inactive points detected in at least one mesh,"
                 " they will be removed.")
 
-  _meshes = tuple(mesh.drop_points_and_renumber() for mesh in _meshes)
-
-  if boundary:
-    meshes = tuple(mesh.boundary for mesh in _meshes)
-    fmatch = match_active
-  else:
-    meshes = _meshes
-    fmatch = make_matching
+  meshes = tuple(mesh.drop_points_and_renumber() for mesh in meshes)
 
   # the local patch index is offset by a certain amount to assign a global
   # index.
-  offsets = np.array([0, *map(lambda x: len(x.points), _meshes)]).cumsum()
+  offsets = np.array([0, *map(lambda x: len(x.points), meshes)]).cumsum()
+
+  if boundary:
+    _meshes = tuple(mesh.boundary for mesh in meshes)
+    fmatch = match_active
+  else:
+    _meshes = meshes
+    fmatch = make_matching
 
   # make all matchings between differing meshes (i < j)
   # XXX: find a more efficient solution
   all_matches = []
-  for (i, mesh0), (j, mesh1) in product(enumerate(meshes), enumerate(meshes)):
+  for (i, msh0), (j, msh1) in product(enumerate(_meshes), enumerate(_meshes)):
     if j <= i: continue
     # add offset to the two columns of the matches to reflect global indexing
-    mymatch = fmatch(mesh0, mesh1, eps) + np.array([offsets[i], offsets[j]])[_]
+    mymatch = fmatch(msh0, msh1, eps) + np.array([offsets[i], offsets[j]])[_]
     all_matches.append(mymatch)
 
   # concatenate all matches into one array
@@ -255,16 +256,16 @@ def mesh_union(*_meshes: 'Mesh', eps: float = 1e-6,
 
   # concatenate all elements and add offset
   all_elements = np.concatenate([mesh.elements + myoffset
-                                 for mesh, myoffset in zip(_meshes, offsets)])
+                                 for mesh, myoffset in zip(meshes, offsets)])
 
   # concatenate all points
-  all_points = np.concatenate([mesh.points for mesh in _meshes])
+  all_points = np.concatenate([mesh.points for mesh in meshes])
 
   # remap the elements from the matches
   elements, points = _remap_elements(all_elements, all_points, all_matches)
 
   # create the new mesh object from the remapped elements and points
-  ret = _meshes[0].__class__(elements, points)
+  ret = rt(elements, points)
 
   if return_matches:
     return ret, all_matches
