@@ -1,26 +1,29 @@
 from splico.geo import CrossSectionMaker, compute_notwistframe_from_spline
 from splico.mesh import rectilinear, mesh_union
-from splico.spl import UnivariateKnotVector, TensorKnotVector
+from splico.spl import UnivariateKnotVector, \
+                       TensorKnotVector, NDSpline, NDSplineArray
 from splico.util import np, _, clparam
 
 
 def main(nelems_centerline, nelems_cross_section, radii, centerline_points):
   """
-    Make a 5-patch spline of a vessel and convert to mesh for visualization.
+  Make a 5-patch spline of a vessel and convert to mesh for visualization.
 
-    Parameters
-    ----------
-    nelems_centerline : :class:`int`
-        The number of spline elements to use for the knotvector that fits
-        the centerline.
-    nelems_cross_section : :class:`int`
-        The number of elements of the five cross section patches in each
-        direction.
-    radii : :class:`np.ndarray`
-        Radius information at the centerline points.
-        Must be of shape centerline_points.shape[:1] (and stritly positive).
-    centerline_points : :class:`np.ndarray`
-        The centerline point information. Must be of shape (npoints, 3).
+  Parameters
+  ----------
+  nelems_centerline : :class:`int`
+      The number of spline elements to use for the knotvector that fits
+      the centerline.
+  nelems_cross_section : :class:`int`
+      The number of elements of the five cross section patches in each
+      direction.
+  radii : :class:`np.ndarray`
+      Radius information at the centerline points.
+      Must be of shape centerline_points.shape[:1] (and stritly positive).
+  centerline_points : :class:`np.ndarray`
+      The centerline point information. Must be of shape (npoints, 3).
+
+  Version has been adapted to make use of the NDSplineArray class.
   """
 
   # make a knotvector with the specified number of elements
@@ -42,12 +45,12 @@ def main(nelems_centerline, nelems_cross_section, radii, centerline_points):
   maker = CrossSectionMaker(nelems_cross_section)
 
   # make the cross section of radius one
-  disc = maker.make_disc(1, 1, 0)
+  disc = NDSplineArray(maker.make_disc(1, 1, 0))
 
   # fit a spline to radius and rotational frame information
   rRs = kv.fit([xi], radii[:, _, _] * Rs)
 
-  one = disc.one(disc.knotvector)
+  one = NDSpline.one(disc.arr.ravel()[0].knotvector)
 
   # create the vessel spline using a tensor product
   # disc.shape == (5, 3) 5 patches 3 coordinates
@@ -63,7 +66,7 @@ def main(nelems_centerline, nelems_cross_section, radii, centerline_points):
 
   # create a mesh sampled from each patch and take its boundary union
   # to provide one hexmesh for the entire geometry.
-  mesh = mesh_union(*(v.sample_mesh(eval_mesh) for v in vessel), boundary=True)
+  mesh = mesh_union(*vessel.sample_mesh(eval_mesh), boundary=True)
 
   # plot
   mesh.plot()

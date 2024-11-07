@@ -1,7 +1,8 @@
 from splico.util import _
-from splico.spl import UnivariateKnotVector, TensorKnotVector, NDSpline, NDSplineArray
+from splico.spl import UnivariateKnotVector, TensorKnotVector
 from splico.mesh import rectilinear
 from splico.geo import ellipse
+from splico.spl import NDSpline, NDSplineArray
 
 import operator
 import unittest
@@ -111,7 +112,6 @@ class TestNDSpline(unittest.TestCase):
     disc = ellipse(1, 1, 4)
     kv = disc.knotvector.refine(...)
     disc_r = disc.prolong_to(kv)
-    sample_mesh = rectilinear([np.linspace(0, 1, 11)]*2)
 
     self.assertTrue(np.allclose(disc[0].tensorcall(*kv.knots),
                                 disc_r[0].tensorcall(*kv.knots)))
@@ -120,8 +120,6 @@ class TestNDSpline(unittest.TestCase):
 
     self.assertTrue(np.allclose(disc[0].tensorcall(*kv.knots),
                                 disc_r[0].tensorcall(*kv.knots)))
-
-    disc_r[0].sample_mesh(sample_mesh).plot()
 
     self.assertTrue(all(np.allclose(kn0, kn1) for kn0, kn1 in zip(disc_r.knots, kv.knots)))
 
@@ -161,15 +159,86 @@ class TestNDSplineArray(unittest.TestCase):
     spline0 = NDSpline(kv, np.random.randn(kv.ndofs, 2, 3, 4))
 
     arr = NDSplineArray([ [spline, spline], [spline, spline] ])
-    self.assertTrue(arr(xi, xi).shape == (11, *arr.shape, 2, 3))
+    self.assertTrue(arr(xi, xi).shape == (11, *arr.shape))
 
     with self.assertRaises(AssertionError):
       test = NDSplineArray([[spline, spline0], [spline, spline]])
 
     self.assertTrue( all(np.allclose( spl0.controlpoints, 2 * spl1.controlpoints ) for spl0, spl1 in zip((spline + spline).ravel(), spline.ravel())) )
 
-  # XXX: test for arithmetic operations and delegation of numpy functionality
-  #      to the `elements` attribute
+  def test_arithmetic(self):
+    import random
+    xi = np.linspace(0, 1, 11)
+    A = ellipse(1, 1, 4)
+    B = NDSplineArray(A)
+    for i in range(3):
+      self.assertTrue( np.allclose(A(xi, xi), B(xi, xi)) )
+      try:
+        B = B.expand()
+      except Exception:
+        pass
+    self.assertTrue(isinstance(A + B, NDSplineArray))
+    self.assertTrue((A[:, _] + B[_]).shape == (5, 5, 3))
+
+    B_ = B.contract_all()
+    C_ = B.expand_all()
+
+    for C, B in zip((C_, C_[0], C_[0, 0]), (B_, B_[0], B_[0, 0])):
+      for j in range(2):
+        for i in range(B.ndim, 10):
+          # create numbers from o to i-1 and shuffle them
+          no_none_indices = list(range(i))
+          random.shuffle(no_none_indices)
+
+          # keep only the first i-ndim indices
+          no_none_indices = no_none_indices[:(i-B.ndim)]
+
+          # item is given by slices only
+          item = [slice(None)] * i
+
+          # add i - 2 Nones in random places
+          for ind in no_none_indices:
+            item[ind] = None
+
+          # convert to tuple
+          item = tuple(item)
+
+          # check if `B` which is partially expanded has the same shape as `C`
+          # which is fully expanded give the same shape. The shape of `C.arr`
+          # should always be correct because it is is a numpy array with thse shape
+          # of B
+          self.assertTrue(B[item].shape == C.arr[item].shape)
+
+        B = B.expand()
+
+    B_ = NDSplineArray(A)
+    for B in (B_, B_[0], B_[0, 0]):
+      C = B.expand_all()
+      final_shape = (4,) * 3 + B.shape
+      for i in range(len(final_shape)):
+        myshape = final_shape[::-1][:i][::-1]
+        y = np.asarray(np.random.randn(*myshape))  # coerce to array in case float is returned
+        shp = np.broadcast_shapes(y.shape, B.shape)
+        sm = B + y
+        self.assertTrue(sm.shape == shp)
+        self.assertTrue( (np.array(C.arr + y) == sm.expand_all().arr).all() )
+
+  def test_sum(self):
+    import random
+    kv = UnivariateKnotVector(np.linspace(0, 1, 5))
+    for i in range(4):
+      tkv = TensorKnotVector([kv] * i)
+      for ndim in range(5):
+        data = np.random.randn(*((tkv.ndofs,) + (3,) * ndim))
+        B = NDSplineArray(NDSpline(tkv, data))
+        C = B.expand_all()
+        for j in range(ndim):
+          for k in range(j):
+            indices = list(range(ndim))
+            random.shuffle(indices)
+            indices = tuple(indices[:k])
+            self.assertTrue((C.arr.sum(indices) == B.sum(indices).expand_all().arr).all())
+          B = B.expand()
 
 
 if __name__ == '__main__':
