@@ -7,6 +7,7 @@ and a modified version of the `ImmutableMeta` metaclass.
 @author: Jochen Hinz
 """
 
+from http.client import NOT_IMPLEMENTED
 from ..util import np, _, frozen, _round_array, isincreasing, flat_meshgrid, \
                    frozen_cached_property, augment_by_zeros, sorted_tuple
 from ..types import Immutable, FloatArray, IntArray, ensure_same_class, Int
@@ -16,7 +17,7 @@ from .pol import eval_mesh_local
 from .bool import _issubmesh, mesh_union, lexsort_meshpoints
 from .plot import plot_mesh, plot_pointmesh
 from .meta import MeshMeta
-from .element import ReferenceElement, POINT, LINE, TRIANGLE, QUADRILATERAL, \
+from .element import TETRAHEDON, ReferenceElement, POINT, LINE, TRIANGLE, TETRAHEDON, QUADRILATERAL, \
                      HEXAHEDRON
 
 from abc import abstractmethod
@@ -121,7 +122,7 @@ class Mesh(Immutable, metaclass=MeshMeta):
   def _compute_submesh_elements(mesh: 'Mesh') -> IntArray:
     """
     Compute the mesh's submesh elements without duplicates.
-    Requres `self._submesh_indices` to be implemented by the class.
+    Requires `self._submesh_indices` to be implemented by the class.
     """
     # XXX: jit-compile the element map
 
@@ -618,8 +619,43 @@ class Triangulation(AffineMesh):
     """ See `_refine_Triangulation`. """
     return _refine_Triangulation(self)
 
+class TetGen(AffineMesh):
+  """
 
-# XXX: TetMesh. Leave as an exercise for Fabio.
+          1
+          |\
+          |  \
+          |    \
+          |      \
+          |        \
+        0 |__________\ 2
+          /         /
+         /        /
+        /       /
+       /     /
+      /   /
+     / /
+    3
+
+    the edge between vertices 3-1 is understood
+  """
+
+  reference_element = TETRAHEDON
+  @classmethod
+  def _from_3D_surface(self):
+    return NotImplementedError
+
+  @frozen_cached_property
+  def pvelements(self):
+    return self.elements[:, [0, 3, 1, 2]]
+
+  @property
+  def _submesh_type(self):
+    return Triangulation
+
+  def _refine(self):
+    """ See `_refine_Tet`. """
+    raise NotImplementedError
 
 
 class LineMesh(AffineMesh):

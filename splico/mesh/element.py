@@ -3,6 +3,7 @@ Reference elements. Used to define various mesh types in the `Mesh` class.
 @author: Jochen Hinz
 """
 
+from pyvista import Tetrahedron
 from ..types import Singleton, SingletonMeta, FloatArray, Int
 from ..util import freeze, round_result, np, flat_meshgrid
 
@@ -146,10 +147,9 @@ HEXAHEDRON = MultilinearElement(3, children_facets=hex_facets)
 point_facets: Tuple[Tuple[Int, ...], ...] = tuple()
 line_facets = (0,), (1,)
 triangle_facets = (0, 1), (0, 2), (1, 2)
+tet_facets = (0, 1, 2), (0, 1, 3), (0, 2, 3), (1, 2, 3)
 
 POINT = SimplexElement(0, children_facets=point_facets)
 LINE = SimplexElement(1, children_facets=line_facets)
 TRIANGLE = SimplexElement(2, children_facets=triangle_facets)
-
-
-# tetrahedron leave as an exercise for Fabio
+TETRAHEDON = SimplexElement(3, children_facets=tet_facets)

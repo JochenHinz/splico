@@ -122,7 +122,7 @@ def abs_tuple(tpl):
 
 @lru_cache(maxsize=8)
 def _refine_Triangulation(mesh):
-  r"""
+  """
   Uniformly refine the entire mesh once.
         i1                             i1
         / \                            / \
