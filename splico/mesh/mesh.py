@@ -641,6 +641,7 @@ class TetGen(AffineMesh):
   """
 
   reference_element = TETRAHEDON
+
   @classmethod
   def _from_3D_surface(self):
     return NotImplementedError

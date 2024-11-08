@@ -61,3 +61,46 @@ def triangulation_from_polygon(points: FloatArray, mesh_size: float | int | Call
     mesh = geom.generate_mesh(algorithm=5)
 
   return mesh.cells_dict['triangle'][:, [0, 2, 1]], mesh.points
+
+
+ACCETABLE_FORMATS = 'stl'
+# still needs a unit test.
+def tet_gen_from_surface(points = None, elements= None, filename = None, mesh_size: int | float = 0.5):
+
+  if filename is not None:
+    assert filename.endswith in ACCETABLE_FORMATS, 'Format not valid'
+    
+    import trimesh
+    mesh = trimesh.load_mesh('filename') 
+    assert mesh.is_watertight, 'The surface is not closed'
+    
+    import meshio
+    surface = meshio.read(filename) 
+    points = surface.points
+    elements = surface.cells_dict['tetra'][:, [0, 3, 1, 2]]
+  else:
+    assert elements.shape[1] == 3, 'The input surface is not a triangulation'
+
+  import pygmsh
+  geom = pygmsh.built_in.Geometry()
+
+  for i in range(points.shape[0]):
+    geom.add_point(points[i],mesh_size)
+
+  for i in range(elements.shape[0]):
+    geom.add_triangle(points[elements[i]])
+
+  mesh_tet = pygmsh.generate_mesh(geom)
+  
+  import meshio
+  meshio.write("tet_mesh.vtk", mesh.points, mesh.cells)
+
+  return mesh_tet.cells_dict['tetra'][0, 3, 1, 2], mesh_tet.points
+
+
+
+
+  
+
+  
+  

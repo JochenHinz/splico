@@ -4,12 +4,13 @@ Routines dedicated to refining various mesh types.
 """
 
 
+from numpy import where
 from ..util import np
 from .._jit import product, arange_product, ravel_multi_index, mul_reduce, float2str, multiply
 
 from functools import lru_cache
 from itertools import count
-
+from mesh import Mesh
 from numba import njit
 
 
@@ -162,3 +163,50 @@ def _refine_Triangulation(mesh):
   points = np.concatenate([points, newpoints])
 
   return mesh.__class__(elements, points)
+
+### To be finished.
+def _refine_tet(mesh: Mesh) -> Mesh:
+  
+  points = mesh.points
+  elements = mesh.elements
+  
+  # division of the tet, in 4 triangles
+  slices_to_tri = list(mesh._submesh_indices)  
+  elements = elements[:, slices_to_tri]
+  
+  import ipdb
+  ipdb.set_trace()
+  
+  ref_mesh = _refine_Triangulation(mesh)
+  
+ # ref_elements = ref_mesh.elements
+ # ref_elements = ref_elements.reshape(1,4,4,3)
+ # ref_elements = ref_elements.reshape(1,16,3)
+
+ # tet = []
+ # for k in range(ref_elements.shape[0]):
+ #   for i in range(ref_elements.shape[1]):
+ #     for j in range(ref_elements.shape[2]):
+ #       if elements[k] == ref_elements[k,i,j]:
+          
+          
+### To be finished.
+          
+  return mesh.__class__(elements, points)
+
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
