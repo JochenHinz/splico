@@ -743,7 +743,7 @@ class NDSplineArray(ArrayLike):
     Create a NDSplineArray with all elements being the constant one function.
     """
     array_of_knotvectors = np.array(array_of_knotvectors, dtype=TensorKnotVector)
-    return cls([ np.vectorize(NDSpline.one)(array_of_knotvectors) ])
+    return cls(np.vectorize(NDSpline.one)(array_of_knotvectors))
 
   @property
   def shape(self) -> Tuple[int, ...]:
