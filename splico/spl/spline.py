@@ -6,7 +6,8 @@ Module defining the NDSpline class and related functions.
 
 from ..util import _round_array, np, frozen, augment_by_zeros, _
 from ..types import Immutable, FloatArray, Index, MultiIndex, NumericArray, \
-                    Int, AnyIntSeq, AnyFloatSeq, LockableDict, Numeric
+                    Int, AnyIntSeq, AnyFloatSeq, LockableDict, Numeric, \
+                    AnySequence
 from splico.mesh.mesh import Mesh
 from ._jit_spl import call, tensor_call
 from .kv import UnivariateKnotVector, TensorKnotVector, as_TensorKnotVector, \
@@ -14,7 +15,7 @@ from .kv import UnivariateKnotVector, TensorKnotVector, as_TensorKnotVector, \
 from .aux import tensorial_prolongation_matrix
 from .meta import NDSplineMeta
 
-from typing import Sequence, Callable, Tuple, Self, List, Any
+from typing import Sequence, Callable, Tuple, Self, List, Any, TypeVar
 from types import GenericAlias
 from functools import reduce, wraps, cached_property
 from itertools import product
@@ -129,10 +130,10 @@ class ArrayLike(Immutable, NDArrayOperatorsMixin):
   Base class for array-like objects.
   Requires at least the following methods to be implemented explicitly:
 
-  - __getitem__
-  - __iter__
-  - __array_ufunc__
   - sum
+  - __iter__
+  - __getitem__
+  - __array_ufunc__
 
   as well as the ``shape`` attribute / property.
 
@@ -166,8 +167,11 @@ class ArrayLike(Immutable, NDArrayOperatorsMixin):
 # substitute for `ArrayLike` in many cases
 ArrayLike.register(np.ndarray)
 
+T0 = TypeVar('T0', ArrayLike, np.ndarray)
+T1 = TypeVar('T1', ArrayLike, np.ndarray)
 
-def _add_one_axes(inp0: ArrayLike, inp1: ArrayLike) -> Tuple[ArrayLike, ArrayLike]:
+
+def _add_one_axes(inp0: T0, inp1: T1) -> Tuple[T0, T1]:
   """
   Given two ArraLike objects, add axes to the shorter shaped object
   to make them broadcastable.
@@ -527,16 +531,6 @@ class NDSpline(ArrayLike, metaclass=NDSplineMeta):
     for inp in inputs:
       (myclass if isinstance(inp, NDSpline) else notmyclass).append(inp)
 
-    # get the ufunc
-    func = getattr(ufunc, method)
-
-    # If any of the inputs is of type `SplineArray`, let SplineArray
-    # handle the operation using the default numpy arithmetic protocol by
-    # converting all inputs of type `NDSpline` to `NDSplineArray`.
-    if any(isinstance(inp, NDSplineArray) for inp in inputs):
-      return func( *(NDSplineArray(inp) if isinstance(inp, NDSpline) else inp
-                   for inp in inputs), **kwargs )
-
     if len(myclass) > 1:  # this block handles interactions between NDSplines
       # since we only handle __call__ for now, the length of `inputs` is
       # two. If both are `NDSpline`, handle them using the implemented protocols.
@@ -547,6 +541,15 @@ class NDSpline(ArrayLike, metaclass=NDSplineMeta):
       return reduce(lambda x, y: func(x, y), myclass)
 
     # What follows handles NDSpline and np.ndarray-like
+    # get the ufunc
+    func = getattr(ufunc, method)
+
+    # If any of the inputs is of type `SplineArray`, let SplineArray
+    # handle the operation using the default numpy arithmetic protocol by
+    # converting all inputs of type `NDSpline` to `NDSplineArray`.
+    if any(isinstance(inp, NDSplineArray) for inp in inputs):
+      return func( *(NDSplineArray(inp) if isinstance(inp, NDSpline) else inp
+                   for inp in inputs), **kwargs )
 
     # for now only allow the handling of IMPLEMENTED_UFUNCS
     if ufunc not in IMPLEMENTED_UFUNCS:
@@ -622,7 +625,7 @@ class NDSplineArray(ArrayLike):
   """
   Array of splines.
   The knotvectors of all splines may differ but each spline must have the same
-  shape.
+  shape (and also the same number of dependencies, but this will change).
 
   Derives from :class:`np.ndarray` and is intended to be used as a container
   for multiple :class:`NDSpline`s which are all of the same shape.
@@ -704,7 +707,18 @@ class NDSplineArray(ArrayLike):
   IMPROVEMENT.
   """
 
-  def __init__(self, arr: NDArray[NDSpline] | NDSpline | Sequence[NDSpline]):
+  # TODO: in the `contract` and `expand` methods, still a lot of unnecessary
+  #       copies are made. We keep this somewhat inefficient solution for now
+  #       for the sake of safety. The next milestone is to make the class
+  #       more efficient by using array views instead of copies.
+
+  # TODO: introduce a subclass that additionally introduces a topology
+  #       between the quadrilateral spline patches plus knotvector
+  #       compatibility checks. This would ultimately lead up to a class
+  #       that can directly interact with IGA solvers (such as nutils)
+  #       for more sophisticated spline operations.
+
+  def __init__(self, arr: NDArray | NDSpline | Sequence[NDSpline]):
     self.arr = frozen(arr, dtype=NDSpline)
     self._shape = self.arr.shape
     self._elemshape = self.arr.ravel()[0].shape
@@ -712,8 +726,24 @@ class NDSplineArray(ArrayLike):
     assert issubclass(self._dtype, NDSpline)
     assert all(isinstance(elem, self._dtype) and elem.shape == self._elemshape
                                                   for elem in self.arr.ravel())
+    if any( elem.nvars != self.nvars for elem in self.arr.ravel() ):
+      raise NotImplementedError("Currently, all elements must have the same "
+                                "number of dependencies.")
 
   __repr__ = NDSpline.__repr__
+
+  @cached_property
+  def nvars(self) -> int:
+    """ Number of dependencies. """
+    return self.arr.ravel()[0].nvars
+
+  @classmethod
+  def one(cls, array_of_knotvectors: NDArray | AnySequence[KnotVectorType]):
+    """
+    Create a NDSplineArray with all elements being the constant one function.
+    """
+    array_of_knotvectors = np.array(array_of_knotvectors, dtype=TensorKnotVector)
+    return cls([ np.vectorize(NDSpline.one)(array_of_knotvectors) ])
 
   @property
   def shape(self) -> Tuple[int, ...]:
@@ -815,7 +845,11 @@ class NDSplineArray(ArrayLike):
     return self.__class__(arr.sum(head))
 
   @staticmethod
-  def canonicalize_getitem_args(item, ndim):
+  def canonicalize_getitem_args(item: Index | MultiIndex, ndim: Int) -> MultiIndex:
+    """
+    Given a __getitem__ item, return a canonicalized version of the item
+    given the number of dimensions of the spline array.
+    """
     if not isinstance(item, tuple):
       item = item,
 
@@ -833,7 +867,7 @@ class NDSplineArray(ArrayLike):
 
   def __getitem__(self, item: Index | MultiIndex) -> Self:
 
-    # canonicalize the item
+    # canonicalize the item, removing ellipsis and adding slices if needed
     item = self.canonicalize_getitem_args(item, self.ndim)
 
     if not item:
@@ -884,7 +918,9 @@ class NDSplineArray(ArrayLike):
 
   def __array_ufunc__(self, ufunc: np.ufunc, method: str,
                                              *inputs: Any, **kwargs) -> Self:
-    assert len(inputs) == 2
+    if not len(inputs) == 2:
+      raise NotImplementedError
+
     pivot = find_first_occurence(inputs, self)
     opivot = (pivot + 1) % 2
 
@@ -894,9 +930,10 @@ class NDSplineArray(ArrayLike):
       if isinstance(y, self._dtype):  # coerce to NDSplineArray
         inputs = inputs[:opivot] + (self.__class__(y),) + inputs[opivot+1:]
       else:
+        # this block handles operations between NDSplineArray and np.ndarray
         try:
           # try to coerce to np.ndarray and prepend axes if necessary
-          _self, y = _add_one_axes(inputs[pivot], np.asarray(y))
+          (_self, y) = _add_one_axes(inputs[pivot], np.asarray(y))
 
           # get shape of the result
           shp = try_broadcast_shapes(_self.shape[:_self._ndim],
@@ -914,15 +951,11 @@ class NDSplineArray(ArrayLike):
                        (y[multi_index], arr[multi_index])
             newarr.append(op(el0, el1, **kwargs))
 
-          newarr = np.array(newarr, dtype=self._dtype).reshape(shp[:self._ndim])
-
-          return self.__class__(newarr).contract_all()
+          return self.__class__(np.array(newarr).reshape(shp)).contract_all()
         except ValueError:  # let other class handle the operation
           return NotImplemented
 
     assert all(isinstance(inp, self.__class__) for inp in inputs)
-    if not len(inputs) == 2:
-      raise NotImplementedError
 
     # for now only two inputs are supported, contract as much as possible
     in0, in1 = map(lambda x: x.contract_all(), _add_one_axes(*inputs))
@@ -937,7 +970,7 @@ class NDSplineArray(ArrayLike):
 
     return self.__class__(op(in0.arr, in1.arr, **kwargs)).contract_all()
 
-  def sample_mesh(self, sample_meshes: Mesh | np.ndarray | Sequence) -> NDArray[Mesh]:
+  def sample_mesh(self, sample_meshes: Mesh | np.ndarray | Sequence) -> NDArray:
     """
     Sample a mesh from each element of the NDSplineArray.
 
@@ -948,7 +981,10 @@ class NDSplineArray(ArrayLike):
     is broadcast to the shape of ``self.shape``.
     """
     if not self._elemshape:
-      raise ValueError('Cannot sample a mesh from 0-dimensional splines.')
+      try:
+        self = self.contract()
+      except ValueError:
+        raise ValueError('Cannot sample a mesh from 0-dimensional splines.')
 
     assert self._elemshape[-1] == 3, 'Mesh export requires the target space to be R^3.'
     sample_meshes = np.broadcast_to(np.asarray(sample_meshes, dtype=Mesh),

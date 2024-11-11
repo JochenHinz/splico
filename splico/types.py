@@ -453,6 +453,8 @@ class LockableDict(Mapping):
   Must be locked to be hashable.
   """
 
+  _wrapped_dict: Mapping
+
   def __new__(cls, *args, locked=False, **kwargs):
     if args:
       assert not kwargs
@@ -467,15 +469,21 @@ class LockableDict(Mapping):
     self._wrapped_dict = kwargs
     return self
 
+  @staticmethod
+  def _delegate_to_wrapped_dict(method: str) -> Callable:
+    def wrapper(self, *args, **kwargs):
+      return getattr(self._wrapped_dict, method)(*args, **kwargs)
+    return wrapper
+
   def lock(self):
     """
     Lock the dictionary after initialization.
     """
     self._locked = True
 
-  __getitem__ = lambda self, item: self._wrapped_dict.__getitem__(item)
-  __iter__ = lambda self: self._wrapped_dict.__iter__()
-  __len__ = lambda self: self._wrapped_dict.__len__()
+  __getitem__ = _delegate_to_wrapped_dict('__getitem__')
+  __iter__ = _delegate_to_wrapped_dict('__iter__')
+  __len__ = _delegate_to_wrapped_dict('__len__')
 
   def __setitem__(self, name, value):
     if self._locked:
@@ -497,7 +505,8 @@ class LockableDict(Mapping):
       return True
     return dict(self.items()) == dict(other.items())
 
-  __repr__ = lambda self: f'{self.__class__.__name__}({self._wrapped_dict})'
+  def __repr__(self):
+    return f'{self.__class__.__name__}({self._wrapped_dict})'
 
 
 class NanVec(np.ndarray):

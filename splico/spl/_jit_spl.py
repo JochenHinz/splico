@@ -25,6 +25,20 @@ config.NUMBA_NUM_THREADS = multiprocessing.cpu_count()
 def _univariate_prolongation_matrix(kvold, kvnew, p):
   """
   NURBS-Book implementation.
+
+  Parameters
+  ----------
+  kvold : :class:`np.ndarray`
+      The old knotvector, including repeated knots.
+  kvnew : :class:`np.ndarray`
+      The new knotvector.
+  p : :class:`int`
+      The degree of the B-spline basis (must be the same for both knotvectors).
+
+  Returns
+  -------
+  T : :class:`np.ndarray`
+      The prolongation matrix, for now dense.
   """
   # XXX: implement for immediate sparse matrix output
 
@@ -149,10 +163,19 @@ def nonzero_bsplines_deriv(kv, p, x, dx):
 
   Parameters
   ----------
-  x: position
-  kv: knotvector
-  p: degree of B-spline basis
-  dx: max order of the derivative
+  kv : :class:`np.ndarray`
+      The knotvector.
+  p : :class:`int`
+      The degree of the B-spline basis.
+  x : :class:`float`
+      The position.
+  dx : :class:`int`
+      The highest-order derivative.
+
+  Returns
+  -------
+  ders : :class:`np.ndarray`
+      The nonzero bsplines evalated in `x` and their derivatives up to order `dx`.
   """
   # Initialize variables
   span = position_in_knotvector(kv, np.array([x], dtype=np.float64))[0]
@@ -234,6 +257,8 @@ def nonzero_bsplines_deriv_vectorized(kv, p, x, dx):
   """
   Vectorized (in x) version of `nonzero_bsplines_deriv`
   only returns the dx-th derivative though.
+
+  Parameters are the same as in `nonzero_bsplines_deriv` but `x` is a vector.
   """
   ret = np.empty((len(x), p+1), dtype=np.float64)
   for i in prange(len(ret)):
@@ -250,11 +275,21 @@ def der_ith_basis_fun( kv, p, i, x, dx ):  # based on algorithm A2.5 from the NU
 
   Parameters
   ----------
-  kv: knotvector
-  p: degree of the basis
-  i: index of the basis function
-  x: position
-  dx: highest-order derivative
+  kv : :class:`np.ndarray`
+      The knotvector.
+  p : :class:`int`
+      The degree of the B-spline basis.
+  i : :class:`int`
+      The index of the basis function.
+  x : :class:`float`
+      The position.
+  dx : :class:`int`
+      The highest-order derivative.
+
+  Returns
+  -------
+  ders : :class:`np.ndarray`
+      The basis function and its derivatives up to order `dx`.
   """
 
   if x == kv[-1]:
@@ -330,11 +365,21 @@ def _call1D(xi, kv0, p0, x, dx):
 
   Parameters
   ----------
-  xi: Vector of xi-values
-  kv0: knotvector in xi-direction
-  p0: degree in xi-direction
-  x: vector of control points
-  dx: derivative order
+  xi : :class:`np.ndarray`
+      The positions.
+  kv0 : :class:`np.ndarray`
+      The knotvector.
+  p0 : :class:`int`
+      The degree of the B-spline basis.
+  x : :class:`np.ndarray`
+      The control points.
+  dx : :class:`int`
+      The highest-order derivative.
+
+  Returns
+  -------
+  ret : :class:`np.ndarray`
+      The function evaluations at positions xi.
   """
   ret = np.zeros(xi.shape, dtype=float64)
   assert ret.ndim == 1
@@ -352,6 +397,28 @@ def _call1D(xi, kv0, p0, x, dx):
 
 @njit(cache=True, parallel=True)
 def _callND(Xi, list_of_knotvectors, degrees, x, derivatives):
+  """
+  Return function evaluations (or their derivatives) of a nD tensor product
+  spline at positions Xi.
+
+  Parameters
+  ----------
+  Xi : :class:`np.ndarray`
+      The positions. Different coordinates in the columns.
+  list_of_knotvectors : :class:`List`
+      List containing the n knotvectors.
+  degrees : :class:`np.ndarray`
+      The polynomial degrees in each direction.
+  x : :class:`np.ndarray`
+      The control points.
+  derivatives : :class:`np.ndarray`
+      The highest-order derivatives in each direction.
+
+  Returns
+  -------
+  ret : :class:`np.ndarray`
+      The function evaluations at positions Xi.
+  """
   # XXX: docstring
   assert Xi.shape[1:] == (len(list_of_knotvectors),)
 
@@ -429,15 +496,29 @@ def _tensor_call2D( xi, eta, kv0, kv1, p0, p1, x, dx, dy ):
 
   Parameters
   ----------
-  xi: Vector of xi-values
-  eta: Vector of eta-values
-  kv0: knotvector in xi-direction
-  kv1: knotvector in eta-direction
-  p0: degree in xi-direction
-  p1: degree in eta-direction
-  x: vector of control points
-  dx: order of the derivative in the xi-direction
-  dy: order of the derivative ins the eta-direction
+  xi : :class:`np.ndarray`
+      The positions in the first direction.
+  eta : :class:`np.ndarray`
+      The positions in the second direction.
+  kv0 : :class:`np.ndarray`
+      The knotvector in the first direction.
+  kv1 : :class:`np.ndarray`
+      The knotvector in the second direction.
+  p0 : :class:`int`
+      The degree of the B-spline basis in the first direction.
+  p1 : :class:`int`
+      The degree of the B-spline basis in the second direction.
+  x : :class:`np.ndarray`
+      The control points.
+  dx : :class:`int`
+      The highest-order derivative in the first direction.
+  dy : :class:`int`
+      The highest-order derivative in the second direction.
+
+  Returns
+  -------
+  ret : :class:`np.ndarray`
+      The function evaluations at positions (xi_i, eta_i).
   """
 
   mu0 = position_in_knotvector(kv0, xi)
@@ -480,6 +561,7 @@ def _tensor_call2D( xi, eta, kv0, kv1, p0, p1, x, dx, dy ):
 
 @njit(cache=True, parallel=True)
 def _tensor_call3D( xi, eta, zeta, kv0, kv1, kv2, p0, p1, p2, x, dx, dy, dz ):
+  # XXX: docstring
 
   mu0 = position_in_knotvector(kv0, xi)
   mu1 = position_in_knotvector(kv1, eta)

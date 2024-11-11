@@ -1,6 +1,8 @@
 """
 Module providing helper functionality for use in ``kv.py`` and ``spline.py``,
 such as prolonging to a refined knotvector.
+
+@author: Jochen Hinz
 """
 
 from ..util import frozen, np

@@ -81,7 +81,7 @@ def global_precision(precision: int):
     GLOBAL_PRECISION = old_precision
 
 
-def frozen(array: np.ndarray | Sequence[Any], dtype=None) -> np.ndarray:
+def frozen(array: np.ndarray | Sequence[Any] | Any, dtype=None) -> np.ndarray:
   """
   Freeze a vector inplace and return it.
 
