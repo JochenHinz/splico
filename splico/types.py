@@ -51,7 +51,7 @@ IntArray = NDArray[np.integer]
 FloatArray = NDArray[np.floating]
 NumericArray = IntArray | FloatArray
 
-Index = IntArray | int | List[int] | None | EllipsisType | slice
+Index = IntArray | Int | List[Int] | None | EllipsisType | slice
 MultiIndex = Tuple[Index, ...]
 
 AnySequence = Sequence[T] | Tuple[T, ...]
