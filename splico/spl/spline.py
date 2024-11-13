@@ -988,7 +988,7 @@ class NDSplineArray(ArrayLike):
 
     assert self._elemshape[-1] == 3, 'Mesh export requires the target space to be R^3.'
     sample_meshes = np.broadcast_to(np.asarray(sample_meshes, dtype=Mesh),
-                                           self.shape and self.shape[:-1])
+                                                          self.shape[:-1])
     _self = self.expand(len(self._elemshape) - 1)
 
     sampled_meshes = [elem.sample_mesh(mesh) for elem, mesh
