@@ -8,7 +8,7 @@ from ..util import _round_array, isincreasing, np, _, \
                    frozen_cached_property, gauss_quadrature
 from ..types import Immutable, ensure_same_class, Int, Numeric, AnyIntSeq, \
                     AnyNumericSeq, FloatArray, IntArray, AnySequence, \
-                    NumericArray
+                    NumericArray, Index
 from ..err import EmptyContainerError
 from .meta import TensorKnotVectorMeta
 from ._jit_spl import _call1D, nonzero_bsplines_deriv_vectorized
@@ -415,6 +415,12 @@ class TensorKnotVector(Immutable, metaclass=TensorKnotVectorMeta):
 
   def __bool__(self):
     return bool(len(self))
+
+  def __getitem__(self, index: Index) -> UnivariateKnotVector | Self:
+    kvs = np.asarray(self.knotvectors)[index]
+    if isinstance(kvs, np.ndarray):
+      return self.__class__(kvs)
+    return kvs
 
   @property
   def ndim(self) -> int:

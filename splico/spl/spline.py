@@ -8,7 +8,7 @@ from ..util import _round_array, np, frozen, augment_by_zeros, _
 from ..types import Immutable, FloatArray, Index, MultiIndex, NumericArray, \
                     Int, AnyIntSeq, AnyFloatSeq, LockableDict, Numeric, \
                     AnySequence
-from splico.mesh.mesh import Mesh
+from splico.mesh.mesh import Mesh, rectilinear, mesh_union
 from ._jit_spl import call, tensor_call
 from .kv import UnivariateKnotVector, TensorKnotVector, as_TensorKnotVector, \
                    KnotVectorType
@@ -995,3 +995,19 @@ class NDSplineArray(ArrayLike):
                          in zip(_self.arr.ravel(), sample_meshes.ravel())]
 
     return np.array(sampled_meshes, dtype=Mesh).reshape(self.shape[:-1])
+
+  def qplot(self, n=11, boundary=False) -> None:
+    """
+    Quick plot of the NDSplineArray.
+    """
+    if not self.shape[-1:] == (3,):
+      raise ValueError('Quick plotting is only supported for R^3 splines.')
+
+    self = self.expand(len(self._elemshape) - 1)
+
+    meshes = []
+    for spl in self.arr.ravel():
+      mesh = rectilinear([np.linspace(kv.knots[0], kv.knots[-1], n) for kv in spl.knotvector])
+      meshes.append(spl.sample_mesh(mesh))
+
+    mesh_union(*meshes, boundary=boundary).plot()

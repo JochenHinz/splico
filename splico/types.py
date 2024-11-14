@@ -380,6 +380,8 @@ class Immutable(metaclass=ImmutableMeta):
       return NotImplemented  # Liskov substitution principle
     if self is other:
       return True
+    if not hash(self) == hash(other):
+      return False
     for item0, item1 in zip(self._tobytes, other._tobytes):
       if item0 != item1: return False
     return True
