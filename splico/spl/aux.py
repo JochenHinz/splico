@@ -6,13 +6,17 @@ such as prolonging to a refined knotvector.
 """
 
 from ..util import frozen, np
-from ._jit_spl import _univariate_prolongation_matrix
+from ._jit_spl import _univariate_prolongation_matrix, _pseudo_inverse
 
 from itertools import starmap
 from functools import wraps, reduce, lru_cache
-from typing import List
+from typing import List, TYPE_CHECKING
 
 from scipy import sparse
+
+
+if TYPE_CHECKING:
+  from .kv import UnivariateKnotVector, TensorKnotVector
 
 
 def freeze_csr(fn):
@@ -46,25 +50,44 @@ def sparse_kron(*_mats: sparse.spmatrix | np.ndarray) -> sparse.csr_matrix:
 
 @lru_cache(maxsize=8)
 @freeze_csr
-def univariate_prolongation_matrix(kvold,
-                                   kvnew) -> sparse.csr_matrix:
-  # XXX: support kvnew < kvold via Moore-penrose pseudo inverse
-  assert kvold <= kvnew
+def univariate_prolongation_matrix(kvold: 'UnivariateKnotVector',
+                                   kvnew: 'UnivariateKnotVector') -> sparse.csr_matrix:
+  """
+  Compute the prolongation matrix from a coarser to a finer knotvector.
+  Alternatively the restriction matrix from a finer to a coarser knotvector
+  is computed. The restriction matrix is a pseudo-inverse of the prolongation
+  matrix which employs the entries of the prolongation matrix to compute the
+  entries of the restriction matrix.
+  Either `kvold <= kvnew` or `kvnew <= kvold` must hold.
+  """
   if kvold == kvnew:
     return sparse.eye(kvold.dim, format='csr')
+
+  coarsen = False
+  if not kvold <= kvnew:
+    kvold, kvnew = kvnew, kvold
+    coarsen = True
+
+  assert kvold <= kvnew
+
   T = _univariate_prolongation_matrix(kvold.repeated_knots,
                                       kvnew.repeated_knots, kvold.degree)
-  return sparse.csr_matrix(T)
+  ret = sparse.csr_matrix(T)
+  if not coarsen:
+    return ret
+
+  ret = ret.tocoo()
+  data = ret.data
+  coords = ret.coords
+
+  return sparse.coo_matrix(_pseudo_inverse(data, *coords),
+                                    shape=ret.shape[::-1]).tocsr()
 
 
 @lru_cache(maxsize=8)
 @freeze_csr
-def tensorial_prolongation_matrix(kvold,
-                                  kvnew) -> sparse.csr_matrix:
-  # XXX: idem, kvnew < kvold should be managed using the pseudo inverse.
-  #      I think in this case the matrix should be conditionally converted
-  #      to sparse format.
-  assert kvold <= kvnew
+def tensorial_prolongation_matrix(kvold: TensorKnotVector,
+                                  kvnew: TensorKnotVector) -> sparse.csr_matrix:
   # XXX: implement a variant that never explicitly carries out the kronecker product
   return sparse_kron(sparse.eye(1),
                      *starmap(univariate_prolongation_matrix, zip(kvold, kvnew)))

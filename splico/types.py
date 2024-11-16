@@ -51,8 +51,8 @@ IntArray = NDArray[np.integer]
 FloatArray = NDArray[np.floating]
 NumericArray = IntArray | FloatArray
 
-Index = IntArray | Int | List[Int] | None | EllipsisType | slice
-MultiIndex = Tuple[Index, ...]
+NumpyIndex = Int | slice | Sequence[Int] | np.ndarray | None | EllipsisType
+MultiNumpyIndex = Tuple[NumpyIndex, ...]
 
 AnySequence = Sequence[T] | Tuple[T, ...]
 AnyIntSeq = AnySequence[Int] | IntArray
@@ -125,7 +125,7 @@ def remove_self(signature: Signature) -> Signature:
   """
   Remove the ``self`` argument from a bound method signature.
   """
-  assert list(signature.parameters.keys())[0] == 'self'
+  assert next(iter(signature.parameters.keys())) == 'self'
   return Signature(list(signature.parameters.values())[1:])
 
 

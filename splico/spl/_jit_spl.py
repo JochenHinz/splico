@@ -22,7 +22,7 @@ config.NUMBA_NUM_THREADS = multiprocessing.cpu_count()
 
 
 @njit(cache=True)
-def _univariate_prolongation_matrix(kvold, kvnew, p):
+def _univariate_prolongation_matrix(kvold: np.ndarray, kvnew: np.ndarray, p: int):
   """
   NURBS-Book implementation.
 
@@ -65,6 +65,27 @@ def _univariate_prolongation_matrix(kvold, kvnew, p):
     T = T_new
 
   return T
+
+
+@njit(cache=True)
+def _pseudo_inverse(data: np.ndarray, rows: np.ndarray, cols: np.ndarray):
+  """
+  Compute a computationally inexpensive pseudo-inverse of a matrix given
+  in COO format.
+  Return in COO format.
+  """
+  shuffle = np.argsort(cols)
+  data, rows, cols = data[shuffle], rows[shuffle], cols[shuffle]
+  breaks = np.concatenate((np.array((0,), dtype=np.int64),
+                           np.where(np.diff(cols) != 0)[0] + 1,
+                           np.array((len(cols),), dtype=np.int64)))
+
+  new_data = np.empty_like(data)
+  for b0, b1 in zip(breaks, breaks[1:]):
+    mydata = data[b0:b1]
+    new_data[b0:b1] = mydata / np.abs(mydata).sum()
+
+  return new_data, (cols, rows)
 
 
 @njit(cache=True)

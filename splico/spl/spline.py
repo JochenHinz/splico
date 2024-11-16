@@ -5,9 +5,9 @@ Module defining the NDSpline class and related functions.
 """
 
 from ..util import _round_array, np, frozen, augment_by_zeros, _
-from ..types import Immutable, FloatArray, Index, MultiIndex, NumericArray, \
+from ..types import Immutable, FloatArray, NumericArray, \
                     Int, AnyIntSeq, AnyFloatSeq, LockableDict, Numeric, \
-                    AnySequence
+                    AnySequence, NumpyIndex, MultiNumpyIndex
 from splico.mesh.mesh import Mesh, rectilinear, mesh_union
 from ._jit_spl import call, tensor_call
 from .kv import UnivariateKnotVector, TensorKnotVector, as_TensorKnotVector, \
@@ -146,7 +146,7 @@ class ArrayLike(Immutable, NDArrayOperatorsMixin):
     pass
 
   @abstractmethod
-  def __getitem__(self, item: Index | MultiIndex):
+  def __getitem__(self, item: NumpyIndex | MultiNumpyIndex):
     pass
 
   @abstractmethod
@@ -406,7 +406,7 @@ class NDSpline(ArrayLike, metaclass=NDSplineMeta):
     """ partial(self, tensor=True) """
     return self(*args, tensor=True, **kwargs)
 
-  def __getitem__(self, item: Index | MultiIndex):
+  def __getitem__(self, item: Any) -> Self:
     """
     Same as np.ndarray.__getitem__ with the difference that the zeroth axis
     is ignored and the broadcasting etc. is applied to all axes with index > 0.
@@ -845,7 +845,7 @@ class NDSplineArray(ArrayLike):
     return self.__class__(arr.sum(head))
 
   @staticmethod
-  def canonicalize_getitem_args(item: Index | MultiIndex, ndim: Int) -> MultiIndex:
+  def canonicalize_getitem_args(item: Any, ndim: Int) -> Tuple[Any, ...]:
     """
     Given a __getitem__ item, return a canonicalized version of the item
     given the number of dimensions of the spline array.
@@ -865,7 +865,7 @@ class NDSplineArray(ArrayLike):
 
     return item + (sl,) * (ndim - n_not_)
 
-  def __getitem__(self, item: Index | MultiIndex) -> Self:
+  def __getitem__(self, item: Any) -> Self:
 
     # canonicalize the item, removing ellipsis and adding slices if needed
     item = self.canonicalize_getitem_args(item, self.ndim)
@@ -887,7 +887,7 @@ class NDSplineArray(ArrayLike):
     arr = self.arr
     if tail:
       arr = np.vectorize(lambda el: el[tail])(arr)
-    return self.__class__(arr[head])
+    return self._edit(arr=arr[head])
 
   def __iter__(self):
     assert self.shape, 'iteration over 0-d array'

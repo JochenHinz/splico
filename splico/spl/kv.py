@@ -8,7 +8,7 @@ from ..util import _round_array, isincreasing, np, _, \
                    frozen_cached_property, gauss_quadrature
 from ..types import Immutable, ensure_same_class, Int, Numeric, AnyIntSeq, \
                     AnyNumericSeq, FloatArray, IntArray, AnySequence, \
-                    NumericArray, Index
+                    NumericArray, NumpyIndex
 from ..err import EmptyContainerError
 from .meta import TensorKnotVectorMeta
 from ._jit_spl import _call1D, nonzero_bsplines_deriv_vectorized
@@ -20,6 +20,7 @@ from typing import Sequence, Self, Any, Optional, Callable
 
 from scipy import sparse
 from scipy.sparse import linalg as splinalg
+from numpy.typing import NDArray
 
 
 # XXX: I would like to use functools.total_ordering but it is slightly out of
@@ -121,9 +122,8 @@ class UnivariateKnotVector(Immutable):
     >>> kv.flip().knots
     ... np.array([1.0, 1.4, 1.8, 2.0])
     """
-    return self.__class__(degree=self.degree,
-                          knotmultiplicities=self.knotmultiplicities[::-1],
-                          knotvalues=np.array([0, *self.dx[::-1]]).cumsum() + self.knots[0])
+    return self._edit(knotmultiplicities=self.knotmultiplicities[::-1],
+                      knotvalues=np.array([0, *self.dx[::-1]]).cumsum() + self.knots[0])
 
   __neg__ = flip
 
@@ -163,8 +163,7 @@ class UnivariateKnotVector(Immutable):
     nknots = len(self.knots)
     knots = np.insert(self.knots, range(1, nknots), (self.knots[:-1] + self.knots[1:])/2.0)
     knotmultiplicities = np.insert(self.knotmultiplicities, range(1, nknots), 1)
-    return self.__class__(knots, degree=self.degree,
-                                 knotmultiplicities=knotmultiplicities)
+    return self._edit(knotvalues=knots, knotmultiplicities=knotmultiplicities)
 
   def refine(self, n: Int = 1) -> Self:
     """ Uniformly refine the entire knotvector ``n`` times. """
@@ -179,9 +178,8 @@ class UnivariateKnotVector(Immutable):
       indices = indices,
     indices = np.asarray(indices, dtype=int)
     add = (self.knots[indices + 1] + self.knots[indices]) / 2.0
-    return self.__class__(knotvalues=np.insert(self.knots, indices+1, add),
-                          degree=self.degree,
-                          knotmultiplicities=np.insert(self.km, indices+1, 1))
+    return self._edit(knotvalues=np.insert(self.knots, indices+1, add),
+                      knotmultiplicities=np.insert(self.km, indices+1, 1))
 
   def add_knots(self, knotvalues: Numeric | AnyNumericSeq) -> Self:
     """
@@ -202,8 +200,7 @@ class UnivariateKnotVector(Immutable):
 
     map_kv_km = dict(zip(self.knotvalues, self.knotmultiplicities, strict=True))
     new_km = [map_kv_km.get(val) or 1 for val in new_knots]
-    return self.__class__(new_knots, degree=self.degree,
-                                     knotmultiplicities=new_km)
+    return self._edit(knotvalues=new_knots, knotmultiplicities=new_km)
 
   def raise_multiplicities(self, indices: Int | AnyIntSeq,
                                  amounts: Int | AnyIntSeq) -> Self:
@@ -262,7 +259,7 @@ class UnivariateKnotVector(Immutable):
     return TensorKnotVector([*other, self])
 
   @ensure_same_class
-  def __and__(self, other):
+  def __and__(self, other: Self) -> Self:
     """
     Create a knotvector from the shared knots.
     If a knot is shared, the larger of the two knotmultiplicities is taken.
@@ -272,11 +269,10 @@ class UnivariateKnotVector(Immutable):
       raise EmptyContainerError("Found empty intersection.")
     km0, km1 = map(lambda x: x.km[np.searchsorted(x.knots, knots)], (self, other))
     km = np.maximum(km0, km1)
-    return UnivariateKnotVector(knots, degree=self.degree,
-                                       knotmultiplicities=km)
+    return self._edit(knotvalues=knots, knotmultiplicities=km)
 
   @ensure_same_class
-  def __or__(self, other: Any):
+  def __or__(self, other: Self) -> Self:
     """
     Take the union of two :class:`UnivariateKnotVector`s.
     """
@@ -290,11 +286,10 @@ class UnivariateKnotVector(Immutable):
       my_ind = np.searchsorted(knots, kv.knots)
       km[my_ind] = np.maximum(km[my_ind], kv.km)
 
-    return UnivariateKnotVector(knots, degree=self.degree,
-                                       knotmultiplicities=km)
+    return self._edit(knotvalues=knots, knotmultiplicities=km)
 
   @ensure_same_class
-  def __lt__(self, other):
+  def __lt__(self, other: Self) -> bool | np.bool_:
     """
       Check if the basis corresponding to ``self`` is contained in the
       basis of ``other`` but not equal.
@@ -306,7 +301,7 @@ class UnivariateKnotVector(Immutable):
     return (self.km + dp <= other.km[np.searchsorted(other.knots, self.knots)]).all()
 
   @ensure_same_class
-  def __gt__(self, other):  # see if self contains the basis of other
+  def __gt__(self, other: Self) -> bool | np.bool_:  # see if self contains the basis of other
     return other < self
 
   def __le__(self, other):
@@ -402,7 +397,7 @@ class TensorKnotVector(Immutable, metaclass=TensorKnotVectorMeta):
   __le__: Callable
   __ge__: Callable
 
-  def __init__(self, knotvectors: AnySequence[UnivariateKnotVector]):
+  def __init__(self, knotvectors: AnySequence[UnivariateKnotVector] | NDArray):
     self.knotvectors = tuple(map(as_UnivariateKnotVector, knotvectors))
 
   def __iter__(self):
@@ -416,10 +411,11 @@ class TensorKnotVector(Immutable, metaclass=TensorKnotVectorMeta):
   def __bool__(self):
     return bool(len(self))
 
-  def __getitem__(self, index: Index) -> UnivariateKnotVector | Self:
-    kvs = np.asarray(self.knotvectors)[index]
+  def __getitem__(self, index: NumpyIndex) -> UnivariateKnotVector | Self:
+    # mypy complains about the index type here, but it's correct.
+    kvs = np.asarray(self.knotvectors)[index]  # type: ignore
     if isinstance(kvs, np.ndarray):
-      return self.__class__(kvs)
+      return self._edit(knotvectors=tuple(kvs))
     return kvs
 
   @property
@@ -428,7 +424,7 @@ class TensorKnotVector(Immutable, metaclass=TensorKnotVectorMeta):
     return len(self.knotvectors)
 
   @property
-  def ndofs(self) -> np.int_:
+  def ndofs(self) -> np.integer:
     """ Total number of DOFs. """
     return np.prod(self.dim).astype(int)
 
@@ -541,7 +537,7 @@ class TensorKnotVector(Immutable, metaclass=TensorKnotVectorMeta):
       knotvectors = self.knotvectors + other.knotvectors
     else:
       return NotImplemented
-    return TensorKnotVector(knotvectors)
+    return self._edit(knotvectors=knotvectors)
 
 
 KnotVectorType = UnivariateKnotVector | TensorKnotVector | \
