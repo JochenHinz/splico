@@ -86,8 +86,8 @@ def univariate_prolongation_matrix(kvold: 'UnivariateKnotVector',
 
 @lru_cache(maxsize=8)
 @freeze_csr
-def tensorial_prolongation_matrix(kvold: TensorKnotVector,
-                                  kvnew: TensorKnotVector) -> sparse.csr_matrix:
+def tensorial_prolongation_matrix(kvold: 'TensorKnotVector',
+                                  kvnew: 'TensorKnotVector') -> sparse.csr_matrix:
   # XXX: implement a variant that never explicitly carries out the kronecker product
   return sparse_kron(sparse.eye(1),
                      *starmap(univariate_prolongation_matrix, zip(kvold, kvnew)))

@@ -123,6 +123,15 @@ class TestNDSpline(unittest.TestCase):
 
     self.assertTrue(all(np.allclose(kn0, kn1) for kn0, kn1 in zip(disc_r.knots, kv.knots)))
 
+  def test_split_join(self):
+    spl = ellipse(1, 1, 10)[2].raise_multiplicities([0], [4], [2])
+
+    spl0, spl1 = spl.split(0, 4)
+
+    spl_ = spl0.join(spl1, 0)
+
+    self.assertTrue(np.allclose(spl.controlpoints, spl_.controlpoints))
+
 
 class TestFitSample(unittest.TestCase):
 

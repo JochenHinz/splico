@@ -97,10 +97,10 @@ def ensure_same_class(fn: Callable) -> Callable:
   ... False
   """
   @wraps(fn)
-  def wrapper(self, other: Any):
+  def wrapper(self, other: Any, *args, **kwargs):
     if self.__class__ is not other.__class__:
       return NotImplemented
-    return fn(self, other)
+    return fn(self, other, *args, **kwargs)
   return wrapper
 
 
@@ -380,7 +380,7 @@ class Immutable(metaclass=ImmutableMeta):
       return NotImplemented  # Liskov substitution principle
     if self is other:
       return True
-    if not hash(self) == hash(other):
+    if not hash(self) == hash(other):  # differing hashes means inequality
       return False
     for item0, item1 in zip(self._tobytes, other._tobytes):
       if item0 != item1: return False

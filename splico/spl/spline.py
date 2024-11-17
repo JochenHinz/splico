@@ -7,7 +7,7 @@ Module defining the NDSpline class and related functions.
 from ..util import _round_array, np, frozen, augment_by_zeros, _
 from ..types import Immutable, FloatArray, NumericArray, \
                     Int, AnyIntSeq, AnyFloatSeq, LockableDict, Numeric, \
-                    AnySequence, NumpyIndex, MultiNumpyIndex
+                    AnySequence, NumpyIndex, MultiNumpyIndex, ensure_same_class
 from splico.mesh.mesh import Mesh, rectilinear, mesh_union
 from ._jit_spl import call, tensor_call
 from .kv import UnivariateKnotVector, TensorKnotVector, as_TensorKnotVector, \
@@ -503,6 +503,95 @@ class NDSpline(ArrayLike, metaclass=NDSplineMeta):
     if points.shape[1:] != (3,):
       points = augment_by_zeros(points, axis=1)
     return mesh._edit(points=points)
+
+  def split(self, direction: Int, position: Int) -> Tuple[Self, Self]:
+    """
+    Split a spline along a given direction at a given position.
+    The split takes place at the knotvalue that corresponds to the given position
+    in the knotvector's knotvalues along the given direction.
+
+    Parameters
+    ----------
+    spl : :class:`NDSplineArray`
+        The spline that is to be split.
+    direction : :class:`int`
+        The direction along which the spline is to be split.
+    position : :class:`int`
+        The position in the knotvector's knotvalues along the given direction
+        at which the spline is to be split.
+
+    Returns
+    -------
+    :class:`NDSplineArray`
+        The two spline arrays that result from the split.
+    """
+    amount = self.degree[direction] + 1 - self.km[direction][position]
+
+    self = self.raise_multiplicities([direction], [position], [amount])
+    mykv = self.knotvector[direction]
+
+    cp_position = mykv.km[:position].sum()
+
+    kv0, kv1 = [ mykv._edit(knotvalues=kv, knotmultiplicities=km) for kv, km
+                 in zip((mykv.knots[:position+1], mykv.knots[position:]),
+                        (mykv.km[:position+1], mykv.km[position:]))          ]
+
+    shp = self.shape
+    tcps = self.tcontrolpoints
+
+    cp0 = tcps[(sl,) * direction + (slice(_, cp_position),)].reshape(-1, *shp)
+    cp1 = tcps[(sl,) * direction + (slice(cp_position, _),)].reshape(-1, *shp)
+
+    kvs = self.knotvector.knotvectors
+
+    tkv0, tkv1 = (kvs[:direction] + (kv,) + kvs[direction+1:] for kv in (kv0, kv1))
+
+    return self._edit(knotvector=tkv0, controlpoints=cp0), \
+           self._edit(knotvector=tkv1, controlpoints=cp1)
+
+  @ensure_same_class
+  def join(self, other: Self, direction: Int) -> Self:
+    """
+    Join two splines along a given direction.
+    The two splines must have compatible knotvectors along the given direction.
+
+    Parameters
+    ----------
+    other : :class:`NDSpline`
+        The spline that is to be joined with the current spline.
+    direction : :class:`int`
+        The direction along which the two splines are to be joined.
+
+    Returns
+    -------
+    :class:`NDSpline`
+        The spline that results from the join.
+    """
+    assert self.shape == other.shape
+
+    kv0, kv1 = self.knotvector[direction], other.knotvector[direction]
+    assert kv0.knotvalues[-1] == kv1.knotvalues[0] and kv0.degree == kv1.degree
+    assert self.knotvector[:direction] == other.knotvector[:direction] and \
+           self.knotvector[direction+1:] == other.knotvector[direction+1:]
+
+    kvn = kv0._edit(knotvalues=kv0.knotvalues + kv1.knotvalues[1:],
+                    knotmultiplicities=kv0.knotmultiplicities[:-1]
+                                       + (kv0.degree,)
+                                       + kv1.knotmultiplicities[1:])
+    tkv = TensorKnotVector([kvn if i == direction else kv
+                                        for i, kv in enumerate(self.knotvector)])
+
+    tcp0, tcp1 = self.tcontrolpoints, other.tcontrolpoints
+
+    av = (tcp0[(sl,)*direction + (slice(-1, _),)] +
+          tcp1[(sl,)*direction + (slice(0, 1),)]) / 2
+
+    cp = np.concatenate([ tcp0[(sl,)*direction + (slice(0, -1),)],
+                          av,
+                          tcp1[(sl,)*direction + (slice(1, _),)] ],
+                          axis=direction).reshape(-1, *self.shape)
+
+    return self._edit(knotvector=tkv, controlpoints=cp)
 
   def __array_ufunc__(self, ufunc: np.ufunc, method: str, *inputs, **kwargs) -> Self | 'NDSplineArray':
     """
