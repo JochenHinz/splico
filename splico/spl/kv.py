@@ -16,7 +16,7 @@ from .aux import freeze_csr, sparse_kron
 
 from itertools import starmap
 from functools import partial, lru_cache
-from typing import Sequence, Self, Any, Optional, Callable
+from typing import Sequence, Self, Any, Optional, Callable, overload, List
 
 from scipy import sparse
 from scipy.sparse import linalg as splinalg
@@ -410,6 +410,16 @@ class TensorKnotVector(Immutable, metaclass=TensorKnotVectorMeta):
 
   def __bool__(self):
     return bool(len(self))
+
+  @overload
+  def __getitem__(self, index: Int) -> UnivariateKnotVector:
+    """ For integer types the return type is :class:`UnivariateKnotVector`. """
+    ...
+
+  @overload
+  def __getitem__(self, index: slice | List | NDArray ) -> Self:
+    """ For multi-index types it is :class:`Self`. """
+    ...
 
   def __getitem__(self, index: NumpyIndex) -> UnivariateKnotVector | Self:
     # mypy complains about the index type here, but it's correct.
