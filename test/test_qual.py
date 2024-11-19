@@ -5,7 +5,7 @@
 @author: Fabio Marcinno'
 """
 
-from splico.mesh.qual import aspect_ratio
+from splico.mesh.qual import aspect_ratio, skewness
 from splico.mesh import rectilinear
 from test_mesh import unit_disc_triangulation
 import unittest
@@ -19,6 +19,20 @@ class TestMeshQualityCriteria(unittest.TestCase):
 
     stats_unstruct = aspect_ratio(mesh_unstruct)
     stats_struct = aspect_ratio(mesh_struct)
+
+    self.assertTrue(stats_unstruct[0] >= stats_unstruct[2])
+    self.assertTrue(stats_unstruct[0] <= stats_unstruct[1])
+
+    self.assertTrue(stats_struct[0] >= stats_struct[2])
+    self.assertTrue(stats_struct[0] <= stats_struct[1])
+
+
+  def test_skewness(self):
+    mesh_unstruct = unit_disc_triangulation()
+    mesh_struct = rectilinear((17, 5, 4))
+
+    stats_unstruct = skewness(mesh_unstruct)
+    stats_struct = skewness(mesh_struct)
 
     self.assertTrue(stats_unstruct[0] >= stats_unstruct[2])
     self.assertTrue(stats_unstruct[0] <= stats_unstruct[1])

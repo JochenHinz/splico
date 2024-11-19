@@ -1,7 +1,8 @@
 from splico.mesh import Mesh, rectilinear, Triangulation, mesh_union, PointMesh, \
-                        LineMesh
+                        LineMesh, TetGen
 from splico.util import global_precision
 
+from splico.mesh._gmsh import tet_gen_from_surface, convert_stl_file
 import unittest
 from itertools import product
 
@@ -20,6 +21,23 @@ def unit_disc_triangulation(npoints=11, **kwargs):
   xi = np.linspace(0, 2 * np.pi, npoints)[:-1]
   points = np.stack([np.cos(xi), np.sin(xi)], axis=1)
   return Triangulation.from_polygon(points, **kwargs)
+
+
+class tet_gen(unittest.TestCase):
+  
+  def test_tet_gen(self):
+    
+    input_stl = '/home/fabio/test.stl'
+    points, elements = convert_stl_file(input_stl)
+
+    points, elements = tet_gen_from_surface(points=points, elements= elements, mesh_size= 0.5)
+
+    import ipdb
+    ipdb.set_trace()
+    tet_mesh = TetGen(elements= elements, points= points)
+    
+    self.assertTrue(tet_mesh.is_valid)
+    
 
 
 class UnitSquare(unittest.TestCase):

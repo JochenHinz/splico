@@ -17,6 +17,10 @@ except ModuleNotFoundError as ex:
               "Please install it via 'pip install pygmsh'.")
   raise ModuleNotFoundError from ex
 
+from stl import mesh
+import gmsh
+from splico.err import HasNoBoundaryError
+
 
 def triangulation_from_polygon(points: FloatArray, mesh_size: float | int | Callable = 0.05):
   """
@@ -63,44 +67,125 @@ def triangulation_from_polygon(points: FloatArray, mesh_size: float | int | Call
   return mesh.cells_dict['triangle'][:, [0, 2, 1]], mesh.points
 
 
-ACCETABLE_FORMATS = 'stl'
-# still needs a unit test.
-def tet_gen_from_surface(points = None, elements= None, filename = None, mesh_size: int | float = 0.5):
+ACCETABLE_FORMATS = 'stl', 'msh', 'vtk'
 
+def tet_gen_from_surface(points = None, elements= None, filename = None, mesh_size: int | float = 0.4, write_output = True):
+
+  # Pass elements and points, or an stl file.  
   if filename is not None:
-    assert filename.endswith in ACCETABLE_FORMATS, 'Format not valid'
-    
-    import trimesh
-    mesh = trimesh.load_mesh('filename') 
-    assert mesh.is_watertight, 'The surface is not closed'
-    
-    import meshio
-    surface = meshio.read(filename) 
-    points = surface.points
-    elements = surface.cells_dict['tetra'][:, [0, 3, 1, 2]]
+    assert (points is None and elements is None)
+    assert filename.endswith(ACCETABLE_FORMATS), 'Format not valid'
   else:
-    assert elements.shape[1] == 3, 'The input surface is not a triangulation'
-
-  import pygmsh
-  geom = pygmsh.built_in.Geometry()
-
-  for i in range(points.shape[0]):
-    geom.add_point(points[i],mesh_size)
-
-  for i in range(elements.shape[0]):
-    geom.add_triangle(points[elements[i]])
-
-  mesh_tet = pygmsh.generate_mesh(geom)
+    assert (points is not None and elements is not None) 
+    assert np.asarray(elements).shape[1] == 3, 'The input surface is not a triangulation'
+    filename = create_stl(points, elements, "output_surface.stl")
   
-  import meshio
-  meshio.write("tet_mesh.vtk", mesh.points, mesh.cells)
+  #surface_mesh = trimesh.load_mesh(filename)
+  #try:
+  #  surface_mesh.boundary
+  #  raise TypeError("The mesh is not watertight.")
+  #except HasNoBoundaryError:
+  #  pass
+      
+  gmsh.initialize()
+   
+  gmsh.open(filename)
 
-  return mesh_tet.cells_dict['tetra'][0, 3, 1, 2], mesh_tet.points
+  surface_tag = 1  # This is just an example; the actual tag depends on your geometry
+  surface_loop_tag = gmsh.model.geo.addSurfaceLoop([surface_tag])
 
-
-
-
+  gmsh.option.setNumber("Mesh.CharacteristicLengthMax", mesh_size)
+  gmsh.option.setNumber("Mesh.CharacteristicLengthMin", mesh_size)    
   
+  gmsh.model.geo.addVolume([surface_loop_tag])
+ 
+  gmsh.model.geo.synchronize()
 
+  gmsh.model.mesh.generate(3)
   
   
+  #gmsh.model.mesh.refine()
+  _, node_coords, _ = gmsh.model.mesh.getNodes()
+  p,v, element_nodes = gmsh.model.mesh.getElements()
+  
+  # Node_coords is a flattened list of node coordinates, needs to be reshaped to be compatible with our format
+  points = node_coords.reshape(int(node_coords.shape[0]/3),3)
+  
+  # The final mesh is composed by triangles and tetraheda. element_nodes[0] contains 
+  # the flattened connectivity of the the triangle, i.e., it must be rehsaped. element_nodes[1] contains 
+  # the flattened connectivity of the the tet
+  # Triangles
+  elements = []
+  # To be compatible with our format, I just have to pass the tet elements.
+  # If we need to recognize boundary, it will be done later on.
+  # Tet  
+  elements.append(element_nodes[1].reshape(int(element_nodes[1].shape[0]/4),4))
+  # I have to do (elements - 1), since gmsh starts to count from 1
+  elements = (np.asarray(elements) -1).reshape(np.asarray(elements).shape[1],np.asarray(elements).shape[2])
+  
+  if write_output:    
+    gmsh.write("/home/fabio/output.vtk")
+
+  gmsh.finalize()
+  
+  return points, elements
+
+
+def convert_stl_file(stl_file):
+    # Load the STL file using numpy-stl
+    gmsh.initialize()
+    stl_mesh = mesh.Mesh.from_file(stl_file)
+    
+    # Extract unique vertices (points)
+    vertices = stl_mesh.points.reshape(-1, 3)
+    unique_vertices = np.unique(vertices, axis=0)
+    
+    # Create a mapping of points (to ensure unique point tags)
+    point_tags = {}
+    for i, pt in enumerate(unique_vertices):
+        # Add the point to GMSH and store the tag
+        point_tag = gmsh.model.geo.addPoint(*pt)
+        point_tags[tuple(pt)] = point_tag
+    
+    # Extract the triangular elements (facets) using the points
+    elements = []
+    for facet in stl_mesh.vectors:
+        # Each facet is a triangle defined by 3 points
+        # Map the coordinates to their tags
+        element = [point_tags[tuple(facet[0])], point_tags[tuple(facet[1])], point_tags[tuple(facet[2])]]
+        elements.append(element)
+    
+    gmsh.finalize()
+    
+    # adding vertices number 0.
+    elements = np.asarray(elements) - 1
+    
+    return unique_vertices, elements
+
+def create_stl(points, elements, filename):
+    # Create an empty mesh
+    faces = []
+    
+    # Loop over elements to extract the faces (triangles)
+    for element in elements:
+        p1 = points[element[0]]
+        p2 = points[element[1]]
+        p3 = points[element[2]]
+        
+        # Add triangle face to the faces list (3 vertices per face)
+        faces.append([p1, p2, p3])
+
+    # Convert faces into a NumPy array for the mesh
+    faces = np.array(faces)
+
+    # Create the mesh object from faces
+    model = mesh.Mesh(np.zeros(faces.shape[0], dtype=mesh.Mesh.dtype))
+    
+    for i, f in enumerate(faces):
+        for j in range(3):
+            model.vectors[i][j] = f[j]
+    
+    # Write the mesh to an STL file
+    model.save(filename)
+    
+    return filename

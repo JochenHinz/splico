@@ -71,3 +71,56 @@ def aspect_ratio(mesh: Mesh) -> Tuple[np.float_, ...]:
   stats = np.mean(aspect_ratios), np.max(aspect_ratios), np.min(aspect_ratios)
 
   return stats
+
+def skewness(mesh: Mesh) -> Tuple[np.float_,...]:
+   
+   # Check for the mesh validity
+   assert mesh.is_valid(), "mesh is not valid" 
+   assert mesh.element_name in IMPLEMENTED_MESH_TYPES, \
+      "This operation is currently not supported for this mesh type." 
+   
+   elements = mesh.elements[:, mesh._submesh_indices]
+   
+   # TODO: make ref_angle a property of the reference element 
+   if mesh.element_name in {'triangle', 'quadrilateral'}: # 2D mesh
+      if mesh.element_name in {'triangle'}:
+          ref_angle = np.pi/3
+      else:
+          ref_angle = np.pi/2 
+   elif mesh.element_name in {'tetrahedron',  'hexahedron'}:
+      elements = elements[:, :, mesh.submesh._submesh_indices]
+      elements = elements.reshape(elements.shape[0],elements.shape[1]*elements.shape[2], -1) 
+      if mesh.element_name in {'tetrahedron'}:
+          ref_angle = np.pi/3
+      else:
+          ref_angle = np.pi/2 
+   
+   skew = []
+ 
+   for i in range(mesh.elements.shape[0]):
+     skew.append(np.unique(np.concatenate([elements[i], elements[i,:, ::-1]]), axis=0))
+     
+   skew = np.asarray(skew)
+
+   elem_point = mesh.points[skew]
+   
+   lines =  elem_point[...,1,:] - elem_point[...,0,:]
+   
+   lines = lines.reshape(lines.shape[0]*lines.shape[1],-1)
+
+   scalar_product = np.sum(lines[::2]*lines[1::2], axis = 1)
+   
+   if mesh.element_name in {'tetrahedron',  'hexahedron'}:   
+      angles = np.arccos(scalar_product).reshape(mesh.elements.shape[0], int(len(mesh._submesh_indices) * len(mesh.submesh._submesh_indices)/2))
+   else:
+      angles = np.arccos(scalar_product).reshape(mesh.elements.shape[0], len(mesh._submesh_indices))
+
+   max_angles = np.max(angles, axis = 1)
+   min_angles = np.min(angles, axis = 1)
+   
+   skewness = np.maximum((max_angles - ref_angle)/ (np.pi - ref_angle), 
+                         (ref_angle - min_angles)/ ref_angle)
+   
+   stats = np.mean(skewness), np.max(skewness), np.min(skewness)
+ 
+   return stats

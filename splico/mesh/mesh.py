@@ -643,7 +643,7 @@ class TetGen(AffineMesh):
   reference_element = TETRAHEDON
 
   @classmethod
-  def _from_3D_surface(self):
+  def _from_3D_surface(cls,*args, **kwargs):
     return NotImplementedError
 
   @frozen_cached_property
@@ -654,7 +654,8 @@ class TetGen(AffineMesh):
   def _submesh_type(self):
     return Triangulation
 
-  def _refine(self):
+  @classmethod
+  def _refine(cls,*args, **kwargs):
     """ See `_refine_Tet`. """
     raise NotImplementedError
 
