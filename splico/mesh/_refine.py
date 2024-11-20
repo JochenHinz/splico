@@ -11,6 +11,9 @@ from .._jit import product, arange_product, ravel_multi_index, mul_reduce, float
 from functools import lru_cache
 from itertools import count
 from numba import njit
+from splico.mesh._gmsh import create_stl
+
+import gmsh 
 
 
 @njit(cache=True)
@@ -162,3 +165,37 @@ def _refine_Triangulation(mesh):
   points = np.concatenate([points, newpoints])
 
   return mesh.__class__(elements, points)
+
+
+ACCETABLE_FORMATS = 'stl', 'msh', 'vtk'
+
+def _refine_tet(points= None, elements = None, filename= None, write_output= False):
+  if filename is not None:
+    assert (points is None and elements is None)
+    assert filename.endswith(ACCETABLE_FORMATS), 'Format not valid'
+  else:
+    assert (points is not None and elements is not None) 
+    assert np.asarray(elements).shape[1] == 4, 'The starting mesh is not composed by tets'
+    filename = create_stl(points, elements, "mesh.stl")
+  
+  
+  gmsh.initialize()
+  gmsh.open(filename)
+  gmsh.model.mesh.refine()
+  
+  
+  if write_output:    
+    gmsh.write("/home/fabio/output.vtk")
+  
+  _, node_coords, _ = gmsh.model.mesh.getNodes()
+  _,_, element_nodes = gmsh.model.mesh.getElements()
+  
+  gmsh.finalize()
+  
+  points = node_coords.reshape(int(node_coords.shape[0]/3),3)
+  elements = []
+  elements.append(element_nodes[0].reshape(int(element_nodes[0].shape[0]/4),4))
+  elements = (np.asarray(elements) -1).reshape(np.asarray(elements).shape[1],np.asarray(elements).shape[2])
+
+  
+  return points, elements

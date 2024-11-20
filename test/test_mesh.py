@@ -3,6 +3,7 @@ from splico.mesh import Mesh, rectilinear, Triangulation, mesh_union, PointMesh,
 from splico.util import global_precision
 
 from splico.mesh._gmsh import tet_gen_from_surface, convert_stl_file
+from splico.mesh._refine import _refine_tet
 import unittest
 from itertools import product
 
@@ -30,13 +31,20 @@ class tet_gen(unittest.TestCase):
     input_stl = '/home/fabio/test.stl'
     points, elements = convert_stl_file(input_stl)
 
-    points, elements = tet_gen_from_surface(points=points, elements= elements, mesh_size= 0.5)
+    points, elements = tet_gen_from_surface(points=points, elements= elements, mesh_size= 0.05)
 
-    import ipdb
-    ipdb.set_trace()
     tet_mesh = TetGen(elements= elements, points= points)
-    
     self.assertTrue(tet_mesh.is_valid)
+    
+    ref_points, ref_elements = _refine_tet(elements= tet_mesh.elements, points= tet_mesh.points)
+
+    refine_tet_mesh = TetGen(elements= ref_elements, points= ref_points)
+    self.assertTrue(refine_tet_mesh.is_valid)
+    
+    self.assertGreater(ref_points.shape[0], points.shape[0], 'the refined mesh must have a larger number of points w.r.t the initial mesh')
+    self.assertGreater(ref_elements.shape[0], elements.shape[0], 'the refined mesh must have a larger number of elements w.r.t the initial mesh')
+
+    
     
 
 

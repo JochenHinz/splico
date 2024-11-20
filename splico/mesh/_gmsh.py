@@ -103,10 +103,8 @@ def tet_gen_from_surface(points = None, elements= None, filename = None, mesh_si
 
   gmsh.model.mesh.generate(3)
   
-  
-  #gmsh.model.mesh.refine()
   _, node_coords, _ = gmsh.model.mesh.getNodes()
-  p,v, element_nodes = gmsh.model.mesh.getElements()
+  _,_, element_nodes = gmsh.model.mesh.getElements()
   
   # Node_coords is a flattened list of node coordinates, needs to be reshaped to be compatible with our format
   points = node_coords.reshape(int(node_coords.shape[0]/3),3)
