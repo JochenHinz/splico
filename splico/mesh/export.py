@@ -7,6 +7,9 @@ from typing import Optional, Dict, Callable
 import numpy as np
 
 
+VALID_FILEENDINGS = '.msh', '.vtk', '.vtp'
+
+
 MAP_EL_GMSH_TAG = {
     POINT: 0,
     LINE: 1,
@@ -42,7 +45,9 @@ def export_gmsh(mesh: Mesh,
                       ' Install it via pip install gmsh.')
 
   surface_tags = dict(surface_tags or {})
-  assert filename.endswith('.msh'), 'Gmsh only supports .msh files'
+  assert any(filename.endswith(ending) for ending in VALID_FILEENDINGS), \
+    "Unsupported file ending. Supported file endings are: " + ', '.join(VALID_FILEENDINGS) \
+    + "found " + filename
 
   try:
     gmsh.initialize()
