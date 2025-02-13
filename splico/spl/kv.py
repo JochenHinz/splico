@@ -550,7 +550,8 @@ class TensorKnotVector(Immutable, metaclass=TensorKnotVectorMeta):
     return self._edit(knotvectors=knotvectors)
 
 
-KnotVectorType = UnivariateKnotVector | TensorKnotVector | \
+KnotVectorType = UnivariateKnotVector | \
+                 TensorKnotVector | \
                  Sequence[UnivariateKnotVector]
 
 

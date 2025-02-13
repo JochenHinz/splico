@@ -239,3 +239,29 @@ def ravel_multi_index(multi_index, dims):
     stride *= dims[i]
 
   return flat_index
+
+
+@njit
+def unravel_multi_index(flat_index, dims):
+  """
+  Numba implementation of np.unravel_multi_index.
+
+  Parameters
+  ----------
+  flat_index : int
+      The flattened index to convert.
+  dims : np.ndarray
+      The shape of the multi-dimensional array.
+
+  Returns
+  -------
+  multi_index : tuple of ints
+      The multi-dimensional indices corresponding to the flat index.
+  """
+  multi_index = np.empty(len(dims), dtype=np.int64)
+
+  for i in range(len(dims) - 1, -1, -1):
+      multi_index[i] = flat_index % dims[i]  # Get the remainder
+      flat_index //= dims[i]  # Update the flat index for the next dimension
+
+  return multi_index

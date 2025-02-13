@@ -20,6 +20,8 @@ class TestNoTwist(unittest.TestCase):
     xi_notwist = np.linspace(0, 1, 51)
     Rs = compute_notwistframe_from_spline(X, xi_notwist)
 
+    self.assertTrue( all( (np.abs(np.linalg.det(R)) - 1) < 1e-10 for R in Rs ) )
+
     maker = CrossSectionMaker(4)
 
     disc = maker.make_disc(1, 1, 0)
@@ -31,7 +33,7 @@ class TestNoTwist(unittest.TestCase):
     plt.show()
     rRs = kv.fit([xi_notwist], radii[:, _, _] * Rs)
 
-    one = disc.__class__.one(disc.knotvector)
+    one = disc.one(disc.knotvector)
 
     rRs = rRs[_]
     vessel = (disc[:, _] * rRs).sum(-1)

@@ -29,7 +29,7 @@ from numpy.typing import NDArray
 sl = slice(_)
 
 
-IMPLEMENTED_UFUNCS = (np.add, np.subtract, np.multiply, np.divide)
+IMPLEMENTED_UFUNCS = np.add, np.subtract, np.multiply, np.divide
 HANDLED_NDSPLINE_FUNCTIONS = LockableDict()
 
 
@@ -384,23 +384,22 @@ class NDSpline(ArrayLike, metaclass=NDSplineMeta):
     if not positions:  # 0-D spline
       return self.controlpoints[0].copy()
 
-    positions = tuple(map(np.asarray, positions))
-    assert all( len((y := pos.shape)) == 1 for pos in positions )
-
-    # if not evaluated tensorially, make sure all positions have equal length
-    if not tensor:
-      assert all(pos.shape == y for pos in positions)
+    positions = tuple(map(lambda x: np.asarray(x, dtype=float), positions))
+    assert all( pos.ndim == 1 for pos in positions )
 
     # reshape to matrix shape, if self.shape == (), np.prod((), dtype=int) == 1
     controlpoints = self.controlpoints.reshape(-1, np.prod(self.shape, dtype=int))
 
-    function = {False: call, True: tensor_call}[tensor]
-    ret = [function(positions, self.repeated_knots, self.degree, x, dx)
-                                                      for x in controlpoints.T]
+    # if not evaluated tensorially, stack along first axis
+    # if length don't match, we get an error here
+    if not tensor:
+      positions = np.stack(positions, axis=1)
+      ret = call(positions, self.repeated_knots, self.degree, controlpoints, dx)
+    else:
+      ret = tensor_call(positions, self.repeated_knots, self.degree, controlpoints, dx)
 
-    # XXX: np.stack makes a copy, find better solution
-    # (possibly do this directly in numba)
-    return np.stack(ret, axis=1).reshape(-1, *self.shape)
+    # return in original shape
+    return ret.reshape(-1, *self.shape)
 
   def tensorcall(self, *args, **kwargs):
     """ partial(self, tensor=True) """
@@ -604,7 +603,7 @@ class NDSpline(ArrayLike, metaclass=NDSplineMeta):
     performed, the operation is handled as described in this class's docstring.
 
     If any of the inputs is of type :class:`SplineCollection`, the operation
-    is will be handled in largely the same way but the return type will be
+    will be handled in largely the same way but the return type will be
     :class:`SplineCollection`, not :class:`NDSpline`.
     """
     # XXX: add support for kwargs. This is tricky because some cannot be

@@ -8,6 +8,11 @@ import treelog as log
 
 
 @njit(cache=True)
+def normalize_vector(vec):
+  return vec / np.sqrt((vec**2).sum())
+
+
+@njit(cache=True)
 def _compute_notwistframe(T, n0, zero_thresh):
   """
     Compute a discrete no-twist-frame.
@@ -32,7 +37,8 @@ def _compute_notwistframe(T, n0, zero_thresh):
   """
 
   t0 = T[0]
-  binormal0 = np.cross(t0, n0)
+  n0 = normalize_vector(n0)
+  binormal0 = normalize_vector(np.cross(t0, n0))
 
   Rs = np.empty((len(T), 3, 3), dtype=np.float64)
   Rs[0] = np.stack((n0, binormal0, t0), axis=1)
@@ -57,9 +63,9 @@ def _compute_notwistframe(T, n0, zero_thresh):
                np.cross(omega, normal_p) * np.sin(phi) + \
                omega * np.dot(omega, normal_p) * (1 - np.cos(phi))
 
-    Rs[i][:, 0] = normal
-    Rs[i][:, 1] = binormal
-    Rs[i][:, 2] = T[i]
+    Rs[i][:, 0] = normalize_vector(normal)
+    Rs[i][:, 1] = normalize_vector(binormal)
+    Rs[i][:, 2] = normalize_vector(T[i])
 
   return Rs
 
@@ -134,7 +140,7 @@ def compute_notwistframe_from_spline(spline: NDSpline,
   assert a <= abscissae.min() < abscissae.max() <= b
   assert isincreasing(abscissae)
 
-  tangents = spline(abscissae, dx=1)
+  tangents = normalize(spline(abscissae, dx=1))
 
   Rs = compute_notwistframe(tangents, **framekwargs or {})
 

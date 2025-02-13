@@ -1,12 +1,12 @@
 """
-Various jit-compiled routines for spline evaluation.
+JIT-compiled routines for spline evaluation.
 All taken from the NURBS book.
 @author: Jochen Hinz
 """
 
 
-from ..util import np, flat_meshgrid
-from .._jit import arange_product, ravel_multi_index
+from ..util import np
+from .._jit import arange_product, ravel_multi_index, unravel_multi_index
 
 import multiprocessing
 
@@ -379,7 +379,7 @@ def der_ith_basis_fun( kv, p, i, x, dx ):  # based on algorithm A2.5 from the NU
   return ders
 
 
-@njit(cache=True, parallel=True)
+@njit(cache=True)
 def _call1D(xi, kv0, p0, x, dx):
   """
   Return function evaluations at positions xi.
@@ -393,7 +393,7 @@ def _call1D(xi, kv0, p0, x, dx):
   p0 : :class:`int`
       The degree of the B-spline basis.
   x : :class:`np.ndarray`
-      The control points.
+      The control points. Unlike `_callND`, this is a 1D array.
   dx : :class:`int`
       The highest-order derivative.
 
@@ -401,12 +401,17 @@ def _call1D(xi, kv0, p0, x, dx):
   -------
   ret : :class:`np.ndarray`
       The function evaluations at positions xi.
+
+  This version is fully sequential.
   """
+
+  # XXX:
+
   ret = np.zeros(xi.shape, dtype=float64)
   assert ret.ndim == 1
   element_indices0 = position_in_knotvector(kv0, xi)
 
-  for i in prange(len(xi)):
+  for i in range(len(xi)):
     xi_calls = nonzero_bsplines_deriv(kv0, p0, xi[i], dx)[dx]
     for j in range(p0 + 1):
       a = xi_calls[j]
@@ -417,7 +422,7 @@ def _call1D(xi, kv0, p0, x, dx):
 
 
 @njit(cache=True, parallel=True)
-def _callND(Xi, list_of_knotvectors, degrees, x, derivatives):
+def _callND(Xi, list_of_knotvectors, degrees, controlpoints, derivatives, into):
   """
   Return function evaluations (or their derivatives) of a nD tensor product
   spline at positions Xi.
@@ -425,68 +430,89 @@ def _callND(Xi, list_of_knotvectors, degrees, x, derivatives):
   Parameters
   ----------
   Xi : :class:`np.ndarray`
-      The positions. Different coordinates in the columns.
+      The positions of shape (nentries, ncoords). Different coordinates in the columns.
   list_of_knotvectors : :class:`List`
-      List containing the n knotvectors.
+      List containing the knotvectors of the ncoords directions.
   degrees : :class:`np.ndarray`
       The polynomial degrees in each direction.
-  x : :class:`np.ndarray`
-      The control points.
+  controlpoints : :class:`np.ndarray`
+      The control points. Of shape (ndofs, naxes).
   derivatives : :class:`np.ndarray`
       The highest-order derivatives in each direction.
+  into : :class:`np.ndarray`
+      The array to store the results. Must be of shape (nentries, naxes).
 
-  Returns
-  -------
-  ret : :class:`np.ndarray`
-      The function evaluations at positions Xi.
+  This version is parallelized along the `naxes` coordinate.
   """
-  # XXX: docstring
-  assert Xi.shape[1:] == (len(list_of_knotvectors),)
+
+  assert Xi.shape[0] == into.shape[0]
+  nentries, naxes = into.shape
+  assert controlpoints.shape[1:] == (naxes,)
+
+  # make len(list_of_knotvectors) - length homogeneous container containing
+  # temporary `into` arrays
+  container = [np.zeros((nentries,), dtype=np.float64) for _ in range(naxes)]
 
   # make len(list_of_knotvectors) - shaped integer array with the ndofs per direction
   dims = np.empty(len(list_of_knotvectors), dtype=np.int64)
   for i, (kv, degree) in enumerate(zip(list_of_knotvectors, degrees)):
     dims[i] = kv.shape[0] - degree - 1
 
-  ret = np.zeros(Xi.shape[0], dtype=np.float64)
-
   # make an outer product flat meshgrid with aranges from 0 to p + 1
   inner_loop_indices = arange_product(degrees + 1)
 
   # make integer array containing the positions in the knotvectors of the univariate
   # contributions in `Xi`
-  element_indices = np.empty((len(Xi), len(list_of_knotvectors)), dtype=np.int64)
+  element_indices = np.empty((nentries, len(list_of_knotvectors)), dtype=np.int64)
   for i, (mykv, xi) in enumerate(zip(list_of_knotvectors, Xi.T)):
     element_indices[:, i] = position_in_knotvector(mykv, xi)
 
-  for i in prange(len(Xi)):
+  for iaxis in prange(naxes):
+    x = controlpoints[:, iaxis]
+    myinto = container[iaxis]
 
-    # get all univariate local calls
-    mycalls = [nonzero_bsplines_deriv(kv, p, xi, dx)[dx, :] for kv, p, xi, dx
-               in zip(list_of_knotvectors, degrees, Xi[i], derivatives)]
+    for i in range(nentries):
 
-    for multi_index in inner_loop_indices:
-      # global index in x results from the multi_index + the element_indices minus the degrees
-      # and the `dims` vector
-      global_index = ravel_multi_index(element_indices[i] + multi_index - degrees, dims)
+      # get all univariate local calls
+      mycalls = [nonzero_bsplines_deriv(kv, p, xi, dx)[dx, :] for kv, p, xi, dx
+                 in zip(list_of_knotvectors, degrees, Xi[i], derivatives)]
 
-      # add product of all evaluations times the weight to the corresponding
-      # position
-      myval = x[global_index]
-      for j, myindex in enumerate(multi_index):
-        myval = myval * mycalls[j][myindex]
+      for multi_index in inner_loop_indices:
+        # global index in x results from the multi_index + the element_indices minus the degrees
+        # and the `dims` vector
+        global_index = ravel_multi_index(element_indices[i] + multi_index - degrees, dims)
 
-      ret[i] += myval
+        # add product of all evaluations times the weight to the corresponding
+        # position
+        myval = x[global_index]
+        for j, myindex in enumerate(multi_index):
+          myval = myval * mycalls[j][myindex]
 
-  return ret
+        myinto[i] += myval
+
+  # sequentially copy the results from the container into the `into` array
+  for i in range(naxes):
+    into[:, i] = container[i]
 
 
-def call(list_of_abscissae,
+def call(Xi,
          list_of_knotvectors,
          list_of_degrees,
-         controlpoints, dx=None):
-  # XXX: docstring
-  nvars = len(list_of_abscissae)
+         controlpoints,
+         dx=None,
+         into=None):
+  """
+  Return function evaluations at positions Xi.
+
+  Optionally put them into a preallocated array ``into``.
+
+  For a detailed docstring, see `_callND`.
+  """
+
+  nvars, = Xi.shape[1:]
+
+  assert controlpoints.ndim == 2, "Please provide a 2D array of control points."
+
   assert 1 <= nvars <= 3
   if dx is None:
     dx = 0
@@ -495,18 +521,25 @@ def call(list_of_abscissae,
 
   degrees = np.asarray(list_of_degrees, dtype=int)
   dx = np.asarray(dx, dtype=int)
-  Xi = np.stack(list_of_abscissae, axis=1)
 
-  assert len(list_of_abscissae) == len(list_of_knotvectors) == len(list_of_degrees)
+  assert len(list_of_knotvectors) == len(list_of_degrees) \
+                                  == len(dx)
 
-  return _callND(Xi,
-                 List(list_of_knotvectors),
-                 degrees,
-                 controlpoints, dx)
+  if into is None:
+    into = np.zeros(Xi.shape[:1] + controlpoints.shape[1:], dtype=np.float64)
+
+  assert into.shape == Xi.shape[:1] + controlpoints.shape[1:]
+
+  _callND(Xi,
+          List(list_of_knotvectors),
+          degrees,
+          controlpoints, dx, into)
+
+  return into
 
 
 @njit(cache=True, parallel=True)
-def _tensor_call2D( xi, eta, kv0, kv1, p0, p1, x, dx, dy ):
+def _tensor_callND(list_of_xis, list_of_knotvectors, degrees, controlpoints, derivatives, into):
   """
   Return function evaluations at all positions
   (xi_i, eta_i) in the outer product of univariate
@@ -517,157 +550,133 @@ def _tensor_call2D( xi, eta, kv0, kv1, p0, p1, x, dx, dy ):
 
   Parameters
   ----------
-  xi : :class:`np.ndarray`
-      The positions in the first direction.
-  eta : :class:`np.ndarray`
-      The positions in the second direction.
-  kv0 : :class:`np.ndarray`
-      The knotvector in the first direction.
-  kv1 : :class:`np.ndarray`
-      The knotvector in the second direction.
-  p0 : :class:`int`
-      The degree of the B-spline basis in the first direction.
-  p1 : :class:`int`
-      The degree of the B-spline basis in the second direction.
-  x : :class:`np.ndarray`
-      The control points.
-  dx : :class:`int`
-      The highest-order derivative in the first direction.
-  dy : :class:`int`
-      The highest-order derivative in the second direction.
+  list_of_xis : :class:`numba.typed.List` of :class:`np.ndarray`
+      The positions in each direction.
+  list_of_knotvectors : :class:`numba.typed.List` of :class:`np.ndarray`
+      The knotvectors in each direction.
+  degrees : :class:`np.ndarray`
+      Integer array of the polynomial degrees in each direction.
+  controlpoints : :class:`np.ndarray`
+      The control points. Must be a 2D array. The first axis refers to the
+      number of dofs. The second axis refers to the number of axes.
+  derivatives : :class:`np.ndarray`
+      The highest-order derivatives in each direction.
+  into : :class:`np.ndarray`
+      The array to store the results. Must be of shape (nentries, naxes).
 
-  Returns
-  -------
-  ret : :class:`np.ndarray`
-      The function evaluations at positions (xi_i, eta_i).
+  This version is parallelized along the `naxes` coordinate.
   """
+  nentries, naxes = into.shape
+  assert controlpoints.shape[1:] == (naxes,)
 
-  mu0 = position_in_knotvector(kv0, xi)
-  mu1 = position_in_knotvector(kv1, eta)
+  # shape of the entries in each direction
+  entry_shape = np.empty(len(list_of_xis), dtype=np.int64)
+  for i, xi in enumerate(list_of_xis):
+    entry_shape[i] = len(xi)
 
-  n_eta = kv1.shape[0] - p1 - 1
+  # make a list containing the position of each xi in each direction in the
+  # corresponding knotvector
+  mus = []
+  for kv, pos in zip(list_of_knotvectors, list_of_xis):
+    mus.append(position_in_knotvector(kv, pos))
 
-  s0, s1 = p0 + 1, p1 + 1
+  # make len(list_of_knotvectors) - shaped integer array with the ndofs per direction
+  dims = np.empty(len(list_of_knotvectors), dtype=np.int64)
+  for i, (kv, degree) in enumerate(zip(list_of_knotvectors, degrees)):
+    dims[i] = kv.shape[0] - degree - 1
 
-  xi_evals = np.empty( s0 * xi.shape[0], dtype=np.float64 )
-  eta_evals = np.empty( s1 * eta.shape[0], dtype=np.float64 )
+  # total number of entries in the result
+  nentries_ = 1
+  for length in entry_shape:
+    nentries_ *= length
 
-  # XXX: for some reason, for p0 == dx, nonzero_bsplines_deriv gives the wrong outcome
-  # for xi contained in the last knot span.
-  for i in prange(len(xi)):
-    xi_evals[i * s0: (i + 1) * s0] = nonzero_bsplines_deriv(kv0, p0, xi[i], dx)[dx, :]
+  assert nentries_ == nentries
 
-  for i in prange(len(eta)):
-    eta_evals[i * s1: (i + 1) * s1] = nonzero_bsplines_deriv(kv1, p1, eta[i], dy)[dy, :]
+  # store the evaluations of the basis functions in each direction
+  # for each evaluation point
+  xi_evals = []
+  for nelems, p, xi, dx in zip(degrees + 1, degrees, list_of_xis, derivatives):
+    evals = np.empty( (len(xi), nelems), dtype=np.float64 )
 
-  ret = np.zeros(( len(xi), len(eta) ), dtype=np.float64)
+    for i in range(len(xi)):
+      evals[i] = nonzero_bsplines_deriv(kv, p, xi[i], dx)[dx]
 
-  for i in prange(len(xi)):
-    for j in prange(len(eta)):
+    xi_evals.append(evals)
 
-      local_xi = xi_evals[i * s0: (i + 1) * s0]
-      local_eta = eta_evals[j * s1: (j + 1) * s1]
+  # make an outer product flat meshgrid with aranges from 0 to p + 1
+  inner_loop_indices = arange_product(degrees + 1)
 
-      for k in range(s0):
-        a = local_xi[k]
-        for L in range(s1):
-          b = local_eta[L]
-          global_index = (mu0[i] - p0 + k) * n_eta + \
-                          mu1[j] - p1 + \
-                          L
-          ret[i, j] += x[global_index] * a * b
+  container = [np.zeros((nentries,), dtype=np.float64) for _ in range(naxes)]
 
-  return ret
+  for iaxis in prange(naxes):
+    x = controlpoints[:, iaxis]
+    myinto = container[iaxis]
 
+    for i in range(nentries):
 
-@njit(cache=True, parallel=True)
-def _tensor_call3D( xi, eta, zeta, kv0, kv1, kv2, p0, p1, p2, x, dx, dy, dz ):
-  # XXX: docstring
+      # get the multi-index of the current entry
+      my_entry_index = unravel_multi_index(i, entry_shape)
 
-  mu0 = position_in_knotvector(kv0, xi)
-  mu1 = position_in_knotvector(kv1, eta)
-  mu2 = position_in_knotvector(kv2, zeta)
+      # make the element's multi-index
+      # (position of the evaluation point in each knotvector in each direction)
+      multi_index = -degrees
+      for j, ind in enumerate(my_entry_index):
+        multi_index[j] += mus[j][ind]
 
-  n_eta = kv1.shape[0] - p1 - 1
-  n_zeta = kv2.shape[0] - p2 - 1
+      for offset_index in inner_loop_indices:
 
-  s0, s1, s2 = p0 + 1, p1 + 1, p2 + 1
+        # get the global index of the control point, which is the element's
+        # multi-index plus the offset index raveled
+        global_index = ravel_multi_index(multi_index + offset_index, dims)
 
-  xi_evals = np.empty( s0 * xi.shape[0], dtype=np.float64 )
-  eta_evals = np.empty( s1 * eta.shape[0], dtype=np.float64 )
-  zeta_evals = np.empty( s2 * zeta.shape[0], dtype=np.float64 )
+        # initialize the value of the basis function in the current point
+        myval = x[global_index]
 
-  for i in prange(len(xi)):
-    xi_evals[i * s0: (i + 1) * s0] = nonzero_bsplines_deriv(kv0, p0, xi[i], dx)[dx, :]
-  for i in prange(len(eta)):
-    eta_evals[i * s1: (i + 1) * s1] = nonzero_bsplines_deriv(kv1, p1, eta[i], dy)[dy, :]
-  for i in prange(len(zeta)):
-    zeta_evals[i * s2: (i + 1) * s2] = nonzero_bsplines_deriv(kv2, p2, zeta[i], dz)[dz, :]
+        # iterate over the contributions of all basis functions in each direction
+        for ii, (j, offset) in enumerate(zip(my_entry_index, offset_index)):
+          myval *= xi_evals[ii][j, offset]
 
-  ret = np.zeros((len(xi), len(eta), len(zeta)), dtype=np.float64)
+        myinto[i] += myval
 
-  for i in prange(len(xi)):
-    for j in prange(len(eta)):
-      for k in prange(len(zeta)):
-
-        local_xi = xi_evals[i * s0: (i + 1) * s0]
-        local_eta = eta_evals[j * s1: (j + 1) * s1]
-        local_zeta = zeta_evals[k * s2: (k + 1) * s2]
-
-        for L in range(s0):
-          a = local_xi[L]
-          for m in range(s1):
-            b = local_eta[m]
-            for n in range(s2):
-              c = local_zeta[n]
-
-              global_index = (mu0[i] - p0 + L) * n_zeta * n_eta + \
-                             (mu1[j] - p1 + m) * n_zeta + \
-                             (mu2[k] - p2 + n)
-              ret[i, j, k] += x[global_index] * a * b * c
-
-  return ret
-
-
-# XXX: implement _tensor_callND
+  # sequentially copy the results from the container into the `into` array
+  for i in range(naxes):
+    into[:, i] = container[i]
 
 
 def tensor_call(list_of_abscissae,
                 list_of_knotvectors,
                 list_of_degrees,
-                controlpoints, dx=None):
+                controlpoints,
+                dx=None,
+                into=None):
   # XXX: docstring
   nvars = len(list_of_abscissae)
+
+  assert controlpoints.ndim == 2, "Please provide a 2D array of control points."
+
   assert 1 <= nvars <= 3
   if dx is None:
     dx = 0
   if np.isscalar(dx):
     dx = (dx,) * nvars
 
+  degrees = np.asarray(list_of_degrees, dtype=int)
+  dx = np.asarray(dx, dtype=int)
+
   assert len(list_of_abscissae) == len(list_of_knotvectors) \
                                 == len(list_of_degrees) \
                                 == len(dx)
 
-  func = {1: _call1D,
-          2: _tensor_call2D,
-          3: _tensor_call3D}[nvars]
+  shape = tuple(map(len, list_of_abscissae))
+  return_shape = (np.prod(shape, dtype=int),) + controlpoints.shape[1:]
+  if into is None:
+    into = np.zeros(return_shape, dtype=np.float64)
 
-  return func(*list_of_abscissae,
-              *list_of_knotvectors,
-              *list_of_degrees,
-              controlpoints, *dx).ravel()
+  assert into.shape == return_shape
 
+  _tensor_callND(List(list_of_abscissae),
+                 List(list_of_knotvectors),
+                 degrees,
+                 controlpoints, dx, into)
 
-def evaluate_multipatch(npoints, knotvector, degree, list_of_controlpoints, dx=0, dy=0):
-  # XXX: docstring
-  shape = list_of_controlpoints[0].shape
-  assert shape[1:] == (2,)
-  assert all( cp.shape == shape for cp in list_of_controlpoints )
-
-  Xi = flat_meshgrid(*[np.linspace(0, 1, npoints)]*2, axis=1)
-
-  return list(map(lambda cp: np.stack([_callND(Xi,
-                                               [knotvector, knotvector],
-                                               np.array([degree, degree], dtype=int),
-                                               _cp,
-                                               np.array([dx, dy], dtype=int)) for _cp in cp.T], axis=1), list_of_controlpoints))
+  return into
