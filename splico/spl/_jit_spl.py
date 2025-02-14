@@ -89,7 +89,7 @@ def _pseudo_inverse(data: np.ndarray, rows: np.ndarray, cols: np.ndarray):
 
 
 @njit(cache=True)
-def position_in_knotvector(t, x):
+def position_in_knotvector_old(t, x):
   # XXX: replace by binary search algorithm.
   """
   Return the position of ``x`` in the knotvector ``t``.
@@ -127,6 +127,38 @@ def position_in_knotvector(t, x):
     else:  # no break
         ret[i] = -1
 
+  return ret
+
+
+@njit(cache=True)
+def position_in_knotvector(t, x):
+  """
+  Return the position of ``x`` in the knotvector ``t``.
+  If x equals t[-1], return the position before the first
+  occurence of x in t.
+
+  Parameters
+  ----------
+  t : :class:`np.ndarray`
+      The knotvector with repeated knots.
+  x : :class:`np.ndarray`
+      The vector of positions.
+
+  Returns
+  -------
+  ret : :class:`np.ndarray` comprised of integers
+      The positions in the knotvector. Has the same length as `x`.
+      If entry is not found, defaults to -1.
+  """
+  ret = np.empty(len(x), dtype=np.int64)
+  for i in range(len(x)):
+    myx = x[i]
+    if myx < t[0] or myx > t[-1]:
+      ret[i] = -1
+    elif myx == t[-1]:
+      ret[i] = np.searchsorted(t, myx) - 1
+    else:
+      ret[i] = np.searchsorted(t, myx, side='right') - 1
   return ret
 
 
@@ -490,9 +522,7 @@ def _callND(Xi, list_of_knotvectors, degrees, controlpoints, derivatives, into):
 
         myinto[i] += myval
 
-  # sequentially copy the results from the container into the `into` array
-  for i in range(naxes):
-    into[:, i] = container[i]
+      into[:, iaxis] = myinto
 
 
 def call(Xi,

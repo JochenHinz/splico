@@ -1,23 +1,40 @@
 from .control import make_unit_disc
-from .mul import multipatch
-from splico.spl import UnivariateKnotVector, NDSpline
-from splico.util import np, frozen
-from splico.types import NanVec
+from .mul import multipatch, basis_spline
+from .util import infer_knotvectors
 
-from functools import lru_cache
+from splico.spl import UnivariateKnotVector, NDSpline, NDSplineArray
+from splico.util import np, frozen, _
+from splico.types import NanVec, Float, Int, Numeric, SingletonMeta, Singleton
+
+from functools import lru_cache, cached_property
+from typing import List
 
 from scipy.sparse import linalg as splinalg
 from scipy import sparse
 from nutils import function
 
 
+J = function.J
+sl = slice(None)
+
+
+PATCHES = (2, 0, 3, 1), \
+          (2, 4, 0, 6), \
+          (2, 3, 4, 5), \
+          (3, 1, 5, 7), \
+          (4, 5, 6, 7)
+
+KNOTVECTOR_EDGES = (0, 1), (0, 6), (0, 2)
+
+
 @lru_cache(maxsize=32)
-def rot_matrix(rot: float | int) -> np.ndarray:
+def rot_matrix(rot: Float | Int) -> np.ndarray:
   return np.array([[np.cos(rot), -np.sin(rot)], [np.sin(rot), np.cos(rot)]])
 
 
-def trampoline_template(inner_height: float = .5, inner_width: float = .5):
-  """
+def trampoline_template(inner_height: Float = .5,
+                        inner_width: Float = .5):
+  r"""
     1 - - - - - 7
     | \   D   / |
     |  3 - - 5  |
@@ -41,26 +58,21 @@ def trampoline_template(inner_height: float = .5, inner_width: float = .5):
   # a patch is characterised by its patch vertices
   # patch = (0, 1, 2, 3) means it is oriented like this:
   """
-            1 ----- 3
-            |       |
-            |       |
-            |       |
-            0-------2
+      1 ----- 3
+      |       |
+      |       |
+      |       |
+      0-------2
   """
 
   # so the left side of the patch is given by edge 0 --- 1
   # right by 2 --- 3
   # bottom by 0 --- 2
   # top by 1 --- 3
-  patches = ( (2, 0, 3, 1),  # patch A
-              (2, 4, 0, 6),  # patch B
-              (2, 3, 4, 5),  # etc
-              (3, 1, 5, 7),
-              (4, 5, 6, 7) )
 
   # patches and patchverts are tuple. Immutable objects.
 
-  return patches, patchverts
+  return PATCHES, patchverts
 
 
 def nutils_to_scipy(mat) -> sparse.csr_matrix:
@@ -68,23 +80,63 @@ def nutils_to_scipy(mat) -> sparse.csr_matrix:
   return sparse.csr_matrix(data, dtype=float)
 
 
-class CrossSectionMaker:
+class CrossSectionMakerMeta(SingletonMeta):
 
-  # XXX: docstring
+  """
+  Metaclass for the CrossSectionMaker class.
+  Since the CrossSectionMaker class is a Singleton, type coercion needs to
+  be performed before the class is instantiated. This is done by the metaclass.
+  """
 
-  def __init__(self, nelems, degree=3, reparam=True):
-    assert nelems > 0
-    patches, patchverts = trampoline_template()
+  def __call__(cls, kv0: UnivariateKnotVector | Int,
+                    kv1: UnivariateKnotVector | Int | None = None,
+                    kv2: UnivariateKnotVector | Int | None = None,
+                    reparam: bool = True,
+                    inner_height: Float = .5,
+                    inner_width: Float = .5):
+    if isinstance(kv0, Int):
+      kv0 = UnivariateKnotVector(np.linspace(0, 1, kv0+1), degree=3)
+    if isinstance(kv1, Int):
+      kv1 = UnivariateKnotVector(np.linspace(0, 1, kv1+1), degree=3)
+    elif kv1 is None:
+      kv1 = kv0
+    if isinstance(kv2, Int):
+      kv2 = UnivariateKnotVector(np.linspace(0, 1, kv2+1), degree=3)
+    elif kv2 is None:
+      kv2 = kv0
+    return super().__call__(kv0, kv1, kv2, reparam, inner_height, inner_width)
+
+
+class CrossSectionMaker(Singleton, metaclass=CrossSectionMakerMeta):
+
+  # TODO: docstring
+
+  def __init__(self, kv0: UnivariateKnotVector,
+                     kv1: UnivariateKnotVector,
+                     kv2: UnivariateKnotVector,
+                     reparam: bool = True,
+                     inner_height: Float = .5,
+                     inner_width: Float = .5):
+    """
+    kv0: edge (0, 1)
+    kv1: edge (0, 6)
+    kv2: edge (0, 2)
+    """
+    patches, patchverts = trampoline_template(inner_height, inner_width)
 
     # make a multipatch topology with the structure of ``trampoline_template``
     # and ``nelems`` elements per side
     # ``geom`` is the parameterisation of the parametric domain
     # ``localgeom`` maps each patch back onto the reference patch (0, 1)^2
+    knotvectors = {(0, 1): kv0, (0, 6): kv1, (0, 2): kv2}
+    knotvectors = infer_knotvectors(PATCHES, knotvectors)
     domain, geom, localgeom = multipatch(patches=patches,
+                                         knotvectors=knotvectors,
                                          patchverts=patchverts,
-                                         nelems=nelems)
-    basis = domain.basis('spline', degree=degree)
-    basis_disc = domain.basis('spline', degree=degree, patchcontinuous=False)
+                                         space='XY')
+
+    basis = basis_spline(domain, knotvectors)
+    basis_disc = basis_spline(domain, knotvectors, patchcontinuous=False)
 
     self.domain = domain
     self.npatches = len(self.domain._topos)
@@ -92,28 +144,34 @@ class CrossSectionMaker:
     self.basis_disc = basis_disc
     self.geom = geom
     self.localgeom = localgeom
-    self.nelems = nelems
-    self.degree = degree
-    self.knotvector = UnivariateKnotVector(np.linspace(0, 1, nelems+1),
-                                           degree=degree)
-    self.tknotvector = self.knotvector * self.knotvector
 
-    controlmap = make_unit_disc(domain, basis, geom, localgeom,
-                                                     patches,
-                                                     reparam=reparam)
+    self.knotvectors = (kv0 * kv2.flip(), kv2.flip() * kv1,
+                                          kv1 * kv0,
+                                          kv1 * kv2.flip(),
+                                          kv2.flip() * kv0)
+    self.segments = frozen(np.array([kv.ndofs for kv in self.knotvectors]).cumsum()[:-1])
+
+    controlmap = make_unit_disc(domain, basis,
+                                        geom,
+                                        localgeom,
+                                        patches,
+                                        reparam=reparam)
 
     self.controlmap = controlmap
+
+    self.kv0, self.kv1, self.kv2 = kv0, kv1, kv2
 
     # take the gradient of the basis with respect to the parametric domain ``geom``
     dbasis = basis.grad(controlmap)
 
     # assemble the stiffness matrix
     # convert it to csr for efficiency
-    self.A = nutils_to_scipy(domain.integrate((dbasis[:, None] *
-                                               dbasis[None]).sum([2]) *
+    self.A = nutils_to_scipy(domain.integrate((dbasis[:, _] *
+                                               dbasis[_]).sum([2]) *
                                                function.J(controlmap), degree=10))
 
-    # get a boolean array that gives True for indices of basis functions that are nonzero on the boundary
+    # get a boolean array that gives True for indices of basis functions that
+    # are nonzero on the boundary
     self.freezemask = ~np.isnan( domain.boundary.project(1,
                                                          onto=basis,
                                                          geometry=geom,
@@ -139,25 +197,34 @@ class CrossSectionMaker:
     self.CM = splinalg.splu(self.M.tocsc())
 
     # compute the matrices necessary for the prolongation to the discontinuous basis
-    self.M_disc, self.T_disc = map(nutils_to_scipy,
-                                   domain.
-                                   integrate([function.outer(self.basis_disc) *
-                                                              function.J(geom),
-                                              self.basis_disc[:, None] *
-                                              self.basis[None] * function.J(geom)], degree=10))
+    self.M_disc, self.T_disc = map(nutils_to_scipy, domain.integrate(
+                                   [function.outer(self.basis_disc) * function.J(geom),
+                                    self.basis_disc[:, _] *
+                                    self.basis[_] * function.J(geom)], degree=10))
     # unit disc
     self._reference_sol = frozen(self.domain.project(self.controlmap,
                                                      self.basis.vector(2),
                                                      ischeme='gauss10',
                                                      geometry=self.controlmap).reshape(-1, 2))
 
-  @property
-  def CM_disc(self):
-    if not hasattr(self, '_CM_disc'):
-      self._CM_disc = splinalg.splu(self.M_disc.tocsc())
-    return self._CM_disc
+  @cached_property
+  def is_NDSpline(self):
+    """
+    Check if the basis is a NDSpline.
+    This means that the created ellipses can be represented as NDSplines.
+    """
+    return self.kv0 == self.kv1 == self.kv2
 
-  def boundary_correspondence(self, a, b, theta=0):
+  @cached_property
+  def CM_disc(self):
+    return splinalg.splu(self.M_disc.tocsc())
+
+  @cached_property
+  def M_splu(self):
+    return splinalg.splu(nutils_to_scipy(self.domain.integrate(
+                         function.outer(self.basis) * J(self.controlmap), degree=10)).tocsc())
+
+  def boundary_correspondence(self, a: Numeric, b: Numeric, theta: Numeric = 0) -> NDSpline | NDSplineArray | List[np.ndarray]:
     x, y = self.geom
     theta = theta % (2 * np.pi)
 
@@ -209,14 +276,26 @@ class CrossSectionMaker:
 
     return self.CM.solve(fcos), self.CM.solve(fsin)
 
-  def break_apart(self, vec, split=False):
+  def break_apart(self, vec: np.ndarray, split: bool = False):
     ret = self.CM_disc.solve(self.T_disc @ vec)
-    if split: return np.array_split(ret, self.npatches, axis=0)
+    if split: return np.array_split(ret, self.segments, axis=0)
     return ret
 
-  def make_disc(self, a, b, theta=0, rot=0, return_type='NDSpline'):
+  def make_disc(self, a: Numeric, b: Numeric, theta: Numeric = 0,
+                                              rot: Numeric = 0,
+                                              return_type: str = None):
 
-    assert return_type in ('array', 'NDSpline'), NotImplementedError
+    if return_type is None:
+      if self.is_NDSpline:
+        return_type = 'NDSpline'
+      else:
+        return_type = 'NDSplineArray'
+
+    assert return_type in ('array', 'NDSpline', 'NDSplineArray'), NotImplementedError
+
+    if return_type == 'NDSpline':
+      if not self.is_NDSpline:
+        raise ValueError("The knotvectors are not the same. Cannot return a single NDSpline.")
 
     rotmat = rot_matrix(rot)
 
@@ -261,11 +340,26 @@ class CrossSectionMaker:
     if return_type == 'array':
       return solution
 
-    ret = np.stack([ np.concatenate([pnts, np.zeros((len(pnts), 1), dtype=float)], axis=1) for pnts in solution ], axis=1)
-    return NDSpline(self.tknotvector, ret)
+    elif return_type == 'NDSpline':
+      solution = np.stack([ np.concatenate([pnts, np.zeros((len(pnts), 1), dtype=float)], axis=1) for pnts in solution ], axis=1)
+      return NDSpline(self.tknotvector, solution)
+
+    return NDSplineArray([NDSpline(kv, np.concatenate([arr, np.zeros(len(arr))[:, _]], axis=1))
+                          for kv, arr in zip(self.knotvectors, solution)
+                          ]).contract_all()
+
+
+@lru_cache
+def make_CrossSectionMaker(nelems: Int, degree: Int = 3, reparam: bool = True):
+  kv0 = kv1 = kv2 = UnivariateKnotVector(np.linspace(0, 1, nelems+1),
+                                         degree=degree)
+  return CrossSectionMaker(kv0, kv1, kv2, reparam=reparam)
 
 
 @lru_cache(maxsize=32)
-def ellipse(a, b, nelems, degree=3, reparam=True):
-  maker = CrossSectionMaker(nelems, degree=degree, reparam=reparam)
+def ellipse(a: Numeric, b: Numeric, nelems: Int, degree: Int = 3,
+                                                 reparam: bool = True):
+  kv0 = kv1 = kv2 = UnivariateKnotVector(np.linspace(0, 1, nelems+1),
+                                         degree=degree)
+  maker = CrossSectionMaker(kv0, kv1, kv2, reparam=reparam)
   return maker.make_disc(a, b)

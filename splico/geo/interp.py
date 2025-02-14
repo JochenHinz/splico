@@ -4,12 +4,15 @@ Module for spline interpolation. Either linear or higher order interpolation.
 @author: Jochen Hinz
 """
 
-from splico.spl import NDSpline, UnivariateKnotVector, TensorKnotVector
+from splico.spl import NDSpline, NDSplineArray, UnivariateKnotVector, TensorKnotVector
 from ..util import np, _
 
 
-def linear_interpolation(spl0: NDSpline,
-                         spl1: NDSpline, zdegree: int = 1) -> NDSpline:
+Spline = NDSpline | NDSplineArray
+
+
+def linear_interpolation(spl0: Spline,
+                         spl1: Spline, zdegree: int = 1) -> Spline:
   """
   Perform a linear interpolation between two :class:`splico.spl.NDSpline`s.
   This introduces a new parametric dependency which is appended at the end,
@@ -30,7 +33,7 @@ def linear_interpolation(spl0: NDSpline,
       The resulting linearly interpolated spline satisfying
       `spl.nvars == spl0.nvars + 1`.
   """
-  assert spl0.knotvector == spl1.knotvector and spl0.shape == spl1.shape
+  assert spl0.shape == spl1.shape
   assert (zdegree := int(zdegree)) >= 1
 
   # make an at least linear knotvector without interior knots
@@ -46,11 +49,11 @@ def linear_interpolation(spl0: NDSpline,
   return spl0 * f0 + spl1 * f1
 
 
-def cubic_hermite_interpolation(spl0: NDSpline,
-                                spl1: NDSpline,
+def cubic_hermite_interpolation(spl0: Spline,
+                                spl1: Spline,
                                 t0: np.ndarray,
                                 t1: np.ndarray,
-                                zdegree: int = 3) -> NDSpline:
+                                zdegree: int = 3) -> Spline:
   """
   Perform a cubic hermite interpolation between two `splico.spl.NDSpline`s.
   This introduces a new parametric dependency which is appended at the end,
@@ -75,7 +78,7 @@ def cubic_hermite_interpolation(spl0: NDSpline,
       The resulting cubic Hermite interpolation spline satisfying
       `spl.nvars == spl0.nvars + 1`.
   """
-  assert spl0.knotvector == spl1.knotvector and spl0.shape == spl1.shape
+  assert spl0.shape == spl1.shape
   if (t0 := np.asarray(t0)).shape != (3,) or (t1 := np.asarray(t1)).shape != (3,):
     raise NotImplementedError
   assert (zdegree := int(zdegree)) >= 3

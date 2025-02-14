@@ -1084,6 +1084,23 @@ class NDSplineArray(ArrayLike):
 
     return np.array(sampled_meshes, dtype=Mesh).reshape(self.shape[:-1])
 
+  def quick_sample(self, n=11) -> NDArray:
+    """ Sample ``n`` points along each axis of the knotvectors. """
+    if not self._elemshape:
+      try:
+        self = self.contract()
+      except ValueError:
+        raise ValueError('Cannot sample a mesh from 0-dimensional splines.')
+
+    assert self._elemshape[-1] == 3, 'Mesh export requires the target space to be R^3.'
+
+    meshes = []
+    for spl in self.arr.ravel():
+      mesh = rectilinear([np.linspace(kv.knots[0], kv.knots[-1], n) for kv in spl.knotvector])
+      meshes.append(spl.sample_mesh(mesh))
+
+    return np.array(meshes, dtype=Mesh).reshape(self.shape[:-1])
+
   def qplot(self, n=11, boundary=False) -> None:
     """
     Quick plot of the NDSplineArray.
@@ -1098,4 +1115,6 @@ class NDSplineArray(ArrayLike):
       mesh = rectilinear([np.linspace(kv.knots[0], kv.knots[-1], n) for kv in spl.knotvector])
       meshes.append(spl.sample_mesh(mesh))
 
-    mesh_union(*meshes, boundary=boundary).plot()
+    mesh = mesh_union(*meshes, boundary=boundary)
+    mesh.plot()
+    return mesh

@@ -132,6 +132,18 @@ class TestNDSpline(unittest.TestCase):
 
     self.assertTrue(np.allclose(spl.controlpoints, spl_.controlpoints))
 
+  def test_against_scipy(self):
+    from scipy.interpolate import splev
+    tkv = TensorKnotVector([UnivariateKnotVector(np.linspace(0, 1, 21), 3)])
+
+    controlpoints = np.random.randn(tkv.ndofs)
+    spl = NDSpline(tkv, controlpoints)
+
+    xi = np.linspace(0, 1, 1001)
+    self.assertTrue(np.allclose(spl(xi), splev(xi, (tkv.repeated_knots, controlpoints, 3))))
+    self.assertTrue(np.allclose(spl(xi, dx=1), splev(xi, (tkv.repeated_knots, controlpoints, 3), der=1)))
+    self.assertTrue(np.allclose(spl(xi, dx=2), splev(xi, (tkv.repeated_knots, controlpoints, 3), der=2)))
+
 
 class TestFitSample(unittest.TestCase):
 
