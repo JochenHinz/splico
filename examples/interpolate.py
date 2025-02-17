@@ -1,5 +1,5 @@
 from splico.geo import interp, CrossSectionMaker
-from splico.spl import NDSpline, NDSplineArray
+from splico.spl import NDSpline, NDSplineArray, as_NDSplineArray
 from splico.mesh import rectilinear, mesh_union
 
 import numpy as np
@@ -24,6 +24,7 @@ def main(spl0: Spline, spl1: Spline, t0: np.ndarray, t1=None) -> Spline:
     t1 : :class:`np.ndarray`
         The desired tangent at xn+1 == 1. If not passed, defaults to `t0`.
   """
+  spl0, spl1 = map(as_NDSplineArray, (spl0, spl1))
   assert spl0.nvars == spl1.nvars == 2
 
   if t1 is None:
@@ -33,12 +34,10 @@ def main(spl0: Spline, spl1: Spline, t0: np.ndarray, t1=None) -> Spline:
   sample_mesh = rectilinear([np.linspace(0, 1, 21)] * 3)
 
   linear_interp = interp.linear_interpolation(spl0, spl1, zdegree=1)
-  mesh_union(*(myspline.sample_mesh(sample_mesh) for myspline in linear_interp),
-             boundary=True).plot()
+  mesh_union(*linear_interp.sample_mesh(sample_mesh).ravel(), boundary=True).plot()
 
   hermite_interp = interp.cubic_hermite_interpolation(spl0, spl1, t0, t1)
-  mesh_union(*(myspline.sample_mesh(sample_mesh) for myspline in hermite_interp),
-             boundary=True).plot()
+  mesh_union(*hermite_interp.sample_mesh(sample_mesh).ravel(), boundary=True).plot()
 
 
 if __name__ == '__main__':

@@ -1,7 +1,6 @@
 from splico.geo import make_CrossSectionMaker, compute_notwistframe_from_spline
 from splico.mesh import rectilinear, mesh_union
-from splico.spl import UnivariateKnotVector, \
-                       TensorKnotVector, NDSpline
+from splico.spl import UnivariateKnotVector, TensorKnotVector
 from splico.util import np, _, clparam
 
 
@@ -45,12 +44,12 @@ def main(nelems_centerline, nelems_cross_section, radii, centerline_points):
   maker = make_CrossSectionMaker(nelems_cross_section)
 
   # make the cross section of radius one
-  disc = maker.make_disc(1, 1, 0)
+  disc = maker.make_disc(1, 1, 0, return_type='NDSplineArray')  # return as array
 
   # fit a spline to radius and rotational frame information
   rRs = kv.fit([xi], radii[:, _, _] * Rs)
 
-  one = NDSpline.one(disc.arr.ravel()[0].knotvector)
+  one = disc.one(disc.knotvector)
 
   # create the vessel spline using a tensor product
   # disc.shape == (5, 3) 5 patches 3 coordinates

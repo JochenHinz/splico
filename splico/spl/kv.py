@@ -258,6 +258,14 @@ class UnivariateKnotVector(Immutable):
     assert isinstance(other, TensorKnotVector)
     return TensorKnotVector([*other, self])
 
+  def __pow__(self, other: Any) -> Self:
+    if isinstance(other, Int):
+      return TensorKnotVector([self] * other)
+    return NotImplemented
+
+  def to_tensor(self):
+    return TensorKnotVector([self])
+
   @ensure_same_class
   def __and__(self, other: Self) -> Self:
     """
@@ -427,6 +435,13 @@ class TensorKnotVector(Immutable, metaclass=TensorKnotVectorMeta):
     if isinstance(kvs, np.ndarray):
       return self._edit(knotvectors=tuple(kvs))
     return kvs
+
+  def __array__(self, dtype=None, copy=False):
+    # avoid invoking `__iter__` on `self` which would return
+    # an array of shape (ndim,) of UnivariateKnotVectors
+    arr = np.empty((1,), dtype=object)
+    arr[0] = self
+    return arr.reshape(())
 
   @property
   def ndim(self) -> int:

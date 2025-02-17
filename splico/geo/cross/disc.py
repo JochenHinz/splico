@@ -342,7 +342,7 @@ class CrossSectionMaker(Singleton, metaclass=CrossSectionMakerMeta):
 
     elif return_type == 'NDSpline':
       solution = np.stack([ np.concatenate([pnts, np.zeros((len(pnts), 1), dtype=float)], axis=1) for pnts in solution ], axis=1)
-      return NDSpline(self.tknotvector, solution)
+      return NDSpline(self.kv0 * self.kv0, solution)
 
     return NDSplineArray([NDSpline(kv, np.concatenate([arr, np.zeros(len(arr))[:, _]], axis=1))
                           for kv, arr in zip(self.knotvectors, solution)

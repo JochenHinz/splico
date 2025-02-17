@@ -17,7 +17,7 @@ from .meta import NDSplineMeta
 
 from typing import Sequence, Callable, Tuple, Self, List, Any, TypeVar
 from types import GenericAlias
-from functools import reduce, wraps, cached_property
+from functools import reduce, wraps, cached_property, lru_cache, partial
 from itertools import product
 from abc import abstractmethod
 
@@ -253,13 +253,13 @@ class NDSpline(ArrayLike, metaclass=NDSplineMeta):
   repeated_knots: Tuple
 
   @classmethod
-  def one(cls, knotvector):
+  def one(cls, knotvector, shape=()):
     """
     Constant one function. Helpful when a function of one variable
     has to be made a function of the other variables as well.
     """
     knotvector = as_TensorKnotVector(knotvector)
-    return cls(knotvector, np.ones(knotvector.ndofs))
+    return cls(knotvector, np.ones((knotvector.ndofs,) + shape, dtype=float))
 
   @classmethod
   def from_exact_interpolation(cls, verts: AnyFloatSeq,
@@ -709,6 +709,20 @@ def _vectorize_first_axis(op: Callable, pivot: Int,
   return op(*_args, **kwargs)
 
 
+@lru_cache
+def sample_mesh_from_knotvector(tkv: TensorKnotVector, n: Int | Sequence[Int]) -> Mesh:
+  """
+  Create a sampling mesh from a knotvector.
+  """
+  if np.isscalar(n):
+    n = (n,) * tkv.ndim
+  assert len(n) == tkv.ndim
+
+  ranges = [(kv.knotvalues[0], kv.knotvalues[-1]) for kv in tkv]
+
+  return rectilinear([np.linspace(*r, num) for r, num in zip(ranges, n)])
+
+
 class NDSplineArray(ArrayLike):
   """
   Array of splines.
@@ -821,17 +835,37 @@ class NDSplineArray(ArrayLike):
   __repr__ = NDSpline.__repr__
 
   @cached_property
+  def knotvector(self) -> NDArray[TensorKnotVector]:
+    """
+    Return an array of :class:`TensorKnotVector` objects.
+    """
+    return frozen(np.array([ elem.knotvector for elem in self.arr.ravel() ],
+                           dtype=object).reshape(self.arr.shape), dtype=object)
+
+  @cached_property
   def nvars(self) -> int:
     """ Number of dependencies. """
     return self.arr.ravel()[0].nvars
 
   @classmethod
-  def one(cls, array_of_knotvectors: NDArray | AnySequence[KnotVectorType]):
+  def one(cls, array_of_knotvectors: NDArray | AnySequence[KnotVectorType], shape=None):
     """
     Create a NDSplineArray with all elements being the constant one function.
     """
     array_of_knotvectors = np.array(array_of_knotvectors, dtype=TensorKnotVector)
-    return cls(np.vectorize(NDSpline.one)(array_of_knotvectors))
+    if shape is None:
+      shape = array_of_knotvectors.shape
+    assert array_of_knotvectors.shape == shape[:array_of_knotvectors.ndim]
+    shape_tail = shape[array_of_knotvectors.ndim:]
+    return cls(np.vectorize(lambda kv: NDSpline.one(kv, shape=shape_tail))(array_of_knotvectors))
+
+  @classmethod
+  def one_from_NDSplineArray(cls, arr: 'NDSplineArray'):
+    """
+    Create a NDSplineArray with all elements being the constant one function
+    from a given NDSplineArray.
+    """
+    return cls.one(arr.knotvectors, shape=arr.shape)
 
   @property
   def shape(self) -> Tuple[int, ...]:
@@ -1061,12 +1095,13 @@ class NDSplineArray(ArrayLike):
   def sample_mesh(self, sample_meshes: Mesh | np.ndarray | Sequence) -> NDArray:
     """
     Sample a mesh from each element of the NDSplineArray.
+    Requires `self.shape[-1] == 3`.
 
     If `sample_meshes` is a single mesh, the same mesh is used for all elements.
     If `sample_meshes` is a sequence of meshes, each element is sampled with the
     corresponding mesh. If the shape (after coercion to np.ndarray) of
     ``sample_meshes`` differs from ``self.shape``, the ``sample_meshes`` array
-    is broadcast to the shape of ``self.shape``.
+    is broadcast to the shape of ``self.shape[:-1]``.
     """
     if not self._elemshape:
       try:
@@ -1085,36 +1120,31 @@ class NDSplineArray(ArrayLike):
     return np.array(sampled_meshes, dtype=Mesh).reshape(self.shape[:-1])
 
   def quick_sample(self, n=11) -> NDArray:
-    """ Sample ``n`` points along each axis of the knotvectors. """
-    if not self._elemshape:
-      try:
-        self = self.contract()
-      except ValueError:
-        raise ValueError('Cannot sample a mesh from 0-dimensional splines.')
-
-    assert self._elemshape[-1] == 3, 'Mesh export requires the target space to be R^3.'
-
-    meshes = []
-    for spl in self.arr.ravel():
-      mesh = rectilinear([np.linspace(kv.knots[0], kv.knots[-1], n) for kv in spl.knotvector])
-      meshes.append(spl.sample_mesh(mesh))
-
-    return np.array(meshes, dtype=Mesh).reshape(self.shape[:-1])
+    """
+    Sample ``n`` points along the knotvector's range in each direction.
+    """
+    sample_meshes = np.broadcast_to(
+      np.vectorize(partial(sample_mesh_from_knotvector, n=n))(self.knotvector),
+      self.shape[:-1])
+    return self.sample_mesh(sample_meshes)
 
   def qplot(self, n=11, boundary=False) -> None:
     """
     Quick plot of the NDSplineArray.
+    The shape must be `(..., 3)`. If of matrix of tensor-valued, plot the mesh
+    union of all sampled meshes.
     """
     if not self.shape[-1:] == (3,):
       raise ValueError('Quick plotting is only supported for R^3 splines.')
 
-    self = self.expand(len(self._elemshape) - 1)
+    meshes = self.quick_sample(n=n)
 
-    meshes = []
-    for spl in self.arr.ravel():
-      mesh = rectilinear([np.linspace(kv.knots[0], kv.knots[-1], n) for kv in spl.knotvector])
-      meshes.append(spl.sample_mesh(mesh))
-
-    mesh = mesh_union(*meshes, boundary=boundary)
+    mesh = mesh_union(*meshes.ravel(), boundary=boundary)
     mesh.plot()
     return mesh
+
+
+def as_NDSplineArray(spl):
+  if isinstance(spl, NDSplineArray):
+    return spl
+  return NDSplineArray(spl)

@@ -78,7 +78,7 @@ class TestTensorKnotvector(unittest.TestCase):
     with self.subTest('Test arithmetic'):
       kv1 = UnivariateKnotVector(np.linspace(0, 1, 11))
       tkv0 = kv0 * kv0
-      tkv1 = kv1 * kv1
+      tkv1 = kv1 ** 2
 
       self.assertTrue( (tkv0 | tkv1) == tkv0.raise_multiplicities(..., [10]*2, [3]*2) )
 
