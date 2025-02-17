@@ -1,4 +1,4 @@
-from splico.geo import interp, CrossSectionMaker
+from splico.geo import interp, cross_section_generator
 from splico.spl import NDSpline, NDSplineArray, as_NDSplineArray
 from splico.mesh import rectilinear, mesh_union
 
@@ -8,7 +8,7 @@ import numpy as np
 Spline = NDSpline | NDSplineArray
 
 
-def main(spl0: Spline, spl1: Spline, t0: np.ndarray, t1=None) -> Spline:
+def main(spl0: Spline, spl1: Spline, t0: np.ndarray, t1=None) -> None:
   """
     Perform a linear interpolation and a cubic hermite interpolation between
     `spl0` and `spl1`.
@@ -41,7 +41,7 @@ def main(spl0: Spline, spl1: Spline, t0: np.ndarray, t1=None) -> Spline:
 
 
 if __name__ == '__main__':
-  maker = CrossSectionMaker(7)
+  maker = cross_section_generator(7)
 
   spl0 = maker.make_disc(1, 1, 0)
   spl1 = maker.make_disc(1, 1, 1) + np.array([[0, 0, 2]])

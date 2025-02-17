@@ -1,4 +1,4 @@
-from splico.geo import CrossSectionMaker
+from splico.geo import cross_section_generator
 from splico.mesh import rectilinear, mesh_union
 
 import unittest
@@ -7,7 +7,9 @@ import unittest
 class TestDisc(unittest.TestCase):
 
   def test_eval(self):
-    dmaker = CrossSectionMaker(5)
+    dmaker = cross_section_generator(5)
+    dmaker_ = cross_section_generator(5)
+    self.assertTrue(dmaker is dmaker_)
     sol = dmaker.make_disc(4, 4, 0)
 
     for n in (3, 5, 7, 11, 13, 17, 19):

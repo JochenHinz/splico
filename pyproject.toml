@@ -3,6 +3,7 @@ name = "splico"
 readme = "README.md"
 authors = [
     { name = "Jochen Hinz", email = "jochen.hinz@epfl.ch" },
+    { name = "Fabio Marcinno", email = "fabio.marcinno@epfl.ch" },
 ]
 requires-python = '>=3.12'
 dependencies = [

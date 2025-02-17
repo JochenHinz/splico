@@ -1,4 +1,4 @@
-from splico.geo import CrossSectionMaker
+from splico.geo import cross_section_generator
 from splico.geo.interp import linear_interpolation, cubic_hermite_interpolation
 from splico.mesh import rectilinear, mesh_union
 from splico.util import np
@@ -9,7 +9,7 @@ import unittest
 class TestInterpolation(unittest.TestCase):
 
   def test_interpolate(self):
-    maker = CrossSectionMaker(4)
+    maker = cross_section_generator(4)
 
     spl0 = maker.make_disc(.5, .5, 0)
     spl1 = maker.make_disc(2, 2, 0) + np.array([0, 0, 3])[None]

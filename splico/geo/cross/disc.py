@@ -80,34 +80,7 @@ def nutils_to_scipy(mat) -> sparse.csr_matrix:
   return sparse.csr_matrix(data, dtype=float)
 
 
-class CrossSectionMakerMeta(SingletonMeta):
-
-  """
-  Metaclass for the CrossSectionMaker class.
-  Since the CrossSectionMaker class is a Singleton, type coercion needs to
-  be performed before the class is instantiated. This is done by the metaclass.
-  """
-
-  def __call__(cls, kv0: UnivariateKnotVector | Int,
-                    kv1: UnivariateKnotVector | Int | None = None,
-                    kv2: UnivariateKnotVector | Int | None = None,
-                    reparam: bool = True,
-                    inner_height: Float = .5,
-                    inner_width: Float = .5):
-    if isinstance(kv0, Int):
-      kv0 = UnivariateKnotVector(np.linspace(0, 1, kv0+1), degree=3)
-    if isinstance(kv1, Int):
-      kv1 = UnivariateKnotVector(np.linspace(0, 1, kv1+1), degree=3)
-    elif kv1 is None:
-      kv1 = kv0
-    if isinstance(kv2, Int):
-      kv2 = UnivariateKnotVector(np.linspace(0, 1, kv2+1), degree=3)
-    elif kv2 is None:
-      kv2 = kv0
-    return super().__call__(kv0, kv1, kv2, reparam, inner_height, inner_width)
-
-
-class CrossSectionMaker(Singleton, metaclass=CrossSectionMakerMeta):
+class CrossSectionGenerator(Singleton):
 
   # TODO: docstring
 
@@ -350,10 +323,27 @@ class CrossSectionMaker(Singleton, metaclass=CrossSectionMakerMeta):
 
 
 @lru_cache
-def make_CrossSectionMaker(nelems: Int, degree: Int = 3, reparam: bool = True):
+def cross_section_generator(nelems: Int, degree: Int = 3, reparam: bool = True):
   kv0 = kv1 = kv2 = UnivariateKnotVector(np.linspace(0, 1, nelems+1),
                                          degree=degree)
-  return CrossSectionMaker(kv0, kv1, kv2, reparam=reparam)
+  return CrossSectionGenerator(kv0, kv1, kv2, reparam=reparam)
+
+
+def cross_section_generator(kv0: UnivariateKnotVector | Int,
+                            kv1: UnivariateKnotVector | Int | None = None,
+                            kv2: UnivariateKnotVector | Int | None = None,
+                            **kwargs):
+  if isinstance(kv0, Int):
+    kv0 = UnivariateKnotVector(np.linspace(0, 1, kv0+1), degree=3)
+  if isinstance(kv1, Int):
+    kv1 = UnivariateKnotVector(np.linspace(0, 1, kv1+1), degree=3)
+  elif kv1 is None:
+    kv1 = kv0
+  if isinstance(kv2, Int):
+    kv2 = UnivariateKnotVector(np.linspace(0, 1, kv2+1), degree=3)
+  elif kv2 is None:
+    kv2 = kv0
+  return CrossSectionGenerator(kv0, kv1, kv2, **kwargs)
 
 
 @lru_cache(maxsize=32)
@@ -361,5 +351,5 @@ def ellipse(a: Numeric, b: Numeric, nelems: Int, degree: Int = 3,
                                                  reparam: bool = True):
   kv0 = kv1 = kv2 = UnivariateKnotVector(np.linspace(0, 1, nelems+1),
                                          degree=degree)
-  maker = CrossSectionMaker(kv0, kv1, kv2, reparam=reparam)
+  maker = CrossSectionGenerator(kv0, kv1, kv2, reparam=reparam)
   return maker.make_disc(a, b)
