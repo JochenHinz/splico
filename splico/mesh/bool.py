@@ -13,11 +13,12 @@ from ._bool import make_numba_indexmap, _remap_elements, \
                    renumber_elements_from_indexmap as renumber_elements, \
                    _make_matching
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, List
 from functools import lru_cache
 from itertools import product
 
 from scipy.spatial import cKDTree
+from numpy.typing import NDArray
 
 
 if TYPE_CHECKING:

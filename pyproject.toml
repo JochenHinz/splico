@@ -17,6 +17,9 @@ dependencies = [
 ]
 dynamic = ["description", "version"]
 
+[tool.mypy]
+ignore_missing_imports = true
+
 # [project.optional-dependencies]
 # visualization = ["pyvista >=0.44.1, <1"]
 

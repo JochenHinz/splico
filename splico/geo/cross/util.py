@@ -1,6 +1,6 @@
 from splico.util import np, _
 
-from typing import Mapping
+from typing import Dict
 
 from numba import njit
 
@@ -21,7 +21,7 @@ def apply_pairs(ret, list_of_pairs):
   return ret
 
 
-def reflect_kv_dict(kvdict: Mapping) -> Mapping:
+def reflect_kv_dict(kvdict: Dict) -> Dict:
   return {**kvdict, **{k[::-1]: -kv for k, kv in kvdict.items()}}
 
 

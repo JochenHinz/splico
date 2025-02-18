@@ -20,12 +20,12 @@ class TestInterpolation(unittest.TestCase):
 
     with self.subTest('Cubic Hermite interpolation.'):
       test = linear_interpolation(spl0, spl1)
-      mesh = mesh_union(*(mymesh.sample_mesh(sample_mesh) for mymesh in test), boundary=True)
+      mesh = mesh_union(*test.sample_mesh(sample_mesh), boundary=True)
       mesh.plot()
 
     with self.subTest('Cubic Hermite interpolation.'):
       test = cubic_hermite_interpolation(spl0, spl1, np.array([0, 0, 3]), np.array([0, 0, 3]))
-      mesh = mesh_union(*(mymesh.sample_mesh(sample_mesh) for mymesh in test), boundary=True)
+      mesh = mesh_union(*test.sample_mesh(sample_mesh), boundary=True)
       mesh.plot()
 
 

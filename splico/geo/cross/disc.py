@@ -4,10 +4,10 @@ from .util import infer_knotvectors
 
 from splico.spl import UnivariateKnotVector, NDSpline, NDSplineArray
 from splico.util import np, frozen, _
-from splico.types import NanVec, Float, Int, Numeric, SingletonMeta, Singleton
+from splico.types import NanVec, Float, Int, Numeric, Singleton
 
 from functools import lru_cache, cached_property
-from typing import List
+from typing import Optional
 
 from scipy.sparse import linalg as splinalg
 from scipy import sparse
@@ -197,7 +197,7 @@ class CrossSectionGenerator(Singleton):
     return splinalg.splu(nutils_to_scipy(self.domain.integrate(
                          function.outer(self.basis) * J(self.controlmap), degree=10)).tocsc())
 
-  def boundary_correspondence(self, a: Numeric, b: Numeric, theta: Numeric = 0) -> NDSpline | NDSplineArray | List[np.ndarray]:
+  def boundary_correspondence(self, a: Numeric, b: Numeric, theta=0):
     x, y = self.geom
     theta = theta % (2 * np.pi)
 
@@ -256,7 +256,7 @@ class CrossSectionGenerator(Singleton):
 
   def make_disc(self, a: Numeric, b: Numeric, theta: Numeric = 0,
                                               rot: Numeric = 0,
-                                              return_type: str = None):
+                                              return_type: Optional[str] = None):
 
     if return_type is None:
       if self.is_NDSpline:
@@ -320,13 +320,6 @@ class CrossSectionGenerator(Singleton):
     return NDSplineArray([NDSpline(kv, np.concatenate([arr, np.zeros(len(arr))[:, _]], axis=1))
                           for kv, arr in zip(self.knotvectors, solution)
                           ]).contract_all()
-
-
-@lru_cache
-def cross_section_generator(nelems: Int, degree: Int = 3, reparam: bool = True):
-  kv0 = kv1 = kv2 = UnivariateKnotVector(np.linspace(0, 1, nelems+1),
-                                         degree=degree)
-  return CrossSectionGenerator(kv0, kv1, kv2, reparam=reparam)
 
 
 def cross_section_generator(kv0: UnivariateKnotVector | Int,

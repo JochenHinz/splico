@@ -1,4 +1,4 @@
-from splico.geo import CrossSectionMaker, compute_notwistframe_from_spline
+from splico.geo import cross_section_generator, compute_notwistframe_from_spline
 from splico.mesh import rectilinear, mesh_union
 from splico.spl import UnivariateKnotVector, TensorKnotVector
 from splico.util import np, _
@@ -22,7 +22,7 @@ class TestNoTwist(unittest.TestCase):
 
     self.assertTrue( all( (np.abs(np.linalg.det(R)) - 1) < 1e-10 for R in Rs ) )
 
-    maker = CrossSectionMaker(4)
+    maker = cross_section_generator(4)
 
     disc = maker.make_disc(1, 1, 0)
     print(disc)

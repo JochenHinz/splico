@@ -1,6 +1,7 @@
 """
 Module defining knotvectors. The main objects are :class:`UnivariateKnotVector`
 and :class:`TensorKnotVector`. The latter is a vectorized version of the former.
+
 @author: Jochen Hinz
 """
 
@@ -243,7 +244,7 @@ class UnivariateKnotVector(Immutable):
     """
     return self.integrate(dx=2)
 
-  def __mul__(self, other):
+  def __mul__(self, other: Any):
     """
     Multiplying by :class:`UnivariateKnotVector` or :class:`TensorKnotVector`
     yields a :class:`TensorKnotVector`.
@@ -258,12 +259,12 @@ class UnivariateKnotVector(Immutable):
     assert isinstance(other, TensorKnotVector)
     return TensorKnotVector([*other, self])
 
-  def __pow__(self, other: Any) -> Self:
+  def __pow__(self, other: Any) -> 'TensorKnotVector':
     if isinstance(other, Int):
       return TensorKnotVector([self] * other)
     return NotImplemented
 
-  def to_tensor(self):
+  def to_tensor(self) -> 'TensorKnotVector':
     return TensorKnotVector([self])
 
   @ensure_same_class
@@ -451,7 +452,7 @@ class TensorKnotVector(Immutable, metaclass=TensorKnotVectorMeta):
   @property
   def ndofs(self) -> np.integer:
     """ Total number of DOFs. """
-    return np.prod(self.dim).astype(int)
+    return np.prod(self.dim, dtype=int)
 
   def __len__(self) -> int:
     return self.ndim

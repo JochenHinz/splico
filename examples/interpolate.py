@@ -3,12 +3,13 @@ from splico.spl import NDSpline, NDSplineArray, as_NDSplineArray
 from splico.mesh import rectilinear, mesh_union
 
 import numpy as np
+from numpy.typing import ArrayLike
 
 
 Spline = NDSpline | NDSplineArray
 
 
-def main(spl0: Spline, spl1: Spline, t0: np.ndarray, t1=None) -> None:
+def main(spl0: Spline, spl1: Spline, t0: ArrayLike, t1=None) -> None:
   """
     Perform a linear interpolation and a cubic hermite interpolation between
     `spl0` and `spl1`.

@@ -16,8 +16,7 @@ class TestDisc(unittest.TestCase):
       with self.subTest('Evaluating in {n} x {n} points'):
         rmesh = rectilinear([n, n])
 
-        all_meshes = [spl.sample_mesh(rmesh) for spl in sol]
-        mesh = mesh_union(*all_meshes, boundary=True)
+        mesh = mesh_union(*sol.sample_mesh(rmesh), boundary=True)
 
         # 5 faces, 12 edges, 8 vertices
         npoints = 5 * (n-2)**2 + 12 * (n-2) + 8

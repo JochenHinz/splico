@@ -3,16 +3,17 @@ from splico.spl import UnivariateKnotVector
 from .util import reflect_kv_dict, apply_pairs
 
 import itertools
-from typing import Tuple, Sequence, Dict
+from typing import Tuple, Dict
 
 import treelog as log
 from nutils import numeric, transform, transformseq, _util as util, \
                    topology, types, function
 from numba.typed import List
+from numpy.typing import ArrayLike
 
 
 @log.withcontext
-def multipatch(patches: Sequence[Sequence[int]],
+def multipatch(patches: ArrayLike,
                knotvectors: Dict[Tuple[int, int], UnivariateKnotVector],
                patchverts=None, space='X'):
   knotvectors = reflect_kv_dict(knotvectors)
@@ -62,7 +63,7 @@ def multipatch(patches: Sequence[Sequence[int]],
     shape = []
     for dim in range(ndims):
       nelems_sides = []
-      sides = [(0, 1)]*ndims
+      sides: List[Tuple, slice] = [(0, 1)]*ndims
       sides[dim] = slice(None),
       for side in itertools.product(*sides):
         # sideverts = frozenset(patch[side])
@@ -125,13 +126,13 @@ def basis_spline(self, knotvectors: Dict[Tuple[int, int], UnivariateKnotVector],
   missing = object()
 
   coeffs = []
-  dofmap = []
+  dofmap: List[types.frozenarray] = []
   dofcount = 0
-  commonboundarydofs = {}
+  commonboundarydofs: Dict[Tuple[int, ...], List[np.ndarray]] = {}
   for ipatch, (topo, verts) in enumerate(zip(self._topos, self._connectivity)):
     # build structured spline basis on patch `patch.topo`
-    patchknotvalues = []
-    patchknotmultiplicities = []
+    patchknotvalues: List[set] = []
+    patchknotmultiplicities: List[set] = []
     for idim in range(self.ndims):
       left = tuple(0 if j == idim else slice(_) for j in range(self.ndims))
       right = tuple(1 if j == idim else slice(_) for j in range(self.ndims))
@@ -141,15 +142,15 @@ def basis_spline(self, knotvectors: Dict[Tuple[int, int], UnivariateKnotVector],
         v = knotvalues[edge]
         m = knotmultiplicities[edge]
         if v is missing:
-          raise 'missing edge'
+          raise KeyError('missing edge')
         dimknotvalues.add(v)
         if m is missing:
-          raise 'missing edge'
+          raise KeyError('missing edge')
         dimknotmultiplicities.add(m)
       if len(dimknotvalues) != 1:
-        raise 'ambiguous knot values for patch {}, dimension {}'.format(ipatch, idim)
+        raise ValueError('ambiguous knot values for patch {}, dimension {}'.format(ipatch, idim))
       if len(dimknotmultiplicities) != 1:
-        raise 'ambiguous knot multiplicities for patch {}, dimension {}'.format(ipatch, idim)
+        raise ValueError('ambiguous knot multiplicities for patch {}, dimension {}'.format(ipatch, idim))
       patchknotvalues.extend(dimknotvalues)
       patchknotmultiplicities.extend(dimknotmultiplicities)
     patchcoeffs, patchdofmap, patchdofcount = \

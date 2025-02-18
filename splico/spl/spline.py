@@ -1,5 +1,5 @@
 """
-Module defining the NDSpline class and related functions.
+Module defining the NDSpline and NDSplineArray classes and related functions.
 
 @author: Jochen Hinz
 """
@@ -246,11 +246,11 @@ class NDSpline(ArrayLike, metaclass=NDSplineMeta):
   raise_multiplicities: Callable
 
   # properties inherited from `self.knotvector`
-  km: Tuple
-  knots: Tuple
-  degree: Tuple
-  greville: Tuple
-  repeated_knots: Tuple
+  km: tuple
+  knots: tuple
+  degree: tuple
+  greville: tuple
+  repeated_knots: tuple
 
   @classmethod
   def one(cls, knotvector, shape=()):
@@ -418,6 +418,14 @@ class NDSpline(ArrayLike, metaclass=NDSplineMeta):
       item = item,
     return self._edit(controlpoints=self.controlpoints[(sl,) + item])
 
+  def reshape(self, *shape) -> Self:
+    """
+    Reshape the NDSpline.
+    """
+    if len(shape) == 1 and not isinstance(shape[0], Int):
+      shape, = shape
+    return self._edit(controlpoints=self.controlpoints.reshape(len(self.controlpoints), *shape))
+
   @property
   def ndim(self):
     """ Dimensionality of the spline (not the number of dependencies). """
@@ -477,9 +485,9 @@ class NDSpline(ArrayLike, metaclass=NDSplineMeta):
     """
     return self.__class__(self.knotvector, np.moveaxis(self.controlpoints.T, -1, 0))
 
-  def sample_mesh(self, mesh: Mesh):
+  def sample_mesh(self, mesh: Mesh) -> NDArray:
     """
-    Sample a mesh from `self`.
+    Sample meshes from `self`.
 
     Parameters
     ----------
@@ -493,15 +501,19 @@ class NDSpline(ArrayLike, metaclass=NDSplineMeta):
 
     Returns
     -------
-    sampled_mesh: :class:`splico.mesh.Mesh`
-        The sampled mesh. Has the same type as `mesh`.
+    sampled_mesh: :class:`np.ndarray` of type :class:`splico.mesh.Mesh`
+        The sampled meshes of shape `self.shape[:-1]`. Each element has the
+        same type as `mesh` and is sampled from the corresponding spline in `self`.
     """
-    assert self.shape == (3,), 'Mesh export requires the target space to be R^3.'
+    assert self.shape[-1] == 3
     assert 0 < self.nvars == mesh.ndims <= 3
+
+    self = self.reshape(-1, 3)
+
     points = self(*mesh.points.T[:self.nvars])
-    if points.shape[1:] != (3,):
-      points = augment_by_zeros(points, axis=1)
-    return mesh._edit(points=points)
+    meshes = [mesh._edit(points=augment_by_zeros(ps, axis=1)) for ps in points.swapaxes(0, 1)]
+
+    return np.atleast_1d(np.array(meshes, dtype=object).reshape(self.shape[:-1]))
 
   def split(self, direction: Int, position: Int) -> Tuple[Self, Self]:
     """
@@ -710,11 +722,11 @@ def _vectorize_first_axis(op: Callable, pivot: Int,
 
 
 @lru_cache
-def sample_mesh_from_knotvector(tkv: TensorKnotVector, n: Int | Sequence[Int]) -> Mesh:
+def sample_mesh_from_knotvector(tkv: TensorKnotVector, n: Int | AnyIntSeq) -> Mesh:
   """
   Create a sampling mesh from a knotvector.
   """
-  if np.isscalar(n):
+  if isinstance(n, Int):
     n = (n,) * tkv.ndim
   assert len(n) == tkv.ndim
 
@@ -820,7 +832,7 @@ class NDSplineArray(ArrayLike):
   #       that can directly interact with IGA solvers (such as nutils)
   #       for more sophisticated spline operations.
 
-  def __init__(self, arr: NDArray | NDSpline | Sequence[NDSpline]):
+  def __init__(self, arr: NDSpline | Sequence[NDSpline]):
     self.arr = frozen(arr, dtype=NDSpline)
     self._shape = self.arr.shape
     self._elemshape = self.arr.ravel()[0].shape
@@ -835,12 +847,11 @@ class NDSplineArray(ArrayLike):
   __repr__ = NDSpline.__repr__
 
   @cached_property
-  def knotvector(self) -> NDArray[TensorKnotVector]:
+  def knotvector(self) -> NDArray:
     """
     Return an array of :class:`TensorKnotVector` objects.
     """
-    return frozen(np.array([ elem.knotvector for elem in self.arr.ravel() ],
-                           dtype=object).reshape(self.arr.shape), dtype=object)
+    return frozen(np.vectorize(lambda x: x.knotvector, otypes=[object])(self.arr))
 
   @cached_property
   def nvars(self) -> int:
@@ -865,7 +876,7 @@ class NDSplineArray(ArrayLike):
     Create a NDSplineArray with all elements being the constant one function
     from a given NDSplineArray.
     """
-    return cls.one(arr.knotvectors, shape=arr.shape)
+    return cls.one(arr.knotvector, shape=arr.shape)
 
   @property
   def shape(self) -> Tuple[int, ...]:
@@ -892,7 +903,6 @@ class NDSplineArray(ArrayLike):
     into the shape of the array. The dimension of the element's target space
     will be reduced by ``n`` while the dimension of ``self.arr`` is increased by
     ``n``.
-    If ``n == -1``, all layers are peeled off.
     """
     assert (n := int(n)) >= 0
     if n == 0 or not self._elemshape:
@@ -1114,10 +1124,8 @@ class NDSplineArray(ArrayLike):
                                                           self.shape[:-1])
     _self = self.expand(len(self._elemshape) - 1)
 
-    sampled_meshes = [elem.sample_mesh(mesh) for elem, mesh
-                         in zip(_self.arr.ravel(), sample_meshes.ravel())]
-
-    return np.array(sampled_meshes, dtype=Mesh).reshape(self.shape[:-1])
+    return np.vectorize(lambda elem, mesh: elem.sample_mesh(mesh).item(),
+                        otypes=[Mesh])(_self.arr, sample_meshes)
 
   def quick_sample(self, n=11) -> NDArray:
     """

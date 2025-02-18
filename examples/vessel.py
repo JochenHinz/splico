@@ -26,8 +26,7 @@ def main(nelems_centerline, nelems_cross_section, radii, centerline_points):
   """
 
   # make a knotvector with the specified number of elements
-  kv = UnivariateKnotVector(np.linspace(0, 1, nelems_centerline))
-  kv = TensorKnotVector([kv])
+  kv = UnivariateKnotVector(np.linspace(0, 1, nelems_centerline)).to_tensor()
 
   assert centerline_points.shape[1:] == (3,)
   assert radii.shape == centerline_points.shape[:1]
