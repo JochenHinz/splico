@@ -15,7 +15,7 @@ from .kv import UnivariateKnotVector, TensorKnotVector, as_TensorKnotVector, \
 from .aux import tensorial_prolongation_matrix
 from .meta import NDSplineMeta
 
-from typing import Sequence, Callable, Tuple, Self, List, Any, TypeVar
+from typing import Sequence, Callable, Tuple, Self, List, Any, TypeVar, Protocol
 from types import GenericAlias
 from functools import reduce, wraps, cached_property, lru_cache, partial
 from itertools import product
@@ -125,7 +125,8 @@ def canonicalize_sum_args(fn: Callable) -> Callable:
   return wrapper
 
 
-class ArrayLike(Immutable, NDArrayOperatorsMixin):
+# we add underscore to distinguish from `np.typing.ArrayLike`
+class _ArrayLike(Immutable, NDArrayOperatorsMixin):
   """
   Base class for array-like objects.
   Requires at least the following methods to be implemented explicitly:
@@ -143,32 +144,37 @@ class ArrayLike(Immutable, NDArrayOperatorsMixin):
   @property
   @abstractmethod
   def shape(self) -> Tuple[int, ...]:
-    pass
+    ...
 
   @abstractmethod
   def __getitem__(self, item: NumpyIndex | MultiNumpyIndex):
-    pass
+    ...
 
   @abstractmethod
   @canonicalize_sum_args
   def sum(self, axis) -> Self:
-    pass
+    ...
 
   @abstractmethod
   def __iter__(self):
-    pass
+    ...
 
   @abstractmethod
   def __array_ufunc__(self, ufunc: np.ufunc, method: str, *inputs, **kwargs):
-    pass
+    ...
+
+
+class Spline(_ArrayLike):
+
+  knotvector: KnotVectorType | NDArray[np.object_]
 
 
 # register `np.ndarray` as an `ArrayLike` because it is deemed a valid
 # substitute for `ArrayLike` in many cases
-ArrayLike.register(np.ndarray)
+_ArrayLike.register(np.ndarray)
 
-T0 = TypeVar('T0', ArrayLike, np.ndarray)
-T1 = TypeVar('T1', ArrayLike, np.ndarray)
+T0 = TypeVar('T0', _ArrayLike, np.ndarray)
+T1 = TypeVar('T1', _ArrayLike, np.ndarray)
 
 
 def _add_one_axes(inp0: T0, inp1: T1) -> Tuple[T0, T1]:
@@ -180,7 +186,7 @@ def _add_one_axes(inp0: T0, inp1: T1) -> Tuple[T0, T1]:
   return inp0[(_,) * (m - n)], inp1[(_,) * (n - m)]  # (_,) * negative == ()
 
 
-def find_first_occurence(inputs: Sequence[ArrayLike], item) -> int:
+def find_first_occurence(inputs: Sequence[_ArrayLike], item) -> int:
   for i, elem in enumerate(inputs):
     if elem is item:
       return i
@@ -188,7 +194,7 @@ def find_first_occurence(inputs: Sequence[ArrayLike], item) -> int:
     raise ValueError(f"Item {item} not found in inputs.")
 
 
-class NDSpline(ArrayLike, metaclass=NDSplineMeta):
+class NDSpline(Spline, metaclass=NDSplineMeta):
   """
   Class representing an N-dimensional spline.
 
@@ -238,6 +244,9 @@ class NDSpline(ArrayLike, metaclass=NDSplineMeta):
   >>> spline.controlpoints + A
   ... ERROR
   """
+
+  knotvector: TensorKnotVector
+  controlpoints: FloatArray
 
   # methods inherited from `self.knotvector` via the metaclass
   refine: Callable
@@ -307,6 +316,13 @@ class NDSpline(ArrayLike, metaclass=NDSplineMeta):
     self.knotvector = as_TensorKnotVector(knotvector)
     self.controlpoints = frozen(_round_array(controlpoints), dtype=float)
     assert self.controlpoints.shape[0] == self.knotvector.ndofs
+
+  @cached_property
+  def controlpoints_T(self) -> FloatArray:
+    """
+    Transposed controlpoints.
+    """
+    return np.ascontiguousarray(np.moveaxis(self.controlpoints, 0, -1))
 
   def __repr__(self) -> str:
     return f"{self.__class__.__name__}<{', '.join(map(str, self.shape))}>"
@@ -388,7 +404,7 @@ class NDSpline(ArrayLike, metaclass=NDSplineMeta):
     assert all( pos.ndim == 1 for pos in positions )
 
     # reshape to matrix shape, if self.shape == (), np.prod((), dtype=int) == 1
-    controlpoints = self.controlpoints.reshape(-1, np.prod(self.shape, dtype=int))
+    controlpoints = self.controlpoints_T.reshape(np.prod(self.shape, dtype=int), -1)
 
     # if not evaluated tensorially, stack along first axis
     # if length don't match, we get an error here
@@ -462,12 +478,12 @@ class NDSpline(ArrayLike, metaclass=NDSplineMeta):
     >>> spl1.controlpoints.shape
     ... (54, 2)
     """
-    assert all(ax > -self.ndim for ax in axis)
+    assert all(-self.ndim <= ax < self.ndim for ax in axis)
+    assert len(axis) <= self.ndim
 
     # increment all summation axes by one in order to apply summation to
     # self.controlpoint's tail.
     axis = tuple(ax % self.ndim + 1 for ax in axis)
-    assert len(axis) <= self.ndim
     return self._edit(controlpoints=np.sum(self.controlpoints, axis=axis))
 
   @property
@@ -722,20 +738,16 @@ def _vectorize_first_axis(op: Callable, pivot: Int,
 
 
 @lru_cache
-def sample_mesh_from_knotvector(tkv: TensorKnotVector, n: Int | AnyIntSeq) -> Mesh:
+def sample_mesh_from_knotvector(tkv: TensorKnotVector, n: Tuple[Int]) -> Mesh:
   """
   Create a sampling mesh from a knotvector.
   """
-  if isinstance(n, Int):
-    n = (n,) * tkv.ndim
   assert len(n) == tkv.ndim
-
   ranges = [(kv.knotvalues[0], kv.knotvalues[-1]) for kv in tkv]
-
   return rectilinear([np.linspace(*r, num) for r, num in zip(ranges, n)])
 
 
-class NDSplineArray(ArrayLike):
+class NDSplineArray(Spline):
   """
   Array of splines.
   The knotvectors of all splines may differ but each spline must have the same
@@ -832,7 +844,7 @@ class NDSplineArray(ArrayLike):
   #       that can directly interact with IGA solvers (such as nutils)
   #       for more sophisticated spline operations.
 
-  def __init__(self, arr: NDSpline | Sequence[NDSpline]):
+  def __init__(self, arr: NDArray[np.object_] | NDSpline | Sequence[NDSpline]):
     self.arr = frozen(arr, dtype=NDSpline)
     self._shape = self.arr.shape
     self._elemshape = self.arr.ravel()[0].shape
@@ -972,7 +984,8 @@ class NDSplineArray(ArrayLike):
 
     arr = self.arr
     if tail:  # skip this step if no tail is present to avoid overhead
-      arr = np.vectorize(lambda el: el.sum(*tail))(arr)  # sum each element
+      sm = tuple(i - self._ndim for i in tail)
+      arr = np.vectorize(lambda el: el.sum(*sm))(arr)  # sum each element
 
     return self.__class__(arr.sum(head))
 
@@ -1127,10 +1140,15 @@ class NDSplineArray(ArrayLike):
     return np.vectorize(lambda elem, mesh: elem.sample_mesh(mesh).item(),
                         otypes=[Mesh])(_self.arr, sample_meshes)
 
-  def quick_sample(self, n=11) -> NDArray:
+  def quick_sample(self, n: Int | AnyIntSeq = 11) -> NDArray:
     """
     Sample ``n`` points along the knotvector's range in each direction.
     """
+
+    if isinstance(n, Int):
+      n = (n,) * self.nvars
+    assert len(n) == self.nvars
+
     sample_meshes = np.broadcast_to(
       np.vectorize(partial(sample_mesh_from_knotvector, n=n))(self.knotvector),
       self.shape[:-1])

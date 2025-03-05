@@ -251,7 +251,8 @@ class TestNDSplineArray(unittest.TestCase):
       tkv = TensorKnotVector([kv] * i)
       for ndim in range(5):
         data = np.random.randn(*((tkv.ndofs,) + (3,) * ndim))
-        B = NDSplineArray(NDSpline(tkv, data))
+        spl = NDSpline(tkv, data)
+        B = NDSplineArray(spl)
         C = B.expand_all()
         for j in range(ndim):
           for k in range(j):
@@ -259,6 +260,7 @@ class TestNDSplineArray(unittest.TestCase):
             random.shuffle(indices)
             indices = tuple(indices[:k])
             self.assertTrue((C.arr.sum(indices) == B.sum(indices).expand_all().arr).all())
+            self.assertTrue(B.sum(indices).contract_all().arr.ravel()[0] == spl.sum(indices))
           B = B.expand()
 
 

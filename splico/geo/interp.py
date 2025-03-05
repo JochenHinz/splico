@@ -123,7 +123,8 @@ def cubic_hermite_interpolation(spl0: NDSplineArray,
 
   one = spl0.one(spl0.knotvector)
 
-  return spl0 * f0 + ((one * t0[_]) * f1) + spl1 * f2 + ((one * t1[_]) * f3)
+  # Interpolation along the last axis. One axes are appended to `t_i` automatically.
+  return spl0 * f0 + one * t0 * f1 + spl1 * f2 + one * t1 * f3
 
 
 # XXX: for Fabio - implement Hermite with nonconstant tangent vectors.

@@ -13,12 +13,12 @@ from ._bool import make_numba_indexmap, _remap_elements, \
                    renumber_elements_from_indexmap as renumber_elements, \
                    _make_matching
 
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING
 from functools import lru_cache
 from itertools import product
 
 from scipy.spatial import cKDTree
-from numpy.typing import NDArray
+from scipy.sparse import csr_matrix
 
 
 if TYPE_CHECKING:
@@ -158,7 +158,14 @@ def compute_distance_matrix(mesh0: 'Mesh', mesh1: 'Mesh', eps: float = 1e-6):
   tree0 = _compute_kdtree(mesh0)
   tree1 = _compute_kdtree(mesh1)
 
-  mat = tree0.sparse_distance_matrix(tree1, max_distance=eps).tocsr()
+  mat = tree0.sparse_distance_matrix(tree1, max_distance=eps).tocsr().tocoo().tocsr()
+
+  data1 = mat.data.copy()
+  data1[:] = 1
+  mat1 = csr_matrix((data1, mat.indices, mat.indptr), shape=mat.shape)
+
+  if (mat1.sum(0) > 1.5).any() or (mat1.sum(1) > 1.5).any():
+    raise ValueError("More than one point is closer than the matching tolerance. Reduce the tolerance.")
 
   return mat.data, mat.indices, mat.indptr
 
@@ -168,6 +175,24 @@ def make_matching(mesh0: 'Mesh', mesh1: 'Mesh', eps: float = 1e-8) -> IntArray:
   Make a matching of two meshes' points based on proximity.
   """
   return _make_matching(*compute_distance_matrix(mesh0, mesh1, eps))
+
+
+def make_matching_(mesh0: 'Mesh', mesh1: 'Mesh', eps: float = 1e-8) -> IntArray:
+  """
+  Make a matching of two meshes' points based on proximity.
+  """
+  tree0 = _compute_kdtree(mesh0)
+  tree1 = _compute_kdtree(mesh1)
+
+  mat = tree0.sparse_distance_matrix(tree1, max_distance=eps).tocsr()
+
+  data1 = mat.data.copy()
+  data1[:] = 1
+  mat1 = csr_matrix((data1, mat.indices, mat.indptr), shape=mat.shape)
+
+  if (mat1.sum(0) > 1.5).any() or (mat1.sum(1) > 1.5).any():
+    raise ValueError("More than one point is closer than the matching tolerance. Reduce the tolerance.")
+  return np.stack(mat1.tocoo().coords, axis=1)
 
 
 def match_active(mesh0: 'Mesh', mesh1: 'Mesh', eps: float = 1e-8) -> IntArray:
@@ -261,9 +286,14 @@ def mesh_union(*meshes: 'Mesh', eps: float = 1e-6,
 
   # concatenate all points
   all_points = np.concatenate([mesh.points for mesh in meshes])
+  all_points[all_points == -0] = 0
+  # unique_points = np.unique(all_points, axis=0)
 
   # remap the elements from the matches
   elements, points = _remap_elements(all_elements, all_points, all_matches)
+
+  # if not points.shape == unique_points.shape:
+  #   raise AssertionError("_remap_elements returned points with wrong shape.")
 
   # create the new mesh object from the remapped elements and points
   ret = rt(elements, points)

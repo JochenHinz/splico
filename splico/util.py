@@ -291,3 +291,22 @@ def sorted_tuple(tpl):
   Return a tuple with sorted elements.
   """
   return tuple(sorted(tpl))
+
+
+""" rotation matrices """
+
+
+def rot_mat(angle: float, axis: np.ndarray):
+  assert axis.ndim == 1
+
+  axis = normalize(axis)
+  n = len(axis)
+
+  if n == 2:
+    return np.array([[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]])
+  elif n == 3:
+    return np.cos(angle) * np.eye(3) + \
+           np.sin(angle) * np.cross(np.eye(3), axis) + \
+           (1 - np.cos(angle)) * np.outer(axis, axis)
+  else:
+    raise NotImplementedError('Only 2D and 3D rotations are supported.')

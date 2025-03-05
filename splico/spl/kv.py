@@ -24,6 +24,12 @@ from scipy.sparse import linalg as splinalg
 from numpy.typing import NDArray
 
 
+# TODO: In the long run it would be nice to have a more general NDKnotVector
+# where we don't make the distinction between univariate and tensorial knotvectors
+# anymore. This would also allow for a more general approach to the tensorial
+# product of knotvectors.
+
+
 # XXX: I would like to use functools.total_ordering but it is slightly out of
 #      place here because two knotvectors can simultaneously satisfy a < b is
 #      False and b < a is False.

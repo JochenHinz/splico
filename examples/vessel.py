@@ -1,6 +1,6 @@
 from splico.geo import cross_section_generator, compute_notwistframe_from_spline
 from splico.mesh import rectilinear, mesh_union
-from splico.spl import UnivariateKnotVector, TensorKnotVector
+from splico.spl import UnivariateKnotVector
 from splico.util import np, _, clparam
 
 
@@ -40,7 +40,7 @@ def main(nelems_centerline, nelems_cross_section, radii, centerline_points):
   # compute the notwistframe rotation matrices
   Rs = compute_notwistframe_from_spline(X, xi)
 
-  maker = cross_section_generator(nelems_cross_section)
+  maker = cross_section_generator(nelems_cross_section + 10)
 
   # make the cross section of radius one
   disc = maker.make_disc(1, 1, 0, return_type='NDSplineArray')  # return as array
@@ -80,4 +80,5 @@ if __name__ == '__main__':
   centerline_points = np.stack([r * np.cos(4 * np.pi * xi),
                                 r * np.sin(4 * np.pi * xi),
                                 100 * xi], axis=1)
+
   main(40, 4, radii, centerline_points)

@@ -479,7 +479,7 @@ def _callND(Xi, list_of_knotvectors, degrees, controlpoints, derivatives, into):
 
   assert Xi.shape[0] == into.shape[0]
   nentries, naxes = into.shape
-  assert controlpoints.shape[1:] == (naxes,)
+  assert controlpoints.shape[:1] == (naxes,)
 
   # make len(list_of_knotvectors) - length homogeneous container containing
   # temporary `into` arrays
@@ -500,7 +500,7 @@ def _callND(Xi, list_of_knotvectors, degrees, controlpoints, derivatives, into):
     element_indices[:, i] = position_in_knotvector(mykv, xi)
 
   for iaxis in prange(naxes):
-    x = controlpoints[:, iaxis]
+    x = controlpoints[iaxis]
     myinto = container[iaxis]
 
     for i in range(nentries):
@@ -556,9 +556,9 @@ def call(Xi,
                                   == len(dx)
 
   if into is None:
-    into = np.zeros(Xi.shape[:1] + controlpoints.shape[1:], dtype=np.float64)
+    into = np.zeros(Xi.shape[:1] + controlpoints.shape[:1], dtype=np.float64)
 
-  assert into.shape == Xi.shape[:1] + controlpoints.shape[1:]
+  assert into.shape == Xi.shape[:1] + controlpoints.shape[:1]
 
   _callND(Xi,
           List(list_of_knotvectors),
@@ -597,7 +597,7 @@ def _tensor_callND(list_of_xis, list_of_knotvectors, degrees, controlpoints, der
   This version is parallelized along the `naxes` coordinate.
   """
   nentries, naxes = into.shape
-  assert controlpoints.shape[1:] == (naxes,)
+  assert controlpoints.shape[:1] == (naxes,)
 
   # shape of the entries in each direction
   entry_shape = np.empty(len(list_of_xis), dtype=np.int64)
@@ -639,7 +639,7 @@ def _tensor_callND(list_of_xis, list_of_knotvectors, degrees, controlpoints, der
   container = [np.zeros((nentries,), dtype=np.float64) for _ in range(naxes)]
 
   for iaxis in prange(naxes):
-    x = controlpoints[:, iaxis]
+    x = controlpoints[iaxis]
     myinto = container[iaxis]
 
     for i in range(nentries):
@@ -698,7 +698,7 @@ def tensor_call(list_of_abscissae,
                                 == len(dx)
 
   shape = tuple(map(len, list_of_abscissae))
-  return_shape = (np.prod(shape, dtype=int),) + controlpoints.shape[1:]
+  return_shape = (np.prod(shape, dtype=int),) + controlpoints.shape[:1]
   if into is None:
     into = np.zeros(return_shape, dtype=np.float64)
 

@@ -41,7 +41,7 @@ class TestNoTwist(unittest.TestCase):
 
     eval_mesh = rectilinear([5, 5, 101])
 
-    mesh = mesh_union(*(v.sample_mesh(eval_mesh) for v in vessel), boundary=True)
+    mesh = mesh_union(*vessel.sample_mesh(eval_mesh), boundary=True)
 
     mesh.plot()
 

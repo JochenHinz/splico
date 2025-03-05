@@ -204,7 +204,7 @@ def _make_matching(V, col_index, row_index):
     return np.empty((0, 2), dtype=np.int64)
 
   # make set of available right matches
-  matched = np.zeros(col_index.max(), dtype=np.bool_)
+  matched = set()
 
   match0, match1 = [], []
 
@@ -217,9 +217,10 @@ def _make_matching(V, col_index, row_index):
 
     for index, distance in zip(col_index[row_start: row_end],
                                V[row_start: row_end]):
-      # index already matched ? Go to next
-      if matched[index]:
-        continue
+
+      # index already matched ? raise error
+      if index in matched:
+        raise ValueError("Index already matched, reduce the distance threshold.")
 
       # if distance is smaller than the smallest distance, update
       # smallest distance and smallest match index
@@ -234,7 +235,7 @@ def _make_matching(V, col_index, row_index):
     match0.append(i)
     match1.append(smallest_match)
 
-    matched[smallest_match] = True
+    matched.add(index)
 
   if len(match0) == 0:
     return np.empty((0, 2), dtype=np.int64)

@@ -40,7 +40,7 @@ def trampoline_template(inner_height: Float = .5,
     |  3 - - 5  |
     |A |  C  | E|
     |  |     |  |
-    |  2-----4  |
+    |  2 - - 4  |
     | /   B   \ |
     0 - - - - - 6
   """
@@ -89,7 +89,8 @@ class CrossSectionGenerator(Singleton):
                      kv2: UnivariateKnotVector,
                      reparam: bool = True,
                      inner_height: Float = .5,
-                     inner_width: Float = .5):
+                     inner_width: Float = .5,
+                     boundary_layer: float = 0):
     """
     kv0: edge (0, 1)
     kv1: edge (0, 6)
@@ -133,6 +134,9 @@ class CrossSectionGenerator(Singleton):
     self.controlmap = controlmap
 
     self.kv0, self.kv1, self.kv2 = kv0, kv1, kv2
+    if any(kv != kv.flip() for kv in (kv0, kv1, kv2)):
+      raise ValueError("The knotvectors are not symmetric. This may be due to "
+                       "round-off errors. Please reduce global accuracy and try again.")
 
     # take the gradient of the basis with respect to the parametric domain ``geom``
     dbasis = basis.grad(controlmap)

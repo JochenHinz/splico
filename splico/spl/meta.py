@@ -155,11 +155,10 @@ class TensorKnotVectorMeta(ImmutableMeta):
     argument which the properties are iterated into.
     For instance, :class:`list` or :class:`tuple`. Defaults to :class:`tuple`.
     """
-    @property
     def wrapper(self):
       return return_type([getattr(e, name) for e in self])
 
-    setattr(cls, name, wrapper)
+    setattr(cls, name, property(wrapper))
 
 
 class NDSplineMeta(ImmutableMeta):

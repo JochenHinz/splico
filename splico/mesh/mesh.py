@@ -154,6 +154,8 @@ class Mesh(Immutable, metaclass=MeshMeta):
 
     assert np.unique(self.elements, axis=0).shape == self.elements.shape, \
         "Duplicate element detected."
+    assert np.unique(self.points, axis=0).shape == self.points.shape, \
+        "Duplicate point detected."
 
     if self:  # avoid this check for empty meshes
       assert 0 <= self.elements.min() <= self.elements.max() < len(self.points), \

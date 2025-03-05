@@ -80,14 +80,7 @@ def export_gmsh(mesh: Mesh,
           log.warning(f'The boundary {tag} is empty.')
           continue
 
-        myindices = myboundary.active_indices
         entity = gmsh.model.add_discrete_entity(dmesh.ndims)
-
-        gmsh.model.mesh.addNodes(myboundary.ndims,
-                                 entity,
-                                 myindices + 1,
-                                 myboundary.points[myindices].ravel())
-
         mytag = MAP_EL_GMSH_TAG[myboundary.reference_element]
 
         gmsh.model.mesh.addElementsByType(entity,
