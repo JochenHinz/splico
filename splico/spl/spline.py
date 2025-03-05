@@ -166,7 +166,10 @@ class _ArrayLike(Immutable, NDArrayOperatorsMixin):
 
 class Spline(_ArrayLike):
 
-  knotvector: KnotVectorType | NDArray[np.object_]
+  @property
+  @abstractmethod
+  def knotvector(self) -> KnotVectorType | NDArray[np.object_]:
+    ...
 
 
 # register `np.ndarray` as an `ArrayLike` because it is deemed a valid
@@ -245,7 +248,7 @@ class NDSpline(Spline, metaclass=NDSplineMeta):
   ... ERROR
   """
 
-  knotvector: TensorKnotVector
+  _knotvector: TensorKnotVector
   controlpoints: FloatArray
 
   # methods inherited from `self.knotvector` via the metaclass
@@ -313,9 +316,13 @@ class NDSpline(Spline, metaclass=NDSplineMeta):
     return GenericAlias(cls, dimension)
 
   def __init__(self, knotvector: KnotVectorType, controlpoints: AnyFloatSeq):
-    self.knotvector = as_TensorKnotVector(knotvector)
+    self._knotvector = as_TensorKnotVector(knotvector)
     self.controlpoints = frozen(_round_array(controlpoints), dtype=float)
     assert self.controlpoints.shape[0] == self.knotvector.ndofs
+
+  @property
+  def knotvector(self) -> TensorKnotVector:
+    return self._knotvector
 
   @cached_property
   def controlpoints_T(self) -> FloatArray:
@@ -1150,7 +1157,7 @@ class NDSplineArray(Spline):
     assert len(n) == self.nvars
 
     sample_meshes = np.broadcast_to(
-      np.vectorize(partial(sample_mesh_from_knotvector, n=n))(self.knotvector),
+      np.vectorize(partial(sample_mesh_from_knotvector, n=tuple(n)))(self.knotvector),
       self.shape[:-1])
     return self.sample_mesh(sample_meshes)
 
