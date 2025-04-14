@@ -127,7 +127,7 @@ class TestTopology(unittest.TestCase):
     topo = infer_topo(A)
     self.assertTrue(len(np.unique(topo.topo)) == len(np.unique(PATCHES)))
     self.assertTrue(topo.is_valid())
-    A = linear_interpolation(A, A + np.array([0, 0, 1]), zdegree=1)
+    A = linear_interpolation(A, A + np.array([0, 0, 1]), kvz=1)
     topo = infer_topo(A)
     self.assertTrue(len(np.unique(topo.topo)) == 2 * len(np.unique(PATCHES)))
     self.assertTrue(topo.is_valid())
@@ -167,7 +167,7 @@ class TestNutilsInterface(unittest.TestCase):
 
   def test3D(self):
     disc = ellipse(1, 1, 4).to_ndim(1)
-    disc = linear_interpolation(disc, disc + np.array([0, 0, 1]), zdegree=1)
+    disc = linear_interpolation(disc, disc + np.array([0, 0, 1]), kvz=1)
     topo = Topology(PATCHES).extrude()
 
     intf = NutilsInterface(disc, topo)
@@ -188,8 +188,8 @@ class TestNutilsInterface(unittest.TestCase):
     disc = ellipse(1, 1, 4).to_ndim(1)
     disc = add_zeros(linear_interpolation(disc,
                                           disc + np.array([0, 0, 1]),
-                                          zdegree=1))
-    disc = linear_interpolation(disc, disc + np.array([0, 0, 0, 1]), zdegree=1)
+                                          kvz=1))
+    disc = linear_interpolation(disc, disc + np.array([0, 0, 0, 1]), kvz=1)
     topo = Topology(PATCHES).extrude().extrude()
     intf = NutilsInterface(disc, topo)
 

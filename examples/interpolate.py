@@ -41,7 +41,7 @@ def main(spl0: Spline, spl1: Spline, t0: ArrayLike, t1=None) -> None:
 
   sample_mesh = rectilinear([np.linspace(0, 1, 21)] * 3)
 
-  linear_interp = interp.linear_interpolation(spl0, spl1, zdegree=1)
+  linear_interp = interp.linear_interpolation(spl0, spl1, kvz=1)
   mesh_union(*linear_interp.sample_mesh(sample_mesh).ravel(), boundary=True).plot()
 
   hermite_interp = interp.cubic_hermite_interpolation(spl0, spl1, t0, t1)
