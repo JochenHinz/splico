@@ -7,17 +7,18 @@ and :class:`TensorKnotVector`. The latter is a vectorized version of the former.
 
 from ..util import _round_array, isincreasing, np, _, \
                    frozen_cached_property, gauss_quadrature
-from ..types import Immutable, ensure_same_class, Int, Numeric, AnyIntSeq, \
-                    AnyNumericSeq, FloatArray, IntArray, AnySequence, \
-                    NumericArray, NumpyIndex
+from ..types import Immutable, ensure_same_class, ensure_same_length, Int, \
+                    Numeric, AnyIntSeq, AnyNumericSeq, FloatArray, IntArray, \
+                    AnySequence, NumericArray, NumpyIndex
 from ..err import EmptyContainerError
-from .meta import TensorKnotVectorMeta
 from ._jit_spl import _call1D, nonzero_bsplines_deriv_vectorized
 from .aux import freeze_csr, sparse_kron
 
 from itertools import starmap
 from functools import partial, lru_cache
 from typing import Sequence, Self, Any, Optional, Callable, overload, List
+from inspect import signature
+import operator
 
 from scipy import sparse
 from scipy.sparse import linalg as splinalg
@@ -209,20 +210,20 @@ class UnivariateKnotVector(Immutable):
     new_km = [map_kv_km.get(val) or 1 for val in new_knots]
     return self._edit(knotvalues=new_knots, knotmultiplicities=new_km)
 
-  def raise_multiplicities(self, indices: Int | AnyIntSeq,
+  def raise_multiplicities(self, positions: Int | AnyIntSeq,
                                  amounts: Int | AnyIntSeq) -> Self:
     """
     Raise the knotmulitplicities corresponding to ``indices`` by ``amount``.
     """
-    if isinstance(indices, Int):
-      indices = indices,
-    indices = np.asarray(indices, dtype=int)
+    if isinstance(positions, Int):
+      positions = positions,
+    positions = np.asarray(positions, dtype=int)
 
     if isinstance(amounts, Int):
-      amounts = (amounts,) * len(indices)
+      amounts = (amounts,) * len(positions)
 
     km = np.asarray(self.knotmultiplicities, dtype=int)
-    km[indices] += np.asarray(amounts, dtype=int)
+    km[positions] += np.asarray(amounts, dtype=int)
     return self._edit(knotmultiplicities=km)
 
   def integrate(self, dx: Int = 0):
@@ -373,7 +374,132 @@ def _empty_csr(ndofs):
   return sparse.csr_matrix((ndofs, ndofs))
 
 
-class TensorKnotVector(Immutable, metaclass=TensorKnotVectorMeta):
+def add_vectorizations(cls):
+
+  def _vectorize_with_indices(name: str) -> Callable:
+    """
+    Vectorize an operation and apply it to each :class:`UnivariateKnotVector`
+    in ``self.knotvectors``.
+    Add the vectorized function to the class `cls` with the name `name`.
+
+    Parameters
+    ----------
+    name: :class:`str`
+    The name of the method of :class:`UnivariateKnotVector` that is to
+    be applied to all :class:`UnivariateKnotVector`s in `self`.
+
+    ----------
+
+    The resulting function's syntax is the following:
+    >>> kv
+    ... UnivariateKnotVector[...]
+    >>> tkv = kv * kv * kv
+    >>> tkv.refine(..., n=[1, 0, 1])
+
+    Here the ``...`` (or None) indicates that the operation should be applied to
+    all :class:`UnivariateKnotVector`s in ``self``, where the i-th knotvector
+    receives input ``n[i]``.
+
+    The return type is always :class:`self.__class__`.
+
+    Similarly, we may pass the indices explicitly, for instance:
+    >>> tkv.refine([0, 2], [1, 1])
+    >>> tkv.refine(..., n=[1, 0, 1]) == tkv.refine([0, 2], [1, 1])
+    ... True
+
+    Here the knotvector corresponding to the i-th entry in `directions`
+    receives ``n[i]`` as input.
+    """
+
+    sig = signature(getattr(UnivariateKnotVector, name))
+
+    assert 'directions' not in sig.parameters, \
+      "The method to be vectorized must not have an argument 'directions'."
+
+    def wrapper(self, directions, *args, **kwargs):
+
+      if np.isscalar(directions):
+        directions = directions,
+      elif directions in (Ellipsis, None):
+        directions = range(len(self))
+
+      directions = list(directions)
+
+      assert all( -len(self) <= i < len(self) for i in directions )
+      directions = [ i % len(self) for i in directions ]
+
+      _self = list(self)
+      assert all( len(arg) == len(directions) for arg in args ) and \
+             all( len(val) == len(directions) for val in kwargs.values() )
+
+      for j, i in enumerate(directions):
+        _self[i] = getattr(_self[i], name)(*(a[j] for a in args),
+                                           **{k: v[j] for k, v in kwargs.items()})
+
+      return self.__class__(_self)
+
+    return wrapper
+
+  def _vectorize_operator(name: str, return_type=None) -> Callable:
+    """
+    Vectorize an operator operation. For instance __and__.
+    >>> kv0
+    ... UnivariateKnotVector[...]
+    >>> kv1
+    ... UnivariateKnotVector[...]
+    >>> kv2 = kv0 & kv1
+    >>> tkv0 = TensorKnotVector([kv0] * 3)
+    >>> tkv1 = TensorKnotVector([kv1] * 3)
+    >>> (tkv0 & tkv1) == TensorKnotVector([kv2] * 3)
+    ... True
+
+    We may optionally pass a return type that differs from ``None``
+    in which case the return type defaults to ``self.__class__``.
+    """
+    op = getattr(operator, name)
+
+    @ensure_same_length
+    @ensure_same_class
+    def wrapper(self, other):
+      rt = return_type or self.__class__
+      return rt([op(kv0, kv1) for kv0, kv1 in zip(self, other)])
+
+    return wrapper
+
+  def _vectorize_property(name: str, return_type=tuple) -> Callable:
+    """
+    Vectorize a (cached) property. Optionally takes a return container-type
+    argument which the properties are iterated into.
+    For instance, :class:`list` or :class:`tuple`. Defaults to :class:`tuple`.
+    """
+    @property
+    def wrapper(self):
+      return return_type([getattr(e, name) for e in self])
+
+    return wrapper
+
+  # add all index vectorized methods
+  for name in 'flip', 'refine', 'ref_by', 'add_knots', 'raise_multiplicities':
+    setattr(cls, name, _vectorize_with_indices(name))
+
+  # add all vectorized properties
+  for name in 'dx', 'knots', 'km', 'degree', 'repeated_knots', 'nelems', \
+              'dim', 'greville':
+    setattr(cls, name, _vectorize_property(name))
+
+  # add all operator vectorizations with custom return type
+  for name in '__lt__', '__gt__', '__le__', '__ge__':
+    setattr(cls, name, _vectorize_operator(name, all))
+
+  # add all operator vectorizations without custom return type
+  for name in '__and__', '__or__':
+    setattr(cls, name, _vectorize_operator(name))
+
+  return cls
+
+
+@add_vectorizations
+class TensorKnotVector(Immutable):
 
   """
   Class representing a tensorial knotvector.

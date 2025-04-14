@@ -1,4 +1,4 @@
-from splico.geo import cross_section_generator
+from splico.geo import ellipse
 from splico.mesh import rectilinear, mesh_union
 
 import unittest
@@ -7,10 +7,7 @@ import unittest
 class TestDisc(unittest.TestCase):
 
   def test_eval(self):
-    dmaker = cross_section_generator(5)
-    dmaker_ = cross_section_generator(5)
-    self.assertTrue(dmaker is dmaker_)
-    sol = dmaker.make_disc(4, 4, 0)
+    sol = ellipse(4, 4, 4)
 
     for n in (3, 5, 7, 11, 13, 17, 19):
       with self.subTest('Evaluating in {n} x {n} points'):

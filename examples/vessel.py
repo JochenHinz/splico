@@ -1,4 +1,4 @@
-from splico.geo import cross_section_generator, compute_notwistframe_from_spline
+from splico.geo import compute_notwistframe_from_spline, ellipse
 from splico.mesh import rectilinear, mesh_union
 from splico.spl import UnivariateKnotVector
 from splico.util import np, _, clparam
@@ -26,10 +26,11 @@ def main(nelems_centerline, nelems_cross_section, radii, centerline_points):
   """
 
   # make a knotvector with the specified number of elements
-  kv = UnivariateKnotVector(np.linspace(0, 1, nelems_centerline)).to_tensor()
+  kv = UnivariateKnotVector(np.linspace(0, 1, nelems_centerline + 1)).to_tensor()
 
   assert centerline_points.shape[1:] == (3,)
   assert radii.shape == centerline_points.shape[:1]
+  assert (radii > 0).all()
 
   # compute the chord length parameter values of the centerline points
   xi = clparam(centerline_points)
@@ -40,10 +41,8 @@ def main(nelems_centerline, nelems_cross_section, radii, centerline_points):
   # compute the notwistframe rotation matrices
   Rs = compute_notwistframe_from_spline(X, xi)
 
-  maker = cross_section_generator(nelems_cross_section + 10)
-
   # make the cross section of radius one
-  disc = maker.make_disc(1, 1, 0, return_type='NDSplineArray')  # return as array
+  disc = ellipse(1, 1, nelems_cross_section)
 
   # fit a spline to radius and rotational frame information
   rRs = kv.fit([xi], radii[:, _, _] * Rs)

@@ -109,7 +109,7 @@ class TestNDSpline(unittest.TestCase):
     self.assertTrue( np.allclose((spl0 * offset).controlpoints, spl0.controlpoints * offset[_]) )
 
   def test_prolong(self):
-    disc = ellipse(1, 1, 4)
+    disc = ellipse(1, 1, 4).arr[()]
     kv = disc.knotvector.refine(...)
     disc_r = disc.prolong_to(kv)
 
@@ -124,13 +124,31 @@ class TestNDSpline(unittest.TestCase):
     self.assertTrue(all(np.allclose(kn0, kn1) for kn0, kn1 in zip(disc_r.knots, kv.knots)))
 
   def test_split_join(self):
-    spl = ellipse(1, 1, 10)[2].raise_multiplicities([0], [4], [2])
+    # direction 0, position 4, amount 2
+    spl = ellipse(1, 1, 10)[2].arr[()].raise_multiplicities([0], [4], [2])
 
-    spl0, spl1 = spl.split(0, 4)
+    # split at position 4
+    spl0, spl1 = spl.split(0, positions=4)
 
+    # glue back together
     spl_ = spl0.join(spl1, 0)
 
+    # make sure the spl with raised multiplicities is the same as the joined spl
     self.assertTrue(np.allclose(spl.controlpoints, spl_.controlpoints))
+
+  def test_split_join_multiple(self):
+    kv = UnivariateKnotVector(np.linspace(0, 1, 11), 3).to_tensor()
+    X = kv.fit([np.linspace(0, 1, 11)], np.random.randn(11, 3))
+
+    direction = 0
+    xvals = .3, .6, .9
+
+    Xs = X.split(direction, xvals=xvals)
+    X = X.add_knots(direction, knotvalues=[xvals])
+    X = X.raise_multiplicities(direction, positions=[np.searchsorted(X.knots[direction], xvals)],
+                                          amounts=[2])
+
+    self.assertTrue(np.allclose(X.controlpoints, Xs[0].join(Xs[1:], direction).controlpoints))
 
   def test_against_scipy(self):
     from scipy.interpolate import splev
@@ -187,11 +205,15 @@ class TestNDSplineArray(unittest.TestCase):
 
     self.assertTrue( all(np.allclose( spl0.controlpoints, 2 * spl1.controlpoints ) for spl0, spl1 in zip((spline + spline).ravel(), spline.ravel())) )
 
+  def test_ravel(self):
+    disc = ellipse(1, 1, 4)
+    self.assertTrue(disc.ravel().shape == (15,))
+
   def test_arithmetic(self):
     import random
     xi = np.linspace(0, 1, 11)
-    A = ellipse(1, 1, 4)
-    B = NDSplineArray(A)
+    B = ellipse(1, 1, 4)
+    A = B.arr[()]
     for i in range(3):
       self.assertTrue( np.allclose(A(xi, xi), B(xi, xi)) )
       try:
@@ -230,7 +252,7 @@ class TestNDSplineArray(unittest.TestCase):
           # of B
           self.assertTrue(B[item].shape == C.arr[item].shape)
 
-        B = B.expand()
+        B = B.expand(n=1 if B._elemdim else 0)
 
     B_ = NDSplineArray(A)
     for B in (B_, B_[0], B_[0, 0]):

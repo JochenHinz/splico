@@ -49,3 +49,8 @@ class EmptyContainerError(Exception):
   No longer used because empty :class:`NDSpline` objects are now supported.
   """
   pass
+
+
+class DuplicateOrientationError(Exception):
+  """ We throw this error when we detect a duplicate orientation. """
+  pass

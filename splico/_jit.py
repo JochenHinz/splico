@@ -7,6 +7,7 @@ from typing import Sequence
 from functools import partial
 import math
 
+from numpy.typing import NDArray
 from numba import njit, vectorize
 from numba.types import int32, int64, float32, float64
 
@@ -265,3 +266,14 @@ def unravel_multi_index(flat_index, dims):
       flat_index //= dims[i]  # Update the flat index for the next dimension
 
   return multi_index
+
+
+@njit
+def _apply_pairs(indices: NDArray[np.integer], pairs: NDArray[np.integer]):
+  while True:
+    indices_new = indices.copy()
+    for pair in pairs:
+      indices_new[pair] = indices_new[pair].min()
+    if (indices == indices_new).all():
+      return indices
+    indices = indices_new

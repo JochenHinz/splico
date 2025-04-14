@@ -5,7 +5,7 @@ Module defining the NDSpline and NDSplineArray classes and related functions.
 """
 
 from ..util import _round_array, np, frozen, augment_by_zeros, _
-from ..types import Immutable, FloatArray, NumericArray, \
+from ..types import Immutable, FloatArray, NumericArray, Float, ImmutableMeta, \
                     Int, AnyIntSeq, AnyFloatSeq, LockableDict, Numeric, \
                     AnySequence, NumpyIndex, MultiNumpyIndex, ensure_same_class
 from splico.mesh.mesh import Mesh, rectilinear, mesh_union
@@ -15,10 +15,10 @@ from .kv import UnivariateKnotVector, TensorKnotVector, as_TensorKnotVector, \
 from .aux import tensorial_prolongation_matrix
 from .meta import NDSplineMeta
 
-from typing import Sequence, Callable, Tuple, Self, List, Any, TypeVar, Protocol
+from typing import Sequence, Callable, Tuple, Self, List, Any, TypeVar, Optional
 from types import GenericAlias
 from functools import reduce, wraps, cached_property, lru_cache, partial
-from itertools import product
+from itertools import product, chain
 from abc import abstractmethod
 
 from scipy import interpolate
@@ -300,6 +300,12 @@ class NDSpline(Spline, metaclass=NDSplineMeta):
     return cls(knotvector, coeffs)
 
   @staticmethod
+  def join_multiple(splines: Sequence['NDSpline'], direction: Int) -> 'NDSpline':
+    assert splines
+    assert all(isinstance(spl, splines[0].__class__) for spl in splines)
+    return reduce(lambda x, y: x.join(y, direction), splines)
+
+  @staticmethod
   def from_least_squares(knotvector: KnotVectorType, *args, **kwargs):
     """
     Docstring: see `splico.spl.kv.TensorKnotVector.fit`.
@@ -506,7 +512,8 @@ class NDSpline(Spline, metaclass=NDSplineMeta):
     >>> spl1.controlpoints.shape
     ... (54, 4, 3, 2)
     """
-    return self.__class__(self.knotvector, np.moveaxis(self.controlpoints.T, -1, 0))
+    return self._edit(knotvector=self.knotvector,
+                      controlpoints=np.moveaxis(self.controlpoints.T, -1, 0))
 
   def sample_mesh(self, mesh: Mesh) -> NDArray:
     """
@@ -538,7 +545,7 @@ class NDSpline(Spline, metaclass=NDSplineMeta):
 
     return np.atleast_1d(np.array(meshes, dtype=object).reshape(self.shape[:-1]))
 
-  def split(self, direction: Int, position: Int) -> Tuple[Self, Self]:
+  def _split(self, direction: Int, position: Int) -> Tuple[Self, Self]:
     """
     Split a spline along a given direction at a given position.
     The split takes place at the knotvalue that corresponds to the given position
@@ -583,8 +590,31 @@ class NDSpline(Spline, metaclass=NDSplineMeta):
     return self._edit(knotvector=tkv0, controlpoints=cp0), \
            self._edit(knotvector=tkv1, controlpoints=cp1)
 
+  def split(self, direction: Int, positions: Optional[Int | AnyIntSeq] = None,
+                                  xvals: Optional[Float | AnyFloatSeq] = None) -> Tuple[Self, ...]:
+
+    if positions is None:
+      assert xvals is not None, \
+        "Exactly one of `positions` and `xvals` must be given."
+
+    if xvals is not None:
+      self = self.add_knots(direction, knotvalues=[xvals])
+      positions = np.searchsorted(self.knots[direction], np.asarray(xvals))
+      return self.split(direction, positions=positions)
+
+    assert positions is not None
+
+    if isinstance(positions, Int):
+      positions = positions,
+
+    ret: Tuple[Self, ...] = self,
+    for pos0, pos1 in zip(chain((0,), positions), positions):
+      ret = ret[:-1] + ret[-1]._split(direction, pos1 - pos0)
+
+    return ret
+
   @ensure_same_class
-  def join(self, other: Self, direction: Int) -> Self:
+  def _join(self, other: Self, direction: Int) -> Self:
     """
     Join two splines along a given direction.
     The two splines must have compatible knotvectors along the given direction.
@@ -626,6 +656,13 @@ class NDSpline(Spline, metaclass=NDSplineMeta):
                           axis=direction).reshape(-1, *self.shape)
 
     return self._edit(knotvector=tkv, controlpoints=cp)
+
+  def join(self, others: Self | Sequence[Self], direction: Int) -> Self:
+    if isinstance(others, self.__class__):
+      others = others,
+    assert all(other.__class__ is self.__class__ for other in others), \
+      "All splines must be of the same class."
+    return reduce(lambda x, y: x._join(y, direction), (self,) + tuple(others))
 
   def __array_ufunc__(self, ufunc: np.ufunc, method: str, *inputs, **kwargs) -> Self | 'NDSplineArray':
     """
@@ -684,7 +721,6 @@ class NDSpline(Spline, metaclass=NDSplineMeta):
     # We find the index `pivot` of the NDSpline in `inputs` and pass it to the
     # `_vectorize_first_axis` function
 
-    # pivot = inputs.index(myclass.pop())
     pivot = find_first_occurence(inputs, self)
 
     # operate on `args` to maintain the correct order of the inputs
@@ -698,7 +734,7 @@ class NDSpline(Spline, metaclass=NDSplineMeta):
                                           *args,
                                           **kwargs)
 
-    return self.__class__(self.knotvector, controlpoints)
+    return self._edit(knotvector=self.knotvector, controlpoints=controlpoints)
 
 
 def _vectorize_first_axis(op: Callable, pivot: Int,
@@ -754,7 +790,24 @@ def sample_mesh_from_knotvector(tkv: TensorKnotVector, n: Tuple[Int]) -> Mesh:
   return rectilinear([np.linspace(*r, num) for r, num in zip(ranges, n)])
 
 
-class NDSplineArray(Spline):
+class NDSplineArrayMeta(ImmutableMeta):
+  """
+  Metaclass overwrites `__call__` for coercing an instance of `NDSplineArray`
+  or a subclass to an instance of `NDSplineArray`.
+  Does not make a copy of the input array but instantiates a new `NDSplineArray`.
+  """
+
+  def __call__(self, *args, **kwargs):
+    if len(args) == 1 and isinstance(args[0], NDSplineArray):
+      assert not kwargs
+      args, = args
+      if args.__class__ is NDSplineArray:
+        return args
+      args = args.arr,
+    return super().__call__(*args, **kwargs)
+
+
+class NDSplineArray(Spline, metaclass=NDSplineArrayMeta):
   """
   Array of splines.
   The knotvectors of all splines may differ but each spline must have the same
@@ -773,10 +826,11 @@ class NDSplineArray(Spline):
   (m0, m1, m2, ...), the expanded array will have shape (n0, n1, n2, ..., m0)
   while the elements will have shape (m1, m2, ...).
 
-  The class additionally provides a method ``contract`` that performs the inverse
+  The class additionally provides a method ``_contract`` that performs the inverse
   operation of ``expand``. This operation is only possible if the elements
   self.arr[..., i] all have the same knotvector for all i (they may differ
-  between the i's).
+  between the i's). `_contract` may be alternatively invoked by calling
+  `expand` with a negative argument.
 
   All arithmetic operations that are supported by the :class:`NDSpline` class
   are simultaneously supported by the :class:`NDSplineArray` class.
@@ -863,7 +917,15 @@ class NDSplineArray(Spline):
       raise NotImplementedError("Currently, all elements must have the same "
                                 "number of dependencies.")
 
-  __repr__ = NDSpline.__repr__
+  def __repr__(self) -> str:
+    shapestr = ', '.join(map(str, self._shape))
+    elemstr = '(' + ', '.join(map(str, self._elemshape)) + ')'
+
+    if not self._shape: string = elemstr
+    elif not self._elemshape: string = shapestr
+    else: string = f"{shapestr}, {elemstr}"
+
+    return f"{self.__class__.__name__}<{string}>"
 
   @cached_property
   def knotvector(self) -> NDArray:
@@ -910,39 +972,53 @@ class NDSplineArray(Spline):
     return len(self._shape)
 
   @property
+  def _elemdim(self) -> int:
+    return len(self._elemshape)
+
+  @property
   def T(self) -> Self:
     # completely expand to create an array of NDSpline<> and
     # then transpose and contract back up.
     # XXX: this solution is not very efficient
-    return self.__class__(self.expand_all().arr.T).contract_all()
+    return self._edit(arr=self.expand_all().arr.T).contract_all()
 
   def expand(self, n=1) -> Self:
+    """ Call self._expand if n > 0 and self._contract if n < 0. """
+    if n == 0: return self
+    if n > 0: return self._expand(n)
+    return self._contract(-n)
+
+  def _expand(self, n=1) -> Self:
     """
     Peel off ``n`` layers of the elements of the NDSplineArray and absorb them
     into the shape of the array. The dimension of the element's target space
     will be reduced by ``n`` while the dimension of ``self.arr`` is increased by
     ``n``.
     """
-    assert (n := int(n)) >= 0
-    if n == 0 or not self._elemshape:
-      return self
+    assert isinstance(n, Int)
+    if n == 0: return self
+    if n > self._elemdim:
+      raise ValueError("Cannot expand more than the number of dimensions of the elements.")
+
     elems = np.asarray([ list(iter(elem)) for elem in self.arr.ravel() ]) \
                                                   .reshape(*self._shape, -1)
-    return self.__class__(elems).expand(n-1)
+    return self._edit(arr=elems).expand(n-1)
 
   def expand_all(self) -> Self:
     """ Expand all layers of the elements of the NDSplineArray. """
-    return self.expand(len(self._elemshape))
+    return self.expand(self._elemdim)
 
-  def contract(self, n=1) -> Self:
+  def _contract(self, n=1) -> Self:
     """
     Try to perform the inverse operation of `expand`. This operation is only
     possible if the elements self.arr[..., i] all have the same knotvector
     for all i (they may differ between the i's).
     """
     assert (n := int(n)) >= 0
-    if n == 0 or not self._shape:
+    if n == 0:
       return self
+    if not self._shape:
+      raise ValueError("The underlying array must have a shape.")
 
     contract_elems = self.arr.reshape(-1, *self.arr.shape[-1:])
 
@@ -955,19 +1031,49 @@ class NDSplineArray(Spline):
                           np.stack([elem.controlpoints for elem in elems], axis=1))
                           for elems in contract_elems ], dtype=NDSpline)
 
-    return self.__class__(new_elems.reshape(self._shape[:-1])).contract(n-1)
+    return self._edit(arr=new_elems.reshape(self._shape[:-1]))._contract(n-1)
 
   def contract_all(self) -> Self:
     """
-    Roll until the elements no longer have the same knotvector.
+    Contract until the elements no longer have the same knotvector.
     """
     try:
-      ret = self.contract()
+      ret = self.expand(-1)
       if ret is self:
         return ret
     except ValueError:
       return self
     return ret.contract_all()
+
+  def to_ndim(self, ndim: Int) -> Self:
+    return self.expand(ndim - self._ndim)
+
+  def to_elemdim(self, elemdim: Int) -> Self:
+    return self.expand(self._elemdim - elemdim)
+
+  def prolong_to(self, knotvector_to: TensorKnotVector | NDArray[np.object_]) -> Self:
+    if isinstance(knotvector_to, TensorKnotVector):
+      knotvector_to = np.asarray(knotvector_to)
+
+    if not knotvector_to.shape == self.knotvector.shape:
+      raise NotImplementedError("The shape of `knotvector_to` must exactly"
+                                " match the shape of `self.knotvector`. "
+                                "Broadcasting has not been implemented, yet.")
+
+    spls = [ spl.prolong_to(kv) for spl, kv in zip(self.arr.ravel(),
+                                                   knotvector_to.ravel()) ]
+    return self._edit(arr=np.asarray(spls).reshape(knotvector_to.shape))
+
+  def prolong_to_array(self: 'NDSplineArray', spline_to: 'NDSplineArray') -> 'NDSplineArray':
+    """
+    Prolong all splines in the array to the knotvectors of another NDSplineArray.
+    """
+    assert self.shape == spline_to.shape, "The shapes of the two arrays must match."
+
+    diff = len(spline_to._shape) - len(self._shape)
+    self, other = map(lambda x: x.expand(diff), (self, spline_to))
+
+    return self.prolong_to(spline_to.knotvector)
 
   def _call(self, *args, tensor=False, **kwargs) -> FloatArray:
     # XXX: np.stack makes a copy. Find better solution.
@@ -994,7 +1100,7 @@ class NDSplineArray(Spline):
       sm = tuple(i - self._ndim for i in tail)
       arr = np.vectorize(lambda el: el.sum(*sm))(arr)  # sum each element
 
-    return self.__class__(arr.sum(head))
+    return self._edit(arr=arr.sum(head))
 
   @staticmethod
   def canonicalize_getitem_args(item: Any, ndim: Int) -> Tuple[Any, ...]:
@@ -1044,7 +1150,7 @@ class NDSplineArray(Spline):
   def __iter__(self):
     assert self.shape, 'iteration over 0-d array'
     if self._shape:
-      yield from (self.__class__(item) for item in self.arr)
+      yield from (self._edit(arr=item) for item in self.arr)
     else:
       yield from self.expand()
 
@@ -1058,7 +1164,7 @@ class NDSplineArray(Spline):
     of `serialize_array` doesn't work as expected for non-numeric types.
     """
     # XXX: this is a hack, we should find a better solution
-    return (tuple(self.ravel().arr), self._shape, self._elemshape),
+    return (tuple(self.ravel().arr), self._shape, self._elemshape)
 
   def __array__(self, dtype=None, copy=None) -> np.ndarray:
     """
@@ -1066,7 +1172,9 @@ class NDSplineArray(Spline):
     We simply return the wrapped numpy array of NDSpline objects, coerced to
     the desired dtype.
     """
-    return np.array(self.arr, dtype=dtype or self._dtype, copy=copy)
+    arr = np.empty((1,), dtype=object)
+    arr[0] = self
+    return arr.reshape(())
 
   def __array_ufunc__(self, ufunc: np.ufunc, method: str,
                                              *inputs: Any, **kwargs) -> Self:
@@ -1085,7 +1193,7 @@ class NDSplineArray(Spline):
         # this block handles operations between NDSplineArray and np.ndarray
         try:
           # try to coerce to np.ndarray and prepend axes if necessary
-          (_self, y) = _add_one_axes(inputs[pivot], np.asarray(y))
+          _self, y = _add_one_axes(inputs[pivot], np.asarray(y))
 
           # get shape of the result
           shp = try_broadcast_shapes(_self.shape[:_self._ndim],
@@ -1103,7 +1211,7 @@ class NDSplineArray(Spline):
                        (y[multi_index], arr[multi_index])
             newarr.append(op(el0, el1, **kwargs))
 
-          return self.__class__(np.array(newarr).reshape(shp)).contract_all()
+          return self._edit(arr=np.array(newarr).reshape(shp)).contract_all()
         except ValueError:  # let other class handle the operation
           return NotImplemented
 
@@ -1120,7 +1228,7 @@ class NDSplineArray(Spline):
     in0 = in0.expand(max(0, n1 - n0))
     in1 = in1.expand(max(0, n0 - n1))
 
-    return self.__class__(op(in0.arr, in1.arr, **kwargs)).contract_all()
+    return self._edit(arr=op(in0.arr, in1.arr, **kwargs)).contract_all()
 
   def sample_mesh(self, sample_meshes: Mesh | np.ndarray | Sequence) -> NDArray:
     """
@@ -1135,7 +1243,7 @@ class NDSplineArray(Spline):
     """
     if not self._elemshape:
       try:
-        self = self.contract()
+        self = self.expand(-1)
       except ValueError:
         raise ValueError('Cannot sample a mesh from 0-dimensional splines.')
 
@@ -1147,7 +1255,9 @@ class NDSplineArray(Spline):
     return np.vectorize(lambda elem, mesh: elem.sample_mesh(mesh).item(),
                         otypes=[Mesh])(_self.arr, sample_meshes)
 
-  def quick_sample(self, n: Int | AnyIntSeq = 11) -> NDArray:
+  def quick_sample(self, n: Int | AnyIntSeq = 11,
+                         take_union: bool = False,
+                         boundary: bool = False) -> NDArray | Mesh:
     """
     Sample ``n`` points along the knotvector's range in each direction.
     """
@@ -1159,9 +1269,14 @@ class NDSplineArray(Spline):
     sample_meshes = np.broadcast_to(
       np.vectorize(partial(sample_mesh_from_knotvector, n=tuple(n)))(self.knotvector),
       self.shape[:-1])
-    return self.sample_mesh(sample_meshes)
+    ret = self.sample_mesh(sample_meshes)
 
-  def qplot(self, n=11, boundary=False) -> None:
+    if take_union:
+      ret = mesh_union(*ret.ravel(), boundary=boundary)
+
+    return ret
+
+  def qplot(self, n=11, boundary=False) -> Mesh:
     """
     Quick plot of the NDSplineArray.
     The shape must be `(..., 3)`. If of matrix of tensor-valued, plot the mesh
@@ -1170,9 +1285,7 @@ class NDSplineArray(Spline):
     if not self.shape[-1:] == (3,):
       raise ValueError('Quick plotting is only supported for R^3 splines.')
 
-    meshes = self.quick_sample(n=n)
-
-    mesh = mesh_union(*meshes.ravel(), boundary=boundary)
+    mesh: Mesh = self.quick_sample(n=n, take_union=True, boundary=boundary)
     mesh.plot()
     return mesh
 

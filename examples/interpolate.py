@@ -1,12 +1,19 @@
-from splico.geo import interp, cross_section_generator
+from splico.util import np, _
+from splico.geo import interp, ellipse
 from splico.spl import NDSpline, NDSplineArray, as_NDSplineArray
 from splico.mesh import rectilinear, mesh_union
 
-import numpy as np
 from numpy.typing import ArrayLike
 
 
 Spline = NDSpline | NDSplineArray
+
+
+rotmat = lambda phi: np.array([
+                                [np.cos(phi), -np.sin(phi), 0],
+                                [np.sin(phi), np.cos(phi), 0],
+                                [0, 0, 1]
+                              ])
 
 
 def main(spl0: Spline, spl1: Spline, t0: ArrayLike, t1=None) -> None:
@@ -42,9 +49,7 @@ def main(spl0: Spline, spl1: Spline, t0: ArrayLike, t1=None) -> None:
 
 
 if __name__ == '__main__':
-  maker = cross_section_generator(7)
-
-  spl0 = maker.make_disc(1, 1, 0)
-  spl1 = maker.make_disc(1, 1, 1) + np.array([[0, 0, 2]])
+  spl0 = ellipse(1, 1, 4)
+  spl1 = (rotmat(1) * ellipse(1, 1, 4)[:, _]).sum(-1) + np.array([[0, 0, 2]])
 
   main(spl0, spl1, [0, 1, 1])

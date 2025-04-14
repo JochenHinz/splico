@@ -10,6 +10,7 @@ from typing import Tuple, Sequence, Optional, Callable, Any, Literal
 import contextlib
 
 import numpy as np
+from scipy import sparse
 
 
 # alias for vectorisation.
@@ -254,12 +255,12 @@ def clparam(points: Sequence | np.ndarray) -> np.ndarray:
   return ret / ret[-1]
 
 
-def normalize(array: np.ndarray) -> np.ndarray:
+def normalize(array: np.ndarray, axis=-1) -> np.ndarray:
   """
   Normalize an array of vectors.
   """
   array = np.asarray(array)
-  return array / np.linalg.norm(array, axis=-1, ord=2, keepdims=True)
+  return array / np.linalg.norm(array, axis=axis, ord=2, keepdims=True)
 
 
 def flat_meshgrid(*arrays, indexing: Literal['xy', 'ij'] = 'ij',
@@ -310,3 +311,8 @@ def rot_mat(angle: float, axis: np.ndarray):
            (1 - np.cos(angle)) * np.outer(axis, axis)
   else:
     raise NotImplementedError('Only 2D and 3D rotations are supported.')
+
+
+def nutils_to_scipy(mat) -> sparse.csr_matrix:
+  data = mat.export('csr')
+  return sparse.csr_matrix(data, dtype=float)

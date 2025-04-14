@@ -511,6 +511,18 @@ class LockableDict(Mapping):
     return f'{self.__class__.__name__}({self._wrapped_dict})'
 
 
+def lock(f: Callable) -> Callable:
+  """
+  Decorator for locking a dictionary after initialization.
+  The dictionary is initialized with the return value of the function.
+  """
+  @wraps(f)
+  def wrapper(*args, **kwargs) -> LockableDict:
+    ret = f(*args, **kwargs)
+    return LockableDict(ret, locked=True)
+  return wrapper
+
+
 class NanVec(np.ndarray):
   """
   Vector of dtype float initilized to np.nan.

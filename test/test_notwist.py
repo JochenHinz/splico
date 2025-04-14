@@ -1,4 +1,4 @@
-from splico.geo import cross_section_generator, compute_notwistframe_from_spline
+from splico.geo import ellipse, compute_notwistframe_from_spline
 from splico.mesh import rectilinear, mesh_union
 from splico.spl import UnivariateKnotVector, TensorKnotVector
 from splico.util import np, _
@@ -22,11 +22,9 @@ class TestNoTwist(unittest.TestCase):
 
     self.assertTrue( all( (np.abs(np.linalg.det(R)) - 1) < 1e-10 for R in Rs ) )
 
-    maker = cross_section_generator(4)
-
-    disc = maker.make_disc(1, 1, 0)
+    disc = ellipse(1, 1, 4)
     print(disc)
-    points = disc.controlpoints.reshape(-1, 3)[:, :2]
+    points = disc.arr[()].controlpoints.reshape(-1, 3)[:, :2]
     print(points.max())
     from matplotlib import pyplot as plt
     plt.scatter(*points.T)
