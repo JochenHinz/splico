@@ -43,14 +43,12 @@ def linear_interpolation(spl0: NDSplineArray,
   assert spl0.shape == spl1.shape
   assert (spl0.contract_all().knotvector == spl1.contract_all().knotvector).all()
 
-  kvz = kvz.to_tensor()
-
   # get the greville points
-  z, = kvz.greville
+  z = kvz.greville
 
   # we compute the hermite interpolation functions by fitting againts the
   # stable greville points. We need not stabilize and the fit should be exact.
-  f0, f1 = kvz.fit([z], np.stack([1 - z, z], axis=1), lam0=0)
+  f0, f1 = kvz.to_tensor().fit([z], np.stack([1 - z, z], axis=1), lam0=0)
 
   return spl0 * f0 + spl1 * f1
 
@@ -104,15 +102,13 @@ def cubic_hermite_interpolation(spl0: NDSplineArray,
   if t0.shape[-1:] != (3,) or t1.shape[-1:] != (3,):
     raise NotImplementedError
 
-  kvz = kvz.to_tensor()
-
-  z, = kvz.greville
+  z = kvz.greville
 
   # as in `linear_interpolation` but this time we fit the cubic Hermite functions
-  f0, f1, f2, f3 = kvz.fit([z], np.stack([2 * z**3 - 3 * z**2 + 1,
-                                          z**3 - 2 * z**2 + z,
-                                          -2 * z**3 + 3 * z**2,
-                                          z**3 - z**2], axis=1), lam0=0)
+  f0, f1, f2, f3 = kvz.to_tensor().fit([z], np.stack([2 * z**3 - 3 * z**2 + 1,
+                                                      z**3 - 2 * z**2 + z,
+                                                      -2 * z**3 + 3 * z**2,
+                                                      z**3 - z**2], axis=1), lam0=0)
 
   # Interpolation along the last axis.
   return spl0 * f0 + t0 * f1 + spl1 * f2 + t1 * f3

@@ -195,7 +195,7 @@ def _integrate(intf: 'NutilsInterface', intstr: str, degree=None):
 
 class NutilsInterface(Singleton):
 
-  def __init__(self, ndarr: NDSplineArray, topo: Topology) -> None:
+  def __init__(self, ndarr: NDSplineArray, topo: Tuple | Topology) -> None:
     # XXX: this __init__ is too long, find a way to split it up
 
     self.ndarr = as_NDSplineArray(ndarr)

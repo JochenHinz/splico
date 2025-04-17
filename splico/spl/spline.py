@@ -1290,7 +1290,7 @@ class NDSplineArray(Spline, metaclass=NDSplineArrayMeta):
     return mesh
 
 
-def as_NDSplineArray(spl):
+def as_NDSplineArray(spl) -> NDSplineArray:
   if isinstance(spl, NDSplineArray):
     return spl
   return NDSplineArray(spl)

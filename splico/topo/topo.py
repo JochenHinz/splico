@@ -298,7 +298,7 @@ class Topology(Immutable):
     plt.show()
 
 
-def as_topo(topo: Topology | NDArray[np.integer]) -> Topology:
+def as_topo(topo: Topology | ArrayLike) -> Topology:
   if isinstance(topo, Topology):
     return topo
   return Topology(topo)

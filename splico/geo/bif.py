@@ -134,7 +134,7 @@ def join_quarters(*allspls: NDSplineArray) -> NDSplineArray:
   spls[2] = (spl1.arr[1].join(spl0.arr[1], 1)). \
                          join(spl2.arr[1].join(spl3.arr[1], 1), 0)
 
-  return NDSplineArray(spls).contract_all()
+  return NDSplineArray(np.asarray(spls, dtype=object)).contract_all()
 
 
 @spline_or_array
@@ -345,13 +345,13 @@ def wing(wingdata: WingData, unitdisc: NDSplineArray | Int = 4):
   return result
 
 
-def bif_from_curves(curves: Spline | Sequence[Spline],
+def bif_from_curves(curves: NDSplineArray | Sequence[NDSplineArray],
                     ax: ArrayLike,
                     xC: ArrayLike,
                     bB: Float | Int,
                     bT: Float | Int,
                     unitdisc: NDSplineArray | Int = 4,
-                    cevalpoints: Optional[Sequence[Float]] = None) -> NDSplineArray:
+                    cevalpoints: Optional[ArrayLike] = None) -> NDSplineArray:
   r"""
          ------                 ---<--
                 \  cruves[1]  /
@@ -394,8 +394,13 @@ def bif_from_curves(curves: Spline | Sequence[Spline],
              and curve.knotvector == curves[0].knotvector for curve in curves)
 
   if cevalpoints is None:
-    cevalpoints = [(c.knotvector[()].knots[0][0] +
-                    c.knotvector[()].knots[0][-1]) / 2 for c in curves]
+    cevalpoints = [(c.knotvector.ravel()[0].knots[0][0] +
+                    c.knotvector.ravel()[0].knots[0][-1]) / 2 for c in curves]
+
+  cevalpoints = np.asarray(cevalpoints, dtype=float)
+
+  if isinstance(unitdisc, Int):
+    unitdisc = repeated_knot_disc(unitdisc, reparam=True)
 
   assert len(cevalpoints) == len(curves), \
     "Number of evaluation points must match the number of curves."
@@ -429,10 +434,10 @@ def bif_from_curves(curves: Spline | Sequence[Spline],
   return NDSplineArray(np.stack([spl.arr for spl in spls], axis=0))
 
 
-def bif_from_matrices(matrices: ArrayLike,
-                      centerpoints: ArrayLike,
-                      ax: ArrayLike,
-                      xC: ArrayLike,
+def bif_from_matrices(matrices: Sequence[np.ndarray],
+                      centerpoints: Sequence[np.ndarray],
+                      ax: np.ndarray,
+                      xC: np.ndarray,
                       bB: Numeric,
                       bT: Numeric,
                       unitdisc: NDSplineArray | Int = 4) -> NDSplineArray:
@@ -469,13 +474,17 @@ def bif_from_matrices(matrices: ArrayLike,
   simply given by 0.5.
   """
 
+  if isinstance(unitdisc, Int):
+    unitdisc = repeated_knot_disc(unitdisc, reparam=True)
+
   unitdisc = unitdisc.to_ndim(1)
+
   evalL = [.5], [1]
   evalR = [1], [.5]
 
   xL = unitdisc[0](*evalL).ravel()
   xR = unitdisc[4](*evalR).ravel()
-  ax = normalize(ax)
+  ax = normalize(np.asarray(ax))
 
   discs = list(map(lambda x, c: c + (x * unitdisc[:, _]).sum(-1),
                    matrices, centerpoints))
