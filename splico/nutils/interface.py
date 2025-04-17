@@ -5,9 +5,9 @@ from splico.spl.spline import as_NDSplineArray
 from splico.util import nutils_to_scipy
 from splico.err import DuplicateOrientationError
 from splico._jit import _apply_pairs
+from splico.topo import Topology, as_topo, ZEROTOPO
 
 from .mul import multipatch, basis_spline
-from .topo import Topology, as_topo, ZEROTOPO
 
 from functools import cached_property, lru_cache
 from itertools import product, count, repeat

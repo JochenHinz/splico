@@ -1,5 +1,5 @@
 from splico.util import np, _
-from splico.nutils.topo import Topology
+from splico.topo import Topology
 from splico.nutils.mul import multipatch, basis_spline
 from splico.spl import UnivariateKnotVector, NDSpline, NDSplineArray
 from splico.types import Float, Int, Numeric
