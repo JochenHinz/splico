@@ -93,7 +93,7 @@ def main(nelems_centerline: Int,
   for x0, x1, x2 in zip(*(roll(-i) for i in range(3))):
     normals.append( normalize(np.cross(x1 - x0, x2 - x0)) )
 
-  ax = normalize(sum(normals) / len(normals))
+  ax = normalize(np.asarray(sum(normals) / len(normals)))
   bT, bB = (sum(r[0] for r in radii) / len(radii),)*2
 
   bif = bif_from_matrices(matrices, endpoints, ax, xC, bB, bT, disc)
