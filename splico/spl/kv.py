@@ -569,13 +569,6 @@ class TensorKnotVector(Immutable):
       return self._edit(knotvectors=tuple(kvs))
     return kvs
 
-  def __array__(self, dtype=None, copy=False):
-    # avoid invoking `__iter__` on `self` which would return
-    # an array of shape (ndim,) of UnivariateKnotVectors
-    arr = np.empty((1,), dtype=object)
-    arr[0] = self
-    return arr.reshape(())
-
   @property
   def ndim(self) -> int:
     """ Number of knotvectors. """

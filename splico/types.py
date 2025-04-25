@@ -23,7 +23,8 @@ modifications to enhance interoperability with the Numpy API in the future.
 """
 
 
-from .util import serialize_array, deserialize_array, serialized_array, np
+from .util import serialize_array, deserialize_array, serialized_array, \
+                  serialize_objarr, deserialize_objarr, serialized_objarr, np
 from .err import UnequalLengthError
 from .log import logger as log
 
@@ -236,7 +237,17 @@ class ImmutableMeta(ABCMeta):
     return ret
 
 
-class Immutable(metaclass=ImmutableMeta):
+class ArrayCoercionMixin:
+
+  def __array__(self, dtype=None, copy=False):
+    # avoid invoking `__iter__` on `self` which would return
+    # an array of shape (ndim,) of UnivariateKnotVectors
+    arr = np.empty((1,), dtype=object)
+    arr[0] = self
+    return arr.reshape(())
+
+
+class Immutable(ArrayCoercionMixin, metaclass=ImmutableMeta):
   """
   Generic base class for immutable types.
   Has the ``_field_names`` class-level attribute. The ``_field_names``
@@ -331,7 +342,12 @@ class Immutable(metaclass=ImmutableMeta):
                       " `np.ndarray`. Ensure that all `np.ndarray` attributes"
                       " are read-only using `util.frozen` or `util.freeze`.")
 
-        ret.append(serialize_array(attr))
+        if attr.dtype is np.dtype('O'):
+          # serialize object arrays
+          attr = ret.append(serialize_objarr(attr))
+        else:
+          # serialize all other arrays
+          attr = ret.append(serialize_array(attr))
       elif isinstance(attr, Hashable):
         ret.append(attr)
       else:
@@ -343,11 +359,15 @@ class Immutable(metaclass=ImmutableMeta):
     """
     Prevent overwriting of attributes after initialization.
     """
-    if hasattr(self, '_is_initialized'):  # __init__ is complete
-      if name in self._field_names or name == '_is_initialized':
+    if name in self._field_names:
+      try:
+        object.__getattr__(self, name)
         raise AttributeError(f"The {self.__class__.__name__}'s immutability"
                               " prohibits overwriting attributes in "
                               " `_field_names`.")
+      except AttributeError:
+        # attribute has not been set yet
+        pass
     super().__setattr__(name, value)
 
   def __getstate__(self) -> Tuple[Hashable, ...]:
@@ -360,6 +380,8 @@ class Immutable(metaclass=ImmutableMeta):
     for key, item in zip(self._field_names, state):
       if isinstance(item, serialized_array):
         item = deserialize_array(item)
+      elif isinstance(item, serialized_objarr):
+        item = deserialize_objarr(item)
       args[key] = item
     self.__init__(**args)
 

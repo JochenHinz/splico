@@ -23,9 +23,7 @@ def make_vessel(disc: NDSplineArray,
   kv = centerline_curve.knotvector
   assert kv.ndim == 1
 
-  one = disc.one(disc.knotvector)
-
-  return (disc[:, _] * rRs[_]).sum(-1) + (one[:, _] * centerline_curve)
+  return (disc[:, _] * rRs[_]).sum(-1) + (disc.unity[:, _] * centerline_curve)
 
 
 def main(nelems_centerline: Int,

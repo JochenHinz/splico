@@ -173,7 +173,7 @@ class TestFitSample(unittest.TestCase):
     z = np.zeros_like(x)
     spline = kv.fit([abscissae] * 2, np.stack([x, 1 + x + y, z], axis=1))
     mesh = rectilinear((21, 21))
-    sampled_mesh, = spline.sample_mesh( mesh )
+    sampled_mesh = spline.sample_mesh( mesh )
     self.assertTrue( (np.abs(sampled_mesh.points[:, :2] - np.stack([x, 1 + x + y], axis=1)) < 1e-2).all() )
 
   def test_fit_spline3D(self):
@@ -183,7 +183,7 @@ class TestFitSample(unittest.TestCase):
     x, y, z = map(np.ravel, np.meshgrid(abscissae, abscissae, abscissae))
     spline = kv.fit([abscissae] * 3, np.stack([x, 1 + x + y, z], axis=1))
     mesh = rectilinear((21, 21, 21))
-    sampled_mesh, = spline.sample_mesh( mesh )
+    sampled_mesh = spline.sample_mesh( mesh )
     self.assertTrue( (np.abs(sampled_mesh.points - np.stack([x, 1 + x + y, z], axis=1)) < 1e-2).all() )
 
 

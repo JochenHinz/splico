@@ -15,8 +15,9 @@ from .kv import UnivariateKnotVector, TensorKnotVector, as_TensorKnotVector, \
 from .aux import tensorial_prolongation_matrix
 from .meta import NDSplineMeta
 
-from typing import Sequence, Callable, Tuple, Self, List, Any, TypeVar, Optional
-from types import GenericAlias
+from typing import Sequence, Callable, Tuple, Self, List, Any, TypeVar, \
+                   Optional, Dict
+from types import GenericAlias, MethodType
 from functools import reduce, wraps, cached_property, lru_cache, partial
 from itertools import product, chain
 from abc import abstractmethod
@@ -327,6 +328,14 @@ class NDSpline(Spline, metaclass=NDSplineMeta):
     assert self.controlpoints.shape[0] == self.knotvector.ndofs
 
   @property
+  def unity(self) -> Self:
+    """
+    Return the unity function for the current knotvector.
+    """
+    return self._edit(controlpoints=np.ones(self.controlpoints.shape[:1],
+                                            dtype=float))
+
+  @property
   def knotvector(self) -> TensorKnotVector:
     return self._knotvector
 
@@ -473,7 +482,7 @@ class NDSpline(Spline, metaclass=NDSplineMeta):
     return self._edit(controlpoints=self.controlpoints.reshape(shape))
 
   def __neg__(self) -> Self:
-    return np.array(-1) * self
+    return self._edit(controlpoints=-self.controlpoints)
 
   @canonicalize_sum_args
   def sum(self, axis) -> Self:
@@ -515,35 +524,48 @@ class NDSpline(Spline, metaclass=NDSplineMeta):
     return self._edit(knotvector=self.knotvector,
                       controlpoints=np.moveaxis(self.controlpoints.T, -1, 0))
 
-  def sample_mesh(self, mesh: Mesh) -> NDArray:
+  def sample_mesh(self, mesh: Mesh, boundary=True, **mesh_union_kwargs) -> Mesh:
     """
     Sample meshes from `self`.
 
     Parameters
     ----------
     mesh : :class:`splico.mesh.Mesh`
-        The mesh's points serve as the evaluation points to `self` for sampling
-        a mesh from a spline with target space R^3. The connectivity, elements
-        and element types of the sampled mesh follow directly from `mesh`.
-        Must satisfy mesh.ndims == len(self). If mesh.ndims < 3, only the first
-        mesh.ndims columns of mesh.points are utilized for sampling and augmented
-        by zeros to be a manifold in R^3.
+      The mesh's points serve as the evaluation points to `self` for sampling
+      a mesh from a spline with target space R^3. The connectivity, elements
+      and element types of the sampled mesh follow directly from `mesh`.
+      Must satisfy mesh.ndims == len(self). If mesh.ndims < 3, only the first
+      mesh.ndims columns of mesh.points are utilized for sampling and augmented
+      by zeros to be a manifold in R^3.
+    boundary : :class:`bool`
+      Whether or not the union should be taken over the boundary.
+    mesh_union_kwargs: :class:`dict`
+      Forwarded to `mesh_union`.
 
     Returns
     -------
-    sampled_mesh: :class:`np.ndarray` of type :class:`splico.mesh.Mesh`
-        The sampled meshes of shape `self.shape[:-1]`. Each element has the
-        same type as `mesh` and is sampled from the corresponding spline in `self`.
+    sampled_mesh: :class:`splico.mesh.Mesh`
+        The sampled mesh resulting from taking the union of all meshes sampled
+        from the splines in self.shape[:-1].
     """
-    assert self.shape[-1] == 3
+    assert self.shape[-1:] == (3,)
     assert 0 < self.nvars == mesh.ndims <= 3
 
     self = self.reshape(-1, 3)
 
     points = self(*mesh.points.T[:self.nvars])
-    meshes = [mesh._edit(points=augment_by_zeros(ps, axis=1)) for ps in points.swapaxes(0, 1)]
+    meshes = [mesh._edit(points=augment_by_zeros(ps, axis=1))
+                                              for ps in points.swapaxes(0, 1)]
+    return mesh_union(*meshes, boundary=boundary, **mesh_union_kwargs)
 
-    return np.atleast_1d(np.array(meshes, dtype=object).reshape(self.shape[:-1]))
+  def quick_sample(self, n: Int | AnyIntSeq = 11, **kwargs) -> Mesh:
+    if isinstance(n, Int):
+      n = (n,) * self.nvars
+    assert len(n) == self.nvars
+
+    sample_mesh = rectilinear(n)
+
+    return self.sample_mesh(sample_mesh)
 
   def _split(self, direction: Int, position: Int) -> Tuple[Self, Self]:
     """
@@ -704,12 +726,10 @@ class NDSpline(Spline, metaclass=NDSplineMeta):
     # get the ufunc
     func = getattr(ufunc, method)
 
-    # If any of the inputs is of type `SplineArray`, let SplineArray
-    # handle the operation using the default numpy arithmetic protocol by
-    # converting all inputs of type `NDSpline` to `NDSplineArray`.
+    # If any of the inputs is of type `SplineArray`, let `NDSplineArray`
+    # handle the operation.
     if any(isinstance(inp, NDSplineArray) for inp in inputs):
-      return func( *(NDSplineArray(inp) if isinstance(inp, NDSpline) else inp
-                   for inp in inputs), **kwargs )
+      return NotImplemented
 
     # for now only allow the handling of IMPLEMENTED_UFUNCS
     if ufunc not in IMPLEMENTED_UFUNCS:
@@ -807,6 +827,16 @@ class NDSplineArrayMeta(ImmutableMeta):
     return super().__call__(*args, **kwargs)
 
 
+def _object_array(arr: Any) -> NDArray:
+  ret = np.empty(len(arr), dtype=object)
+  for i, elem in enumerate(arr):
+    ret[i] = elem
+  return ret
+
+
+is_objarr = lambda arr: isinstance(arr, np.ndarray) and arr.dtype is np.dtype('O')
+
+
 class NDSplineArray(Spline, metaclass=NDSplineArrayMeta):
   """
   Array of splines.
@@ -846,8 +876,7 @@ class NDSplineArray(Spline, metaclass=NDSplineArrayMeta):
   Example
   -------
 
-  >>> A = ellipse(1, 1, 10)  # NDSpline of shape (5, 3)
-  >>> B = NDSplineArray(A)  # NDSplineArray of shape (5, 3)
+  >>> B = ellipse(1, 1, 10)  # NDSplineArray of shape (5, 3)
   >>> B.shape
   ... (5, 3)
   >>> B._shape
@@ -906,6 +935,7 @@ class NDSplineArray(Spline, metaclass=NDSplineArrayMeta):
   #       for more sophisticated spline operations.
 
   def __init__(self, arr: NDArray[np.object_] | NDSpline | Sequence[NDSpline]):
+    self.__getattr_cache: Dict[str, Callable | NDArray | Self] = {}
     self.arr = frozen(arr, dtype=NDSpline)
     self._shape = self.arr.shape
     self._elemshape = self.arr.ravel()[0].shape
@@ -926,6 +956,66 @@ class NDSplineArray(Spline, metaclass=NDSplineArrayMeta):
     else: string = f"{shapestr}, {elemstr}"
 
     return f"{self.__class__.__name__}<{string}>"
+
+  @staticmethod
+  def _canonicalize_getattr_args(shape, *args, **kwargs):
+    args = tuple(arg if is_objarr(arg) else np.asarray(arg, dtype=object) for arg in args)
+    kwargs = { k: v if is_objarr(v) else np.asarray(v, dtype=object)
+               for k, v in kwargs.items() }
+    return tuple( np.broadcast_to(arg, shape) for arg in args ), \
+           { k: np.broadcast_to(v, shape) for k, v in kwargs.items() }
+
+  def _vectorize_method(self, name) -> Callable:
+    """
+    Vectorize a method of the NDSpline class.
+    The method is called on each element of the array and the results are
+    returned in an array of dtype object. If the return type is as `self._dtype`,
+    the result is wrapped in `self.__class__`.
+
+    The arguments passed to the method are broadcasted to the shape of `self.arr`.
+    """
+
+    def func(*args, **kwargs):
+      args, kwargs = self._canonicalize_getattr_args(self._shape, *args, **kwargs)
+      ret = np.empty(self._shape, dtype=object)
+      for mindex in product(*map(range, self._shape)):
+        func = getattr(self.arr[mindex], name)
+        ret[mindex] = func(*(arg[mindex] for arg in args),
+                           **{k: v[mindex] for k, v in kwargs.items()})
+
+      if ret.ravel()[0].__class__ is self._dtype:
+        ret = self._edit(arr=ret)
+
+      return frozen(ret)
+
+    return func
+
+  def __getattr__(self, name: str) -> Callable | NDArray | Self:
+    try:
+      return self.__getattr_cache[name]
+    except KeyError:
+      try:
+        attr = getattr(self.arr.ravel()[0], name)
+      except AttributeError:
+        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
+
+      is_method = isinstance(attr, MethodType) and \
+                  attr.__self__ is self.arr.ravel()[0]
+
+      ret: NDArray | Callable | Self
+
+      if is_method:
+        ret = self._vectorize_method(name)
+
+      else:
+        ret = frozen(_object_array([ getattr(elem, name)
+                                     for elem in self.arr.ravel() ])).reshape(self._shape)
+
+        # wrap as self.__class__ if the attribute is self._dtype
+        if ret.ravel()[0].__class__ is self._dtype:
+          ret = self._edit(arr=ret)
+
+      return self.__getattr_cache.setdefault(name, ret)
 
   @cached_property
   def knotvector(self) -> NDArray:
@@ -1157,15 +1247,6 @@ class NDSplineArray(Spline, metaclass=NDSplineArrayMeta):
   def ravel(self) -> Self:
     return self.__class__(self.expand_all().arr.ravel())
 
-  @cached_property
-  def _tobytes(self) -> Tuple:
-    """
-    We have to overwrite this one because the default implementation
-    of `serialize_array` doesn't work as expected for non-numeric types.
-    """
-    # XXX: this is a hack, we should find a better solution
-    return (tuple(self.ravel().arr), self._shape, self._elemshape)
-
   def __array__(self, dtype=None, copy=None) -> np.ndarray:
     """
     Convert the NDSplineArray to a numpy array.
@@ -1247,13 +1328,12 @@ class NDSplineArray(Spline, metaclass=NDSplineArrayMeta):
       except ValueError:
         raise ValueError('Cannot sample a mesh from 0-dimensional splines.')
 
-    assert self._elemshape[-1] == 3, 'Mesh export requires the target space to be R^3.'
+    assert self._elemshape[-1:] == (3,), 'Mesh export requires the target space to be R^3.'
     sample_meshes = np.broadcast_to(np.asarray(sample_meshes, dtype=Mesh),
                                                           self.shape[:-1])
     _self = self.expand(len(self._elemshape) - 1)
 
-    return np.vectorize(lambda elem, mesh: elem.sample_mesh(mesh).item(),
-                        otypes=[Mesh])(_self.arr, sample_meshes)
+    return _self._vectorize_method('sample_mesh')(sample_meshes)
 
   def quick_sample(self, n: Int | AnyIntSeq = 11,
                          take_union: bool = False,

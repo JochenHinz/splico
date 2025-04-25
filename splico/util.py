@@ -162,6 +162,7 @@ def frozen_cached_property(fn: Callable) -> cached_property:
 
 # named tuple with fields corresponding to a serialized array (for hashing)
 serialized_array = namedtuple('serialized_array', ('shape', 'dtype', 'bytes'))
+serialized_objarr = namedtuple('serialized_objarr', ('shape', 'data'))
 
 
 # serialize an array for hashing
@@ -173,6 +174,20 @@ def serialize_array(arr: np.ndarray) -> serialized_array:
 def deserialize_array(serial: serialized_array) -> np.ndarray:
   shape, dtype, _bytes = serial
   return np.frombuffer(_bytes, dtype=np.dtype(dtype.decode())).reshape(shape)
+
+
+# serialize an object array for hashing
+def serialize_objarr(arr: np.ndarray) -> serialized_objarr:
+  return serialized_objarr(arr.shape, tuple(arr.ravel()))
+
+
+# convert serialized object array back to ordinary np.ndarray
+def deserialize_objarr(serial: serialized_objarr) -> np.ndarray:
+  shape, data = serial
+  ret = np.empty(len(data), dtype=object)
+  for i, elem in enumerate(data):
+    ret[i] = elem
+  return ret.reshape(shape)
 
 
 def serialize_input(fn: Callable) -> Callable:
