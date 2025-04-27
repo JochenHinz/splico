@@ -28,7 +28,8 @@ multiplication and other operations.
 
 The library supports:
 
-- Spline arithmetic using the `NumPy` syntax
+- Spline arithmetic using the `NumPy` syntax and interoperability with 
+`NumPy` arrays.
 - Spline evaluation
 - Spline fitting (in any dimension)
 - Discrete twist-minimizing frame generation
