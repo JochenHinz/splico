@@ -30,7 +30,8 @@ The library supports:
 
 - Spline arithmetic using the `NumPy` syntax
 - Spline evaluation
-- Spline fitting
+- Spline fitting (in any dimension)
+- Discrete twist-minimizing frame generation
 - Sampling classical meshes of various types from the splines along with a
 comprehensive module supporting various boolean mesh operations
 - Various spline interpolation techniques (linear, cubic-Hermite, ...)
