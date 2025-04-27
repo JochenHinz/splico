@@ -15,6 +15,7 @@ The syntax for sweeping the cross-sectional manifold `disc` along `X` is simply
 
 ```
 _ = np.newaxis
+
 vessel = (disc[:, _] * rRs[_]).sum(-1) + disc.unity * X
 ```
 
