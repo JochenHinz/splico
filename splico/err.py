@@ -54,3 +54,10 @@ class EmptyContainerError(Exception):
 class DuplicateOrientationError(Exception):
   """ We throw this error when we detect a duplicate orientation. """
   pass
+
+
+class CannotSetImmutableAttributeError(Exception):
+  """
+  Raised when trying to set an attribute that is immutable.
+  """
+  pass

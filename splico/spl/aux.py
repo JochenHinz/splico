@@ -7,12 +7,14 @@ such as prolonging to a refined knotvector.
 
 from ..util import frozen, np
 from ._jit_spl import _univariate_prolongation_matrix, _pseudo_inverse
+from ..types import Int
 
 from itertools import starmap
 from functools import wraps, reduce, lru_cache
-from typing import List, TYPE_CHECKING
+from typing import List, TYPE_CHECKING, Any
 
 from scipy import sparse
+from numpy.typing import NDArray
 
 
 if TYPE_CHECKING:
@@ -91,3 +93,43 @@ def tensorial_prolongation_matrix(kvold: 'TensorKnotVector',
   # XXX: implement a variant that never explicitly carries out the kronecker product
   return sparse_kron(sparse.eye(1),
                      *starmap(univariate_prolongation_matrix, zip(kvold, kvnew)))
+
+
+def denest_objarr(arr: NDArray):
+  """
+  Recursively flattens a numpy object array.
+  Only flattens along entries that are themselves object arrays.
+
+  Parameters
+  ----------
+  arr : np.ndarray
+      A numpy array of dtype object.
+
+  Returns
+  -------
+  np.ndarray
+      A 1D numpy object array containing all non-array objects.
+  """
+
+  if not isinstance(arr, np.ndarray) or arr.dtype != object:
+    raise TypeError("Input must be a numpy object array.")
+
+  shape: List[Int] = []
+
+  elem = arr
+  while isinstance(elem, np.ndarray) and elem.dtype == object:
+    shape.extend(elem.shape)
+    elem = elem.ravel()[0]
+
+  ret: List[Any] = []
+
+  def recurse(x):
+    if isinstance(x, np.ndarray) and x.dtype == object:
+      for item in x.flat:
+        recurse(item)
+    else:
+      ret.append(x)
+
+  recurse(arr)
+
+  return np.array(ret, dtype=object).reshape(shape)

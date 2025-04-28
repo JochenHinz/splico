@@ -537,6 +537,8 @@ class NDSpline(Spline, metaclass=NDSplineMeta):
       Must satisfy mesh.ndims == len(self). If mesh.ndims < 3, only the first
       mesh.ndims columns of mesh.points are utilized for sampling and augmented
       by zeros to be a manifold in R^3.
+      All meshes in `tail`, where `self.shape = *head, tail` are unified using
+      a mesh union.
     boundary : :class:`bool`
       Whether or not the union should be taken over the boundary.
     mesh_union_kwargs: :class:`dict`
@@ -559,13 +561,17 @@ class NDSpline(Spline, metaclass=NDSplineMeta):
     return mesh_union(*meshes, boundary=boundary, **mesh_union_kwargs)
 
   def quick_sample(self, n: Int | AnyIntSeq = 11, **kwargs) -> Mesh:
+    """
+    Quickly sample a mesh by passing the number of evaluation points in each
+    direction.
+    """
     if isinstance(n, Int):
       n = (n,) * self.nvars
     assert len(n) == self.nvars
 
     sample_mesh = rectilinear(n)
 
-    return self.sample_mesh(sample_mesh)
+    return self.sample_mesh(sample_mesh, **kwargs)
 
   def _split(self, direction: Int, position: Int) -> Tuple[Self, Self]:
     """
@@ -801,7 +807,7 @@ def _vectorize_first_axis(op: Callable, pivot: Int,
 
 
 @lru_cache
-def sample_mesh_from_knotvector(tkv: TensorKnotVector, n: Tuple[Int]) -> Mesh:
+def sample_mesh_from_knotvector(tkv: TensorKnotVector, n: Tuple[Int, ...]) -> Mesh:
   """
   Create a sampling mesh from a knotvector.
   """
@@ -933,6 +939,19 @@ class NDSplineArray(Spline, metaclass=NDSplineArrayMeta):
   #       compatibility checks. This would ultimately lead up to a class
   #       that can directly interact with IGA solvers (such as nutils)
   #       for more sophisticated spline operations.
+
+  # methods via `__getattr__` vectorization
+  refine: Callable
+  ref_by: Callable
+  add_knots: Callable
+  raise_multiplicities: Callable
+
+  # properties inherited via `__getattr__` vectorization
+  km: NDArray
+  knots: NDArray
+  degree: NDArray
+  greville: NDArray
+  repeated_knots: NDArray
 
   def __init__(self, arr: NDArray[np.object_] | NDSpline | Sequence[NDSpline]):
     self.__getattr_cache: Dict[str, Callable | NDArray | Self] = {}

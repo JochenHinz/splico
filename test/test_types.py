@@ -1,5 +1,6 @@
 from splico.types import Immutable, ensure_same_class, Singleton
 from splico.mesh import rectilinear
+from splico.err import CannotSetImmutableAttributeError
 
 import unittest
 import tempfile
@@ -54,6 +55,11 @@ class D(Singleton):
     self.a = a
 
 
+class E(Immutable):
+  def __init__(self, a):
+    self.a = float(a)
+
+
 class TestImmutable(unittest.TestCase):
 
   def test_equal_hashable(self):
@@ -81,6 +87,14 @@ class TestImmutable(unittest.TestCase):
     # are not the same, since the first comparison returns NotImplemented,
     # Python should fall back on `__ge__` which should return False.
     self.assertFalse(a <= c)
+
+  def test_protect_attributes(self):
+    e = E(5)
+
+    def f():
+      e.a = 10
+
+    self.assertRaises(CannotSetImmutableAttributeError, f)
 
 
 class TestSingleton(unittest.TestCase):

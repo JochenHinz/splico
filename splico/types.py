@@ -25,7 +25,7 @@ modifications to enhance interoperability with the Numpy API in the future.
 
 from .util import serialize_array, deserialize_array, serialized_array, \
                   serialize_objarr, deserialize_objarr, serialized_objarr, np
-from .err import UnequalLengthError
+from .err import UnequalLengthError, CannotSetImmutableAttributeError
 from .log import logger as log
 
 from functools import wraps
@@ -342,7 +342,7 @@ class Immutable(ArrayCoercionMixin, metaclass=ImmutableMeta):
                       " `np.ndarray`. Ensure that all `np.ndarray` attributes"
                       " are read-only using `util.frozen` or `util.freeze`.")
 
-        if attr.dtype is np.dtype('O'):
+        if attr.dtype == object:
           # serialize object arrays
           ret.append(serialize_objarr(attr))
         else:
@@ -362,7 +362,8 @@ class Immutable(ArrayCoercionMixin, metaclass=ImmutableMeta):
     if name in self._field_names:
       try:
         object.__getattribute__(self, name)
-        raise AttributeError(f"The {self.__class__.__name__}'s immutability"
+        raise CannotSetImmutableAttributeError(
+                              f"The {self.__class__.__name__}'s immutability"
                               " prohibits overwriting attributes in "
                               " `_field_names`.")
       except AttributeError:

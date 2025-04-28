@@ -9,7 +9,8 @@ and a modified version of the `ImmutableMeta` metaclass.
 
 from ..util import np, _, frozen, _round_array, isincreasing, flat_meshgrid, \
                    frozen_cached_property, augment_by_zeros, sorted_tuple
-from ..types import Immutable, FloatArray, IntArray, ensure_same_class, Int
+from ..types import Immutable, FloatArray, IntArray, ensure_same_class, Int, \
+                    AnyIntSeq
 from ..err import MissingVertexError, HasNoSubMeshError, HasNoBoundaryError
 from ._refine import refine_structured, _refine_Triangulation
 from .pol import eval_mesh_local
@@ -662,7 +663,7 @@ class PointMesh(Mesh):
     return True
 
 
-def rectilinear(_points: Sequence) -> LineMesh | QuadMesh | HexMesh:
+def rectilinear(_points: AnyIntSeq) -> LineMesh | QuadMesh | HexMesh:
   """
   Rectilinear mesh in one, two or three dimensions.
 
