@@ -344,10 +344,10 @@ class Immutable(ArrayCoercionMixin, metaclass=ImmutableMeta):
 
         if attr.dtype is np.dtype('O'):
           # serialize object arrays
-          attr = ret.append(serialize_objarr(attr))
+          ret.append(serialize_objarr(attr))
         else:
           # serialize all other arrays
-          attr = ret.append(serialize_array(attr))
+          ret.append(serialize_array(attr))
       elif isinstance(attr, Hashable):
         ret.append(attr)
       else:
@@ -361,7 +361,7 @@ class Immutable(ArrayCoercionMixin, metaclass=ImmutableMeta):
     """
     if name in self._field_names:
       try:
-        object.__getattr__(self, name)
+        object.__getattribute__(self, name)
         raise AttributeError(f"The {self.__class__.__name__}'s immutability"
                               " prohibits overwriting attributes in "
                               " `_field_names`.")
