@@ -20,7 +20,7 @@ vessel = (disc[:, _] * rRs[_]).sum(-1) + disc.unity * X
 ```
 
 where `rRs` is a `NDSplineArray<3, 3>` representing (for instance) a
-positionally-varying affine transformation of the of the cross-sectional
+positionally-varying affine transformation of the cross-sectional
 manifold.
 
 In the above, we used standard `NumPy` broadcasting rules for matrix
