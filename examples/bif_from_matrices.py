@@ -23,7 +23,7 @@ def make_vessel(disc: NDSplineArray,
   kv = centerline_curve.knotvector
   assert kv.ndim == 1
 
-  return (disc[:, _] * rRs[_]).sum(-1) + (disc.unity[:, _] * centerline_curve)
+  return (disc[:, _] * rRs[_]).sum(-1) + (disc.unity * centerline_curve)
 
 
 def main(nelems_centerline: Int,
@@ -95,11 +95,6 @@ def main(nelems_centerline: Int,
   bT, bB = (sum(r[0] for r in radii) / len(radii),)*2
 
   bif = bif_from_matrices(matrices, endpoints, ax, xC, bB, bT, disc)
-
-  # tcps0 = bif[0].arr[2].tcontrolpoints[:, :, 0]
-  # tcps1 = vessels[0].arr[2].tcontrolpoints[:, :, -1]
-
-  # print(tcps0 - tcps1)
 
   npoints = 5
   mesh_union(*bif.quick_sample((npoints, npoints, 5)).ravel(),

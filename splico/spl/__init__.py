@@ -1,2 +1,2 @@
-from .spline import NDSpline, NDSplineArray, as_NDSplineArray
+from .spline import NDSpline, NDSplineArray
 from .kv import UnivariateKnotVector, TensorKnotVector, as_TensorKnotVector

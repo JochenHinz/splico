@@ -2,7 +2,7 @@ from splico.util import np, _
 from splico.types import Int, Float, Numeric
 from splico.util import normalize
 from splico.spl import NDSplineArray, NDSpline, UnivariateKnotVector, \
-                       TensorKnotVector, as_NDSplineArray
+                       TensorKnotVector
 from splico.geo.disc import PATCHES, ellipse
 from splico.geo.interp import cubic_hermite_interpolation
 from splico.geo.aux import spline_or_array
@@ -388,7 +388,7 @@ def bif_from_curves(curves: NDSplineArray | Sequence[NDSplineArray],
     knotvector's endpoints.
   """
 
-  curves = list(map(as_NDSplineArray, curves))
+  curves = list(map(NDSplineArray, curves))
   assert len(curves) >= 3
   assert all(curve.shape == (3,)
              and curve.knotvector == curves[0].knotvector for curve in curves)

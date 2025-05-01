@@ -332,8 +332,8 @@ class NDSpline(Spline, metaclass=NDSplineMeta):
     """
     Return the unity function for the current knotvector.
     """
-    return self._edit(controlpoints=np.ones(self.controlpoints.shape[:1],
-                                            dtype=float))
+    shape = self.controlpoints.shape[:1] + (1,) * self.ndim
+    return self._edit(controlpoints=np.ones(shape, dtype=float))
 
   @property
   def knotvector(self) -> TensorKnotVector:
@@ -816,21 +816,21 @@ def sample_mesh_from_knotvector(tkv: TensorKnotVector, n: Tuple[Int, ...]) -> Me
   return rectilinear([np.linspace(*r, num) for r, num in zip(ranges, n)])
 
 
-class NDSplineArrayMeta(ImmutableMeta):
-  """
-  Metaclass overwrites `__call__` for coercing an instance of `NDSplineArray`
-  or a subclass to an instance of `NDSplineArray`.
-  Does not make a copy of the input array but instantiates a new `NDSplineArray`.
-  """
-
-  def __call__(self, *args, **kwargs):
-    if len(args) == 1 and isinstance(args[0], NDSplineArray):
-      assert not kwargs
-      args, = args
-      if args.__class__ is NDSplineArray:
-        return args
-      args = args.arr,
-    return super().__call__(*args, **kwargs)
+# class NDSplineArrayMeta(ImmutableMeta):
+#   """
+#   Metaclass overwrites `__call__` for coercing an instance of `NDSplineArray`
+#   or a subclass to an instance of `NDSplineArray`.
+#   Does not make a copy of the input array but instantiates a new `NDSplineArray`.
+#   """
+# 
+#   def __call__(self, *args, **kwargs):
+#     if len(args) == 1 and isinstance(args[0], NDSplineArray):
+#       assert not kwargs
+#       args, = args
+#       if args.__class__ is NDSplineArray:
+#         return args
+#       args = args.arr,
+#     return super().__call__(*args, **kwargs)
 
 
 def _object_array(arr: Any) -> NDArray:
@@ -843,7 +843,7 @@ def _object_array(arr: Any) -> NDArray:
 is_objarr = lambda arr: isinstance(arr, np.ndarray) and arr.dtype is np.dtype('O')
 
 
-class NDSplineArray(Spline, metaclass=NDSplineArrayMeta):
+class NDSplineArray(Spline):
   """
   Array of splines.
   The knotvectors of all splines may differ but each spline must have the same
@@ -1387,9 +1387,3 @@ class NDSplineArray(Spline, metaclass=NDSplineArrayMeta):
     mesh: Mesh = self.quick_sample(n=n, take_union=True, boundary=boundary)
     mesh.plot()
     return mesh
-
-
-def as_NDSplineArray(spl) -> NDSplineArray:
-  if isinstance(spl, NDSplineArray):
-    return spl
-  return NDSplineArray(spl)

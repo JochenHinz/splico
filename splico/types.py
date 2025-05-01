@@ -230,6 +230,15 @@ class ImmutableMeta(ABCMeta):
                       "not been implemented or could not be inferred. Cannot "
                       "instantiate a class that does not implement this "
                       "attribute.")
+
+    if len(args) == 1 and issubclass(args[0].__class__, cls):
+      # if the first argument is of the same type as the class,
+      # return the first argument
+      assert not kwargs and args[0]._is_initialized
+      if args[0].__class__ is cls:
+        return args[0]
+      return cls(**args[0]._lib)
+
     ret = type.__call__(cls, *args, **kwargs)
 
     # set private variable to prevent overwriting attributes

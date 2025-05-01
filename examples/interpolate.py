@@ -1,6 +1,6 @@
 from splico.util import np, _
 from splico.geo import interp, ellipse
-from splico.spl import NDSpline, NDSplineArray, as_NDSplineArray
+from splico.spl import NDSpline, NDSplineArray
 from splico.mesh import rectilinear, mesh_union
 
 from numpy.typing import ArrayLike
@@ -32,7 +32,7 @@ def main(spl0: Spline, spl1: Spline, t0: ArrayLike, t1=None) -> None:
     t1 : :class:`np.ndarray`
         The desired tangent at xn+1 == 1. If not passed, defaults to `t0`.
   """
-  spl0, spl1 = map(as_NDSplineArray, (spl0, spl1))
+  spl0, spl1 = map(NDSplineArray, (spl0, spl1))
   assert spl0.nvars == spl1.nvars == 2
 
   if t1 is None:

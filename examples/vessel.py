@@ -52,7 +52,7 @@ def main(nelems_centerline, nelems_cross_section, radii, centerline_points):
   # rRs.shape == (3, 3) 3x3 matrix
   # disc[:, _] * rRs[_] = (5, 1, 3) * (1, 3, 3)
   # taking .sum(-1) => (5, 3), representing a matrix multiplication
-  vessel = (disc[:, _] * rRs[_]).sum(-1) + (disc.unity * X)[_]
+  vessel = (disc[:, _] * rRs[_]).sum(-1) + (disc.unity * X)
 
   # create dense mesh
   eval_mesh = rectilinear([2 * nelems_cross_section + 1,

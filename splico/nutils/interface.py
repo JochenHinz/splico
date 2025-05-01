@@ -1,7 +1,6 @@
 from splico.util import np, frozen, _
 from splico.types import NanVec, Immutable, Singleton, Int, lock
 from splico.spl import NDSpline, NDSplineArray, UnivariateKnotVector
-from splico.spl.spline import as_NDSplineArray
 from splico.util import nutils_to_scipy
 from splico.err import DuplicateOrientationError
 from splico._jit import _apply_pairs
@@ -198,7 +197,7 @@ class NutilsInterface(Singleton):
   def __init__(self, ndarr: NDSplineArray, topo: Tuple | Topology) -> None:
     # XXX: this __init__ is too long, find a way to split it up
 
-    self.ndarr = as_NDSplineArray(ndarr)
+    self.ndarr = NDSplineArray(ndarr)
 
     npatches, targetspace = self.ndarr.shape
 

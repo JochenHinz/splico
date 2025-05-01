@@ -361,15 +361,6 @@ def univariate_integral(uknotvector: UnivariateKnotVector, dx: Int = 0) -> spars
   return M.tocsr()
 
 
-def as_UnivariateKnotVector(kv: UnivariateKnotVector | Any) -> UnivariateKnotVector:
-  """
-  Convert a knotvector to a :class:`UnivariateKnotVector` if not already.
-  """
-  if isinstance(kv, UnivariateKnotVector):
-    return kv
-  return UnivariateKnotVector(*kv)
-
-
 def _empty_csr(ndofs):
   return sparse.csr_matrix((ndofs, ndofs))
 
@@ -539,7 +530,7 @@ class TensorKnotVector(Immutable):
   __ge__: Callable
 
   def __init__(self, knotvectors: AnySequence[UnivariateKnotVector] | NDArray):
-    self.knotvectors = tuple(map(as_UnivariateKnotVector, knotvectors))
+    self.knotvectors = tuple(map(UnivariateKnotVector, knotvectors))
 
   def __iter__(self):
     """ By default we iterate over ``self.knotvectors``. """

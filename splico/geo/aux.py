@@ -4,7 +4,7 @@ Auxiliary functionality for the geo module.
 @author: Jochen Hinz
 """
 
-from splico.spl import NDSpline, NDSplineArray, as_NDSplineArray
+from splico.spl import NDSpline, NDSplineArray
 
 
 from typing import Callable
@@ -15,7 +15,7 @@ from functools import wraps
 Spline = NDSpline | NDSplineArray
 
 
-to_NDSplineArray = lambda x: as_NDSplineArray(x) if isinstance(x, NDSpline) else x
+to_NDSplineArray = lambda x: NDSplineArray(x) if isinstance(x, NDSpline) else x
 
 
 def spline_or_array(f: Callable) -> Callable:
