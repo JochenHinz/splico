@@ -5,7 +5,7 @@ Module defining the NDSpline and NDSplineArray classes and related functions.
 """
 
 from ..util import _round_array, np, frozen, augment_by_zeros, _
-from ..types import Immutable, FloatArray, NumericArray, Float, ImmutableMeta, \
+from ..types import Immutable, FloatArray, NumericArray, Float, \
                     Int, AnyIntSeq, AnyFloatSeq, LockableDict, Numeric, \
                     AnySequence, NumpyIndex, MultiNumpyIndex, ensure_same_class
 from splico.mesh.mesh import Mesh, rectilinear, mesh_union
@@ -814,23 +814,6 @@ def sample_mesh_from_knotvector(tkv: TensorKnotVector, n: Tuple[Int, ...]) -> Me
   assert len(n) == tkv.ndim
   ranges = [(kv.knotvalues[0], kv.knotvalues[-1]) for kv in tkv]
   return rectilinear([np.linspace(*r, num) for r, num in zip(ranges, n)])
-
-
-# class NDSplineArrayMeta(ImmutableMeta):
-#   """
-#   Metaclass overwrites `__call__` for coercing an instance of `NDSplineArray`
-#   or a subclass to an instance of `NDSplineArray`.
-#   Does not make a copy of the input array but instantiates a new `NDSplineArray`.
-#   """
-# 
-#   def __call__(self, *args, **kwargs):
-#     if len(args) == 1 and isinstance(args[0], NDSplineArray):
-#       assert not kwargs
-#       args, = args
-#       if args.__class__ is NDSplineArray:
-#         return args
-#       args = args.arr,
-#     return super().__call__(*args, **kwargs)
 
 
 def _object_array(arr: Any) -> NDArray:

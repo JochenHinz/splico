@@ -32,7 +32,8 @@ from functools import wraps
 from collections import ChainMap
 from collections.abc import Hashable, Mapping
 from abc import ABCMeta
-from typing import Any, Self, Tuple, List, Dict, TypeVar, Sequence, Callable
+from typing import Any, Self, Tuple, List, Dict, Type, TypeVar, Sequence, \
+                   Callable
 from types import EllipsisType
 from weakref import WeakValueDictionary
 from inspect import signature, Signature, Parameter
@@ -144,6 +145,9 @@ def is_valid_signature(signature: Signature) -> bool:
 # the `splico.spl.NDSpline` base class.
 
 
+Im = TypeVar('Im', bound='Immutable')
+
+
 class ImmutableMeta(ABCMeta):
   """
   Metaclass for immutable types. For use in the :class:`Immutable` base class.
@@ -218,7 +222,7 @@ class ImmutableMeta(ABCMeta):
 
     return cls
 
-  def __call__(cls, *args, **kwargs):
+  def __call__(cls: Type[T], *args: Any, **kwargs: Any) -> T:
     """
     Overwrite the __call__ method to prevent instantiation if the class does
     not implement the `_field_names` class-level attribute.
@@ -231,12 +235,15 @@ class ImmutableMeta(ABCMeta):
                       "instantiate a class that does not implement this "
                       "attribute.")
 
-    if len(args) == 1 and issubclass(args[0].__class__, cls):
+    if len(args) == 1 and isinstance(args[0], cls):
+      assert args[0]._is_initialized and not kwargs
+
       # if the first argument is of the same type as the class,
       # return the first argument
-      assert not kwargs and args[0]._is_initialized
       if args[0].__class__ is cls:
         return args[0]
+
+      # else try to coerce to current superclass via the _lib attribute
       return cls(**args[0]._lib)
 
     ret = type.__call__(cls, *args, **kwargs)
@@ -320,6 +327,7 @@ class Immutable(ArrayCoercionMixin, metaclass=ImmutableMeta):
 
   # class-level annotation to avoid mypy errors
   _field_names: Tuple[str, ...]
+  _is_initialized: bool
   __signature__: Signature
 
   @property
