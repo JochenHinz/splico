@@ -36,5 +36,5 @@ The library supports:
 - Sampling classical meshes of various types from the splines along with a
 comprehensive module supporting various boolean mesh operations
 - Various spline interpolation techniques (linear, cubic-Hermite, ...)
-- The library provides an interface to the `Nutils` finite element library
+- The library provides an interface to the [Nutils](https://github.com/evalf/nutils/tree/main) finite element library
 which supports variational techniques based on isogeometric analysis
