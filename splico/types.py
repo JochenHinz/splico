@@ -32,7 +32,7 @@ from functools import wraps
 from collections import ChainMap
 from collections.abc import Hashable, Mapping
 from abc import ABCMeta
-from typing import Any, Self, Tuple, List, Dict, Type, TypeVar, Sequence, \
+from typing import Any, Self, Tuple, List, Dict, TypeVar, Sequence, \
                    Callable
 from types import EllipsisType
 from weakref import WeakValueDictionary
@@ -222,7 +222,7 @@ class ImmutableMeta(ABCMeta):
 
     return cls
 
-  def __call__(cls: Type[T], *args: Any, **kwargs: Any) -> T:
+  def __call__(cls, *args: Any, **kwargs: Any):
     """
     Overwrite the __call__ method to prevent instantiation if the class does
     not implement the `_field_names` class-level attribute.
@@ -371,6 +371,10 @@ class Immutable(ArrayCoercionMixin, metaclass=ImmutableMeta):
         raise AssertionError(f"Attribute of type '{str(type(attr))}'"
                              " cannot be hashed.")
     return tuple(ret)
+
+  def __repr__(self):
+    rdict = repr({key: object.__repr__(getattr(self, key)) for key in self._field_names})[1:-1]
+    return f'{self.__class__.__name__}({rdict})'
 
   def __setattr__(self, name: str, value: Any) -> None:
     """

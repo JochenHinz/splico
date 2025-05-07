@@ -118,7 +118,7 @@ class TestTopology(unittest.TestCase):
     topo = Topology(patches)
     self.assertTrue(topo.is_valid() is False)
     self.assertTrue(topo.orient().is_valid() is True)
-    print(f"Before: {topo}, after {topo.orient()}.")
+    print(f"Before: \n {topo}. \n After: \n {topo.orient()}.")
 
   def test_infer_topo(self):
     A = ellipse(1, 1, 4)

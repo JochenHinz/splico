@@ -1,4 +1,4 @@
-from splico.spl import UnivariateKnotVector, TensorKnotVector
+from splico.spl import UnivariateKnotVector, TensorKnotVector, NDSpline
 
 import unittest
 
@@ -69,6 +69,15 @@ class TestUnivariateKnotVector(unittest.TestCase):
       kv = UnivariateKnotVector(np.linspace(0, 1, 21))
       self.assertTrue( np.allclose((knotvector & kv).knots, np.linspace(0, 1, 11)) )
 
+    def test_greville_collocation_matrix(self):
+      kv0 = UnivariateKnotVector(np.linspace(0, 1, 11))
+      kv1 = UnivariateKnotVector(np.linspace(0, 1, 11))
+
+      mat = kv0.greville_collocation_matrix(kv1)
+
+      # the greville collocation matrix is cached across knot vector instances
+      self.assertTrue(mat is kv1.greville_collocation_matrix)
+
 
 class TestTensorKnotvector(unittest.TestCase):
 
@@ -86,6 +95,29 @@ class TestTensorKnotvector(unittest.TestCase):
       self.assertFalse( tkv1 > tkv0 )
       self.assertFalse( tkv0 >= tkv1 )
       self.assertFalse( tkv0 <= tkv1 )
+
+  def test_fit(self):
+    kvs = [UnivariateKnotVector(np.linspace(0, 1, i)) for i in [5, 6, 7] ]
+    # kvs = [kv.raise_multiplicities(3, 2).to_tensor() for kv in kvs]
+    kvs = [kv.to_tensor() for kv in kvs]
+
+    for i in range(1, 4):
+      kv = np.prod(kvs[:i])
+      spl = NDSpline(kv, np.random.randn(kv.ndofs))
+
+      kvp = spl.knotvector.refine(...)
+      # kvp = spl.knotvector.degree_elevate(..., [1]*len(kv))
+
+      absc = kvp.gauss_abscissae
+      xi = [np.linspace(0, 1, 11)] * len(kv)
+
+      data = spl(*map(np.ravel, np.meshgrid(*absc, indexing='ij')))
+
+      splp = kvp.fit(absc, data, lam0=0)
+
+      self.assertTrue(
+          np.allclose(splp(*xi), spl(*xi))
+      )
 
 
 if __name__ == '__main__':

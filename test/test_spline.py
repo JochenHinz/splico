@@ -108,20 +108,52 @@ class TestNDSpline(unittest.TestCase):
     offset = np.random.randn(3, 2, 4)
     self.assertTrue( np.allclose((spl0 * offset).controlpoints, spl0.controlpoints * offset[_]) )
 
+  def test_matmul(self):
+    # forthcoming
+    pass
+
   def test_prolong(self):
     disc = ellipse(1, 1, 4).arr[()]
     kv = disc.knotvector.refine(...)
     disc_r = disc.prolong_to(kv)
 
-    self.assertTrue(np.allclose(disc[0].tensorcall(*kv.knots),
-                                disc_r[0].tensorcall(*kv.knots)))
+    self.assertTrue(np.allclose(disc[0](*kv.knots),
+                                disc_r[0](*kv.knots)))
 
     disc_r = disc.refine(...)
 
-    self.assertTrue(np.allclose(disc[0].tensorcall(*kv.knots),
-                                disc_r[0].tensorcall(*kv.knots)))
+    self.assertTrue(np.allclose(disc[0](*kv.knots),
+                                disc_r[0](*kv.knots)))
 
     self.assertTrue(all(np.allclose(kn0, kn1) for kn0, kn1 in zip(disc_r.knots, kv.knots)))
+
+  def test_degree_elevate(self):
+    # 1D
+    kv = UnivariateKnotVector(np.linspace(0, 1, 5), 3).to_tensor()
+    spl = kv.fit([np.linspace(0, 1, 11)], np.random.randn(11, 3))
+
+    for i in range(4):
+
+      myspl = spl.raise_multiplicities([0], [[2]], [i])
+      splp = myspl.degree_elevate(1)
+
+      xi = np.linspace(0, 1, 301)
+      X, Y = spl(xi), splp(xi)
+
+      self.assertTrue( np.allclose(X, Y) )
+
+    # 2D
+    disc = ellipse(1, 1, 4).arr[()][0]
+
+    for i in range(4):
+      mydisc = disc.raise_multiplicities([0, 1], [3, 2], [i, i])
+
+      xi = disc.knots
+      discp = mydisc.degree_elevate(1)
+
+      X, Y = discp(*xi), mydisc(*xi)
+
+      self.assertTrue( np.allclose(X, Y) )
 
   def test_split_join(self):
     # direction 0, position 4, amount 2
@@ -150,8 +182,10 @@ class TestNDSpline(unittest.TestCase):
 
     self.assertTrue(np.allclose(X.controlpoints, Xs[0].join(Xs[1:], direction).controlpoints))
 
-  def test_against_scipy(self):
+  def test_against_scipy_1D(self):
     from scipy.interpolate import splev
+
+    # no repeated knots
     tkv = TensorKnotVector([UnivariateKnotVector(np.linspace(0, 1, 21), 3)])
 
     controlpoints = np.random.randn(tkv.ndofs)
@@ -161,6 +195,66 @@ class TestNDSpline(unittest.TestCase):
     self.assertTrue(np.allclose(spl(xi), splev(xi, (tkv.repeated_knots, controlpoints, 3))))
     self.assertTrue(np.allclose(spl(xi, dx=1), splev(xi, (tkv.repeated_knots, controlpoints, 3), der=1)))
     self.assertTrue(np.allclose(spl(xi, dx=2), splev(xi, (tkv.repeated_knots, controlpoints, 3), der=2)))
+
+    # repeated knots
+    tkv = TensorKnotVector([UnivariateKnotVector(np.linspace(0, 1, 21), 3)]). \
+                            raise_multiplicities(0, [5], [3])
+
+    controlpoints = np.random.randn(tkv.ndofs)
+    spl = NDSpline(tkv, controlpoints)
+
+    xi = np.linspace(0, 1, 1001)
+    self.assertTrue(np.allclose(spl(xi), splev(xi, (tkv.repeated_knots, controlpoints, 3))))
+
+  def test_against_scipy_2D(self):
+    from scipy.interpolate import bisplev
+
+    # no repeated knots
+    tkv = TensorKnotVector([UnivariateKnotVector(np.linspace(0, 1, i), 3) for i in (11, 21)])
+
+    controlpoints = np.random.randn(tkv.ndofs)
+    spl = NDSpline(tkv, controlpoints)
+
+    tck = (*tkv.repeated_knots, spl.controlpoints.ravel(), *tkv.degree)
+
+    xi = [np.linspace(0, 1, 101)] * 2
+    Xi = list(map(np.ravel, np.meshgrid(*xi, indexing='ij')))
+
+    # test tcall
+    # self.assertTrue(np.allclose(spl(*xi, tensor=True), bisplev(*xi, tck, dx=0, dy=0).ravel()))
+    # self.assertTrue(np.allclose(spl(*xi, tensor=True, dx=(1, 1)), bisplev(*xi, tck, dx=1, dy=1).ravel()))
+    # self.assertTrue(np.allclose(spl(*xi, tensor=True, dx=(2, 2)), bisplev(*xi, tck, dx=2, dy=2).ravel()))
+
+    # test normal call
+    self.assertTrue(np.allclose(spl(*Xi), bisplev(*xi, tck, dx=0, dy=0).ravel()))
+    self.assertTrue(np.allclose(spl(*Xi, dx=(1, 1)), bisplev(*xi, tck, dx=1, dy=1).ravel()))
+    self.assertTrue(np.allclose(spl(*Xi, dx=(2, 2)), bisplev(*xi, tck, dx=2, dy=2).ravel()))
+
+    # repeated knots
+    tkv = TensorKnotVector([UnivariateKnotVector(np.linspace(0, 1, 21), 3)]*2)
+    tkv = tkv.raise_multiplicities([0, 1], [4, 4], [3, 3])
+
+    controlpoints = np.random.randn(tkv.ndofs)
+    spl = NDSpline(tkv, controlpoints)
+
+    tck = (*tkv.repeated_knots, spl.controlpoints.ravel(), *tkv.degree)
+
+    xi = [np.linspace(0, 1, 9)] * 2
+    Xi = list(map(np.ravel, np.meshgrid(*xi, indexing='ij')))
+    # self.assertTrue(np.allclose(spl(*xi, tensor=True), bisplev(*xi, tck, dx=0, dy=0).ravel()))
+
+    X = spl(*map(np.ravel, np.meshgrid(*xi, indexing='ij')))
+    X_ = bisplev(*xi, tck, dx=0, dy=0).ravel()
+
+    self.assertTrue(np.allclose(X, X_))
+
+  # def test_tensor_call(self):
+  #   ell = ellipse(1, 1, 4).to_ndim(1).arr[0]
+  #   xi = [np.linspace(0, 1, i) for i in (5, 7)]
+  #   Xi = list(map(np.ravel, np.meshgrid(*xi, indexing='ij')))
+  #   X, Y = ell(*xi, tensor=True), ell(*Xi)
+
+  #   self.assertTrue(np.allclose(X, Y))
 
 
 class TestFitSample(unittest.TestCase):

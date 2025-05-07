@@ -6,22 +6,22 @@ and :class:`TensorKnotVector`. The latter is a vectorized version of the former.
 """
 
 from ..util import _round_array, isincreasing, np, _, \
-                   frozen_cached_property, gauss_quadrature
+                   frozen_cached_property, gauss_quadrature, frozen
 from ..types import Immutable, ensure_same_class, ensure_same_length, Int, \
                     Numeric, AnyIntSeq, AnyNumericSeq, FloatArray, IntArray, \
                     AnySequence, NumericArray, NumpyIndex
 from ..err import EmptyContainerError
-from ._jit_spl import _call1D, nonzero_bsplines_deriv_vectorized
-from .aux import freeze_csr, sparse_kron
+from ..kron import freeze_csr, sparse_kron, KroneckerOperator
+from ._jit_spl import nonzero_bsplines_deriv_vectorized, _collocation_matrix
 
-from itertools import starmap
-from functools import partial, lru_cache
-from typing import Sequence, Self, Any, Optional, Callable, overload, List
+from itertools import starmap, chain
+from functools import partial, lru_cache, reduce
+from typing import Sequence, Self, Any, Optional, Callable, overload, List, \
+                   Tuple
 from inspect import signature
 import operator
 
 from scipy import sparse
-from scipy.sparse import linalg as splinalg
 from numpy.typing import NDArray
 
 
@@ -54,6 +54,16 @@ class UnivariateKnotVector(Immutable):
     repretitions.
   """
   # XXX: support for periodic knotvectors
+
+  @staticmethod
+  def union(*args: 'UnivariateKnotVector') -> 'UnivariateKnotVector':
+    assert args
+    return reduce(operator.or_, args)
+
+  @staticmethod
+  def intersection(*args: 'UnivariateKnotVector') -> 'UnivariateKnotVector':
+    assert args
+    return reduce(operator.and_, args)
 
   def __init__(self, knotvalues: AnyNumericSeq,
                      degree: Int = 3,
@@ -96,8 +106,25 @@ class UnivariateKnotVector(Immutable):
   def greville(self) -> FloatArray:
     """ Compute the Greville points. """
     knots = self.repeated_knots
-    return knots[np.arange(self.degree, dtype=int)[_] +
-                 np.arange(1, self.dim+1, dtype=int)[:, _]].sum(1) / self.degree
+    ret = knots[np.arange(self.degree, dtype=int)[_] +
+                np.arange(1, self.dim+1, dtype=int)[:, _]].sum(1) / self.degree
+
+    # Check if there are points with discontinuous derivatives
+    # If so, we have to slightly move the point away from the discontinuity's
+    # knot.
+    breaks, = np.where( self.continuity[1:-1] == -1 )
+    if len(breaks):
+      pass
+    return np.clip(ret, self.knots[0], self.knots[-1])
+
+  @frozen_cached_property
+  def gauss_abscissae(self) -> FloatArray:
+    w, _points = gauss_quadrature(0, 1, self.degree + 1)
+    return frozen( self.knots[:-1, _] + self.dx[:, _] * _points[_] ).ravel()
+
+  @frozen_cached_property
+  def continuity(self) -> FloatArray:
+    return self.degree - self.km
 
   @property
   def nelems(self) -> int:
@@ -156,15 +183,16 @@ class UnivariateKnotVector(Immutable):
     X: Collocation matrix of type sparse.csr_matrix.
     """
     abscissae = np.asarray(abscissae, dtype=float)
+
     a, *ignore, b = self.knots
     assert a <= abscissae.min() <= abscissae.max() <= b
 
-    # XXX: obviously we need to find a better solution for this.
-    ret = _round_array(np.stack([_call1D(abscissae,
-                                         self.repeated_knots,
-                                         self.degree, e, dx)
-                                 for e in np.eye(self.dim)], axis=0))
-    return sparse.csr_matrix(ret)
+    args = _collocation_matrix(self.repeated_knots,
+                               self.degree,
+                               abscissae,
+                               dx)
+
+    return sparse.coo_matrix(args).tocsr()
 
   def _refine(self) -> Self:
     """ Uniformly refine the entire knotvector once. """
@@ -188,6 +216,28 @@ class UnivariateKnotVector(Immutable):
     add = (self.knots[indices + 1] + self.knots[indices]) / 2.0
     return self._edit(knotvalues=np.insert(self.knots, indices+1, add),
                       knotmultiplicities=np.insert(self.km, indices+1, 1))
+
+  def _split(self, position: Int) -> Tuple[Self, ...]:
+    """
+    Split the knotvector at position `position` into two knotvectors.
+    The knotmultiplicity at the new endpoint will be `degree + 1`.
+    """
+    assert 0 < position <= self.nelems
+    km0 = self.knotmultiplicities[:position] + (self.degree + 1,)
+    km1 = (self.degree + 1,) + self.knotmultiplicities[position+1:]
+    knots0, knots1 = self.knotvalues[:position+1], self.knotvalues[position:]
+    return self._edit(knotvalues=knots0, knotmultiplicities=km0), \
+           self._edit(knotvalues=knots1, knotmultiplicities=km1)
+
+  def split(self, positions: Int | AnyIntSeq) -> Tuple[Self, ...]:
+    if isinstance(positions, Int):
+      positions = positions,
+
+    ret: Tuple[Self, ...] = self,
+    for pos0, pos1 in zip(chain((0,), positions), positions):
+      ret = ret[:-1] + ret[-1]._split(pos1 - pos0)
+
+    return ret
 
   def add_knots(self, knotvalues: Numeric | AnyNumericSeq) -> Self:
     """
@@ -225,6 +275,21 @@ class UnivariateKnotVector(Immutable):
     km = np.asarray(self.knotmultiplicities, dtype=int)
     km[positions] += np.asarray(amounts, dtype=int)
     return self._edit(knotmultiplicities=km)
+
+  def degree_elevate(self, dp: Int, strict=True) -> Self:
+    """
+    Raise the polynomial degree of the knotvector by ``dp`` while retaining
+    the same continuity.
+
+    If `dp` is negative and strict is False, we simply return `self`.
+    If strict is true, we raise an assertion error.
+    """
+    if strict:
+      assert dp >= 0
+    if dp <= 0:
+      return self
+    return self._edit(degree=self.degree + dp,
+                      knotmultiplicities=self.km + dp)
 
   def integrate(self, dx: Int = 0):
     """ See ``univariate_integral``. """
@@ -279,6 +344,10 @@ class UnivariateKnotVector(Immutable):
     """
     Create a knotvector from the shared knots.
     If a knot is shared, the larger of the two knotmultiplicities is taken.
+
+    We do not support the case where the two knotvectors have different
+    polynomial degrees. We require the user to explicitly raise the degree
+    of the knotvector with the smaller degree in this case.
     """
     knots = np.intersect1d(self.knots, other.knots)
     if self.degree != other.degree or not len(knots):
@@ -286,6 +355,16 @@ class UnivariateKnotVector(Immutable):
     km0, km1 = map(lambda x: x.km[np.searchsorted(x.knots, knots)], (self, other))
     km = np.maximum(km0, km1)
     return self._edit(knotvalues=knots, knotmultiplicities=km)
+
+  @ensure_same_class
+  def intersection_promote(self, other: 'UnivariateKnotVector') -> Self:
+    """
+    Same as `__and__` but also raises the degree of the knotvector with the
+    smaller degree to the larger one.
+    """
+    self = self.degree_elevate(other.degree - self.degree, strict=False)
+    other = other.degree_elevate(self.degree - other.degree, strict=False)
+    return self & other
 
   @ensure_same_class
   def __or__(self, other: Self) -> Self:
@@ -303,6 +382,15 @@ class UnivariateKnotVector(Immutable):
       km[my_ind] = np.maximum(km[my_ind], kv.km)
 
     return self._edit(knotvalues=knots, knotmultiplicities=km)
+
+  @ensure_same_class
+  def union_promote(self, other: 'UnivariateKnotVector') -> Self:
+    """
+    See ``intersection_promote``.
+    """
+    self = self.degree_elevate(other.degree - self.degree, strict=False)
+    other = other.degree_elevate(self.degree - other.degree, strict=False)
+    return self | other
 
   @ensure_same_class
   def __lt__(self, other: Self) -> bool | np.bool_:
@@ -325,6 +413,25 @@ class UnivariateKnotVector(Immutable):
 
   def __ge__(self, other):
     return self == other or self > other
+
+  @ensure_same_class
+  def __matmul__(self, other: Self) -> Self:
+    """
+    We overload the `@` operator to compute the knotvector that contains the
+    >>product<< of any functional from the linear span of ``self`` and
+    ``other``.
+    """
+    degree = self.degree + other.degree
+    all_knots = np.union1d( self.knots, other.knots )
+    km = np.zeros(len(all_knots), dtype=int)
+
+    for kv in (self, other):
+      my_ind = np.searchsorted(all_knots, kv.knots)
+      km[my_ind] = np.maximum(km[my_ind], kv.km + (degree - kv.degree))
+
+    return self._edit(knotvalues=all_knots,
+                      knotmultiplicities=km,
+                      degree=degree)
 
 
 @lru_cache(maxsize=32)
@@ -470,12 +577,13 @@ def add_vectorizations(cls):
     return wrapper
 
   # add all index vectorized methods
-  for name in 'flip', 'refine', 'ref_by', 'add_knots', 'raise_multiplicities':
+  for name in 'flip', 'refine', 'ref_by', 'add_knots', 'degree_elevate', \
+              'raise_multiplicities':
     setattr(cls, name, _vectorize_with_indices(name))
 
   # add all vectorized properties
   for name in 'dx', 'knots', 'km', 'degree', 'repeated_knots', 'nelems', \
-              'dim', 'greville':
+              'dim', 'greville', 'continuity', 'gauss_abscissae':
     setattr(cls, name, _vectorize_property(name))
 
   # add all operator vectorizations with custom return type
@@ -483,7 +591,7 @@ def add_vectorizations(cls):
     setattr(cls, name, _vectorize_operator(name, all))
 
   # add all operator vectorizations without custom return type
-  for name in '__and__', '__or__':
+  for name in '__and__', '__or__', '__matmul__':
     setattr(cls, name, _vectorize_operator(name))
 
   return cls
@@ -512,13 +620,16 @@ class TensorKnotVector(Immutable):
   degree: tuple
   nelems: tuple
   greville: tuple
+  continuity: tuple
   repeated_knots: tuple
+  gauss_abscissae: tuple
 
   # through metaclass vectorization inferred methods
   flip: Callable
   refine: Callable
   ref_by: Callable
   add_knots: Callable
+  degree_elevate: Callable
   raise_multiplicities: Callable
 
   __or__: Callable
@@ -528,6 +639,16 @@ class TensorKnotVector(Immutable):
   __gt__: Callable
   __le__: Callable
   __ge__: Callable
+
+  @staticmethod
+  def union(*args: 'TensorKnotVector') -> 'TensorKnotVector':
+    assert args
+    return reduce(operator.or_, args)
+
+  @staticmethod
+  def intersection(*args: 'TensorKnotVector') -> 'TensorKnotVector':
+    assert args
+    return reduce(operator.and_, args)
 
   def __init__(self, knotvectors: AnySequence[UnivariateKnotVector] | NDArray):
     self.knotvectors = tuple(map(UnivariateKnotVector, knotvectors))
@@ -573,7 +694,7 @@ class TensorKnotVector(Immutable):
   def __len__(self) -> int:
     return self.ndim
 
-  def collocate(self, *list_of_abscissae, dx: AnyIntSeq = ()) -> sparse.csr_matrix:
+  def collocate(self, *list_of_abscissae, dx: AnyIntSeq = ()) -> Tuple[sparse.csr_matrix, ...]:
     """
     Tensor-product version of ``UnivariateKnotVector.collocate``.
     """
@@ -583,9 +704,8 @@ class TensorKnotVector(Immutable):
     if len(dx) == 0:
       dx = (0,) * len(self)
     assert len( (dx := tuple(dx)) ) == len(list_of_abscissae) == len(self)
-    mats = tuple( kv.collocate(absc, dx=_dx)
+    return tuple( kv.collocate(absc, dx=_dx)
                   for kv, absc, _dx, in zip(self, list_of_abscissae, dx) )
-    return sparse_kron(sparse.eye(1), *mats)
 
   @property
   def M(self):
@@ -655,18 +775,24 @@ class TensorKnotVector(Immutable):
     assert data.shape[:1] == (np.multiply.reduce(list(map(len, list_of_abscissae))),)
     assert all(lam >= 0 for lam in (lam0, lam1))
 
-    X = self.collocate(*list_of_abscissae)
+    X = KroneckerOperator(self.collocate(*list_of_abscissae))
     M = X @ X.T
 
-    if lam0 != 0:
-      M += lam0 * self.A
-    if lam1 != 0:
-      M += lam1 * self.D
+    # when stabilization is desired, we have to let go of the kronecker
+    # product structure of the collocation matrix.
+    # TODO: find a better way to do this.
+    if any( (lam0, lam1) ):
+      _M = M.tocsr()
+      if lam0 != 0:
+        _M += lam0 * self.A
+      if lam1 != 0:
+        _M += lam1 * self.D
+      M = KroneckerOperator([_M])
 
     rhs = X @ data.reshape((-1,) + (data.shape[1:] and (np.prod(data.shape[1:]),)))
 
     from .spline import NDSpline
-    return NDSpline(self, splinalg.spsolve(M, rhs).reshape((-1,) + data.shape[1:]))
+    return NDSpline(self, (M.inv @ rhs).reshape((-1,) + data.shape[1:]))
 
   def __mul__(self, other: Any):
     """

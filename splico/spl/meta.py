@@ -5,8 +5,6 @@ Metaclasses specific to the `splico.spl` package.
 
 from ..types import ImmutableMeta
 
-from functools import wraps
-
 
 class NDSplineMeta(ImmutableMeta):
   """

@@ -5,12 +5,12 @@ All taken from the NURBS book.
 """
 
 
-from ..util import np
+from ..util import np, _
 from .._jit import arange_product, ravel_multi_index, unravel_multi_index
 
 import multiprocessing
 
-from numba import njit, float64, int64, prange, config
+from numba import njit, float64, prange, config
 from numba.typed import List
 
 config.NUMBA_NUM_THREADS = multiprocessing.cpu_count()
@@ -86,48 +86,6 @@ def _pseudo_inverse(data: np.ndarray, rows: np.ndarray, cols: np.ndarray):
     new_data[b0:b1] = mydata / np.abs(mydata).sum()
 
   return new_data, (cols, rows)
-
-
-@njit(cache=True)
-def position_in_knotvector_old(t, x):
-  # XXX: replace by binary search algorithm.
-  """
-  Return the position of ``x`` in the knotvector ``t``.
-  If x equals t[-1], return the position before the first
-  occurence of x in t.
-
-  Parameters
-  ----------
-  t : :class:`np.ndarray`
-      The knotvector with repeated knots.
-  x : :class:`np.ndarray`
-      The vector of positions.
-
-  Returns
-  -------
-  ret : :class:`np.ndarray` comprised of integers
-      The positions in the knotvector. Has the same length as `x`.
-      If entry is not found, defaults to -1.
-  """
-
-  xlen = len(x)
-  ret = np.empty(xlen, dtype=int64)
-
-  for i in prange(xlen):
-    for j in range(len(t) - 1):
-
-      # if x equals the last knot, return this
-      if x[i] == t[-1]:
-        ret[i] = np.where(t == x[i])[0][0] - 1
-        break
-
-      if t[j] <= x[i] < t[j+1]:
-        ret[i] = j
-        break
-    else:  # no break
-        ret[i] = -1
-
-  return ret
 
 
 @njit(cache=True)
@@ -317,6 +275,28 @@ def nonzero_bsplines_deriv_vectorized(kv, p, x, dx):
   for i in prange(len(ret)):
     ret[i] = nonzero_bsplines_deriv(kv, p, x[i], dx)[dx]
   return ret
+
+
+@njit(cache=True)
+def _collocation_matrix(kv, p, x, dx):
+  """
+  Compute the collocation matrix for the univariate B-spline basis
+  resulting from knotvector `kv` and degree `p` at the positions `x`.
+
+  Return in COO format.
+  """
+  # Find the knot spans containing the x[i]
+  pos = position_in_knotvector(kv, x)
+
+  # The data has shape (len(x), p + 1)
+  data = nonzero_bsplines_deriv_vectorized(kv, p, x, dx).ravel()
+
+  # A value contained in knotspan number `i` gives a nonzero outcome for
+  # all DOFS with indices `i - p.. i`
+  i = (pos.reshape((-1, 1)) + np.arange(-p, 1, dtype=np.int64).reshape((1, -1))).ravel()
+  j = np.repeat(np.arange(len(x), dtype=np.int64), p + 1)
+
+  return data, (i, j)
 
 
 @njit(cache=True)
@@ -543,7 +523,7 @@ def call(Xi,
 
   assert controlpoints.ndim == 2, "Please provide a 2D array of control points."
 
-  assert 1 <= nvars <= 3
+  # assert 1 <= nvars <= 3
   if dx is None:
     dx = 0
   if np.isscalar(dx):
@@ -680,11 +660,12 @@ def tensor_call(list_of_abscissae,
                 dx=None,
                 into=None):
   # XXX: docstring
+  raise NotImplementedError("This function is buggy and needs to be fixed.")
   nvars = len(list_of_abscissae)
 
   assert controlpoints.ndim == 2, "Please provide a 2D array of control points."
 
-  assert 1 <= nvars <= 3
+  # assert 1 <= nvars <= 3
   if dx is None:
     dx = 0
   if np.isscalar(dx):
