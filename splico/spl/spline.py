@@ -14,7 +14,7 @@ from splico.mesh.mesh import Mesh, rectilinear, mesh_union
 from ._jit_spl import call
 from .kv import UnivariateKnotVector, TensorKnotVector, as_TensorKnotVector, \
                 KnotVectorType
-from .aux import fit_greville
+from .aux import fit_gauss
 from .meta import NDSplineMeta
 
 from typing import Sequence, Callable, Tuple, Self, List, Any, TypeVar, \
@@ -86,8 +86,8 @@ class __NDSpline_implementations__:
   def sub(self, other):
     return self + -other
 
-  @implements(np.multiply)
-  def mul(self, other):
+  @implements(np.matmul)
+  def matmul(self, other):
     """
     Multiply two :class:`NDSpline`s. Creates a tensor product of the
     knotvector and controlpoints. The number of dependencies of the resulting
@@ -111,8 +111,8 @@ class __NDSpline_implementations__:
 
     return NDSpline(knotvector, cps)
 
-  @implements(np.matmul)
-  def matmul(self, other):
+  @implements(np.multiply)
+  def mul(self, other):
     """
     The matmul `@` operator is overloaded to perform true multiplication.
     The idea is to multiply the two spline functions and express the result
@@ -131,7 +131,7 @@ class __NDSpline_implementations__:
       return eval0.reshape((-1,) + (1,) * (m - n) + eval0.shape[1:]) *  \
              eval1.reshape((-1,) + (1,) * (n - m) + eval1.shape[1:])
 
-    return NDSpline(knotvector_to, fit_greville(knotvector_to, func))
+    return NDSpline(knotvector_to, fit_gauss(knotvector_to, func))
 
 
 # lock to prevent unwanted modifications
@@ -209,7 +209,7 @@ T = TypeVar('T', bound='_ArrayLike')
 
 def _add_one_axes(*inputs: T) -> Tuple[T, ...]:
   """
-  Given two ArraLike objects, add axes to the shorter shaped object
+  Given a number of ArraLike objects, add axes to the shorter shaped objects
   to make them broadcastable.
   """
   m = max(map(len, (inp.shape for inp in inputs)))
@@ -439,7 +439,8 @@ class NDSpline(Spline, metaclass=NDSplineMeta):
 
     # shape of the tensor control points after inserting the new axes
     # and adding axes of dimension 1 in the new axes' places
-    oneshape = tuple(np.insert(self.tcontrolpoints.shape[:self.nvars],
+    shape = self.tcontrolpoints.shape[:self.nvars]
+    oneshape = tuple(np.insert(np.asarray(shape, dtype=int),
                                np.array(axes, dtype=int),
                                np.ones(naxes)))
 
@@ -470,7 +471,7 @@ class NDSpline(Spline, metaclass=NDSplineMeta):
       log.warning("Prolongation will be inexact because the knotvectors "
                   "are not nested.")
 
-    cps = fit_greville(knotvector_to, lambda *args: self(*args, tensor=True))
+    cps = fit_gauss(knotvector_to, lambda *args: self(*args, tensor=True))
     return self._edit(knotvector=knotvector_to, controlpoints=cps)
 
   def degree_elevate(self, dp: Int | AnyIntSeq) -> Self:
@@ -545,6 +546,8 @@ class NDSpline(Spline, metaclass=NDSplineMeta):
   def tensorcall(self, *args, **kwargs):
     """ partial(self, tensor=True) """
     return self(*args, tensor=True, **kwargs)
+
+  tcall = tensorcall
 
   def __getitem__(self, item: Any) -> Self:
     """
@@ -1077,8 +1080,6 @@ class NDSplineArray(Spline):
     to a compatible shape. This allows performing an arithmetic operation on
     the entries of the two `self.arr` attributes in pairs.
 
-    For now we only handle two inputs at a time.
-
     TODO: add example with shapes.
     """
     assert spls
@@ -1092,14 +1093,14 @@ class NDSplineArray(Spline):
     spls = tuple(map(lambda x: x.contract_all(), _add_one_axes(*spls)))
     m = max(map(lambda spl: spl._ndim, spls))
 
-    # make sure the shapes are compatible
-    shp = try_broadcast_shapes(*map(lambda spl: spl.shape, spls))
+    # make sure the shapes are compatible, raises an error if not
+    try_broadcast_shapes(*map(lambda spl: spl.shape, spls))
 
     # expand the arrays to the same dimension
     return tuple(spl.expand(max(0, m - spl._ndim)) for spl in spls)
 
   @staticmethod
-  def vectorize_NDSpline_func(op: Callable):
+  def _vectorize_NDSpline_func(op: Callable):
     """
     Vectorize a function that operates between :class:`NDSpline` objects to
     make it compatible with :class:`NDSplineArray` objects.
@@ -1109,23 +1110,18 @@ class NDSplineArray(Spline):
     pairwise in a loop.
     """
 
-    def wrapper(*spls: 'NDSplineArray', **kwargs):
+    def wrapper(*spls: 'NDSplineArray', **kwargs) -> 'NDSplineArray':
       assert all(isinstance(spl, spls[0].__class__) for spl in spls), \
         f"Cannot apply {op.__name__} to {spls} of different classes."
 
       # Make spline.arr have all the same dimension
       # They may still have one axes.
       spls = NDSplineArray._broadcast_arrshapes(*spls)
-      arrshape = try_broadcast_shapes(*map(lambda spl: spl.arr.shape, spls))
 
-      arrs = [ np.broadcast_to(spl.arr, arrshape) for spl in spls ]
-
-      ret = np.empty(arrshape, dtype=object)
-      for multiindex in product(*map(range, arrshape)):
-        # apply the operation to the elements of the arrays
-        ret[multiindex] = op(*(arr[multiindex] for arr in arrs), **kwargs)
-
-      return spls[0]._edit(arr=ret)
+      # Vectorize the operation to be applied to the elements of the splines'
+      # arrays. Broadcasting is done by numpy.
+      arr = np.vectorize(lambda *args: op(*args))(*(spl.arr for spl in spls), **kwargs)
+      return spls[0]._edit(arr=arr)
 
     return wrapper
 
@@ -1143,9 +1139,9 @@ class NDSplineArray(Spline):
       args, kwargs = self._canonicalize_getattr_args(self._shape, *args, **kwargs)
       ret = np.empty(self._shape, dtype=object)
       for mindex in product(*map(range, self._shape)):
-        func = getattr(self.arr[mindex], name)
-        ret[mindex] = func(*(arg[mindex] for arg in args),
-                           **{k: v[mindex] for k, v in kwargs.items()})
+        myfunc = getattr(self.arr[mindex], name)
+        ret[mindex] = myfunc(*(arg[mindex] for arg in args),
+                             **{k: v[mindex] for k, v in kwargs.items()})
 
       if ret.ravel()[0].__class__ is self._dtype:
         ret = self._edit(arr=ret)
@@ -1180,6 +1176,15 @@ class NDSplineArray(Spline):
           ret = self._edit(arr=ret)
 
       return self.__getattr_cache.setdefault(name, ret)
+
+  @staticmethod
+  def _vectorize_method_one_arg(name: str) -> Callable:
+    def wrapper(self, *args, **kwargs):
+      return self._edit(arr=np.vectorize(lambda x: getattr(x, name)(*args, **kwargs))(self.arr))
+    return wrapper
+
+  transpose_dependencies = _vectorize_method_one_arg('transpose_dependencies')
+  insert_dependencies = _vectorize_method_one_arg('insert_dependencies')
 
   @cached_property
   def knotvector(self) -> NDArray:
@@ -1341,6 +1346,8 @@ class NDSplineArray(Spline):
   def tensorcall(self, *args, **kwargs) -> FloatArray:
     return self._call(*args, tensor=True, **kwargs)
 
+  tcall = tensorcall
+
   @canonicalize_sum_args
   def sum(self, axis) -> Self:
     assert all(-self.ndim <= ax < self.ndim for ax in axis)
@@ -1451,7 +1458,7 @@ class NDSplineArray(Spline):
           return NotImplemented
 
     # this block handles operations between two NDSplineArrays
-    return self.vectorize_NDSpline_func(op)(*inputs, **kwargs)
+    return self._vectorize_NDSpline_func(op)(*inputs, **kwargs)
 
   def sample_mesh(self, sample_meshes: Mesh | np.ndarray | Sequence) -> NDArray:
     """

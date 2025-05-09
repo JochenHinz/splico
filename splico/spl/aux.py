@@ -73,7 +73,7 @@ def tensorial_prolongation_matrix(kvold: 'TensorKnotVector',
   return sparse_kron(*starmap(univariate_prolongation_matrix, zip(kvold, kvnew)))
 
 
-#  Fitting to Greville points
+#  Fitting to Greville points, deprecated
 
 
 @lru_cache(maxsize=GREVILLE_COLLOCATION_MATRIX_CACHE_SIZE)
@@ -110,32 +110,21 @@ def greville_collocation_matrix(kv: 'UnivariateKnotVector') -> sparse.csr_matrix
 
 @lru_cache(maxsize=GREVILLE_COLLOCATION_MATRIX_CACHE_SIZE)
 @freeze_csr
-def gauss_collocation_matrix(kv: 'UnivariateKnotVector') -> sparse.csr_matrix:
+def _gauss_collocation_matrix(kv: 'UnivariateKnotVector') -> sparse.csr_matrix:
   """
-  Same as `greville_collocation_matrix` but uses the Gauss points instead of the
-  Greville points.
+  Same as `greville_collocation_matrix` but uses the Gauss points
+  of degree d+1 instead of the Greville points.
   """
   return kv.collocate(kv.gauss_abscissae)
 
 
-def colmat_and_abscissae(kv: 'UnivariateKnotVector') -> tuple[sparse.csr_matrix, NDArray]:
+def fit_gauss(kv: 'TensorKnotVector', func: Callable) -> NDArray:
   """
-  Return the greville collocation matrix and the associated abscissae if the
-  knotvector is at least C^0 continuous, else return the Gauss
-  collocation matrix and the associated abscissae.
-  """
-  if -1 in kv.continuity[1:-1]:
-    return gauss_collocation_matrix(kv), kv.gauss_abscissae
-  return greville_collocation_matrix(kv), kv.greville
-
-
-def fit_greville(kv: 'TensorKnotVector', func: Callable) -> NDArray:
-  """
-  Special method for fitting an NDSpline to a function over the Greville
+  Special method for fitting an NDSpline to a function over the Gauss
   absissae. We return only the spline coefficients to avoid cicular imports.
 
   We make this a static, dedicated method to make use of caching in the
-  `greville_collocation_matrix` method.
+  `gauss_collocation_matrix` method.
 
   As before, this method uses the least squares method to fit the
   function in case the knotvector has global C^-1 continuity.
@@ -146,24 +135,22 @@ def fit_greville(kv: 'TensorKnotVector', func: Callable) -> NDArray:
   To fit a NDSpline to a new knot vector, we can pass
                     `func = lambda *args: spl(*args, tensor=True)`.
   """
+  # TODO: Add a routine that can, in a stable way, fit a function to
+  #       a knotvector with C^-1 continuity knots. This is not trivial
+  #       because the Greville points are not unique in this case and lead
+  #       to a singular matrix. We can use the Gauss points instead, but
+  #       they have d+1 element evaluation points.
   mats, absc = [], []
-  for mat, myabsc in map(colmat_and_abscissae, kv):
-    mats.append(mat)
-    absc.append(myabsc)
+  for mykv in kv:
+    mats.append(_gauss_collocation_matrix(mykv))
+    absc.append(mykv.gauss_abscissae)
 
   X = KroneckerOperator(mats)
   data = func(*absc)
 
   assert data.shape[:1] == X.shape[1:]
 
-  if all( x.issquare for x in X ):
-    # if all sub-matrices are square, we can directly invert
-    cps = X.T.inv @ data
-  else:
-    # else we solve in the least squares sense
-    cps = (X @ X.T).inv @ (X @ data)
-
-  return cps
+  return (X @ X.T).inv @ (X @ data)
 
 
 def denest_objarr(arr: NDArray):

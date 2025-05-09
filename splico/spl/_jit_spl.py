@@ -5,7 +5,7 @@ All taken from the NURBS book.
 """
 
 
-from ..util import np, _
+from ..util import np
 from .._jit import arange_product, ravel_multi_index, unravel_multi_index
 
 import multiprocessing
@@ -194,6 +194,9 @@ def nonzero_bsplines_deriv(kv, p, x, dx):
   right = np.ones((p + 1,), dtype=np.float64)
   ndu = np.ones((p + 1, p + 1), dtype=np.float64)
 
+  if x < kv[0] or x > kv[-1]:
+    return np.zeros((min(p, dx) + 1, p + 1), dtype=np.float64)
+
   for j in range(1, p + 1):
     left[j] = x - kv[span + 1 - j]
     right[j] = kv[span + j] - x
@@ -209,7 +212,6 @@ def nonzero_bsplines_deriv(kv, p, x, dx):
     ndu[j, j] = saved
 
   # Load the basis functions
-  # ders = [[0.0 for _ in range(p + 1)] for _ in range((min(p, dx) + 1))]
   ders = np.zeros((min(p, dx) + 1, p + 1), dtype=np.float64)
   for j in range(0, p + 1):
     ders[0, j] = ndu[j, p]
@@ -286,7 +288,7 @@ def _collocation_matrix(kv, p, x, dx):
   Return in COO format.
   """
   # Find the knot spans containing the x[i]
-  pos = position_in_knotvector(kv, x)
+  pos = np.clip(position_in_knotvector(kv, x), p, len(kv) - 1)
 
   # The data has shape (len(x), p + 1)
   data = nonzero_bsplines_deriv_vectorized(kv, p, x, dx).ravel()

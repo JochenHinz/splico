@@ -74,17 +74,38 @@ class TestNDSpline(unittest.TestCase):
                                 spline.controlpoints - spline.controlpoints))
 
   def test_add(self):
-    kv0, kv1 = [UnivariateKnotVector(np.linspace(0, 1, n)) for n in (5, 7)]
-    kv = kv0 * kv1
+    with self.subTest('Add KnotVectors with the same upper and lower bounds.'):
+      kv0, kv1 = [UnivariateKnotVector(np.linspace(0, 1, n)) for n in (5, 7)]
+      kv = kv0 * kv1
 
-    spl0 = NDSpline(kv, np.random.randn(kv.ndofs, 3, 2, 4))
-    spl1 = NDSpline(kv, np.random.randn(kv.ndofs, 3, 2, 4))
+      spl0 = NDSpline(kv, np.random.randn(kv.ndofs, 3, 2, 4))
+      spl1 = NDSpline(kv, np.random.randn(kv.ndofs, 3, 2, 4))
 
-    self.assertTrue( np.allclose((spl0 + spl1).controlpoints, spl0.controlpoints + spl1.controlpoints) )
+      self.assertTrue( np.allclose((spl0 + spl1).controlpoints, spl0.controlpoints + spl1.controlpoints) )
 
-    # test if addition is added to each DOF individually
-    offset = np.random.randn(3, 2, 4)
-    self.assertTrue( np.allclose((spl0 + offset).controlpoints, spl0.controlpoints + offset[_]) )
+      # test if addition is added to each DOF individually
+      offset = np.random.randn(3, 2, 4)
+      self.assertTrue( np.allclose((spl0 + offset).controlpoints, spl0.controlpoints + offset[_]) )
+
+    with self.subTest('Add knotvectors with unequal upper and lower bounds.'):
+      kv0, kv1 = [UnivariateKnotVector(np.linspace(-i, 1, n)) for i, n in enumerate((5, 7))]
+
+      spl0 = NDSpline(kv0, np.random.randn(kv0.dim, 3, 2, 4))
+      spl1 = NDSpline(kv1, np.random.randn(kv1.dim, 3, 2, 4))
+      spl = spl0 + spl1
+
+      xi = np.linspace(-1, 1, 1001)
+
+      self.assertTrue( np.allclose( spl0(xi) + spl1(xi), spl(xi) ) )
+
+      spl0 = NDSpline(kv1 * kv0, np.random.randn(kv0.dim * kv1.dim, 3, 2, 4))
+      spl1 = NDSpline(kv0 * kv1, np.random.randn(kv0.dim * kv1.dim, 3, 2, 4))
+      spl = spl0 + spl1
+
+      xi, eta = [np.linspace(-1, 1, 1001)]*2
+
+      self.assertTrue( np.allclose( spl0(xi, eta, tensor=True)
+                                    + spl1(xi, eta, tensor=True), spl(xi, eta, tensor=True) ) )
 
   def test_sum(self):
     kv0, kv1 = [UnivariateKnotVector(np.linspace(0, 1, n)) for n in (5, 7)]
@@ -378,6 +399,88 @@ class TestNDSplineArray(unittest.TestCase):
             self.assertTrue((C.arr.sum(indices) == B.sum(indices).expand_all().arr).all())
             self.assertTrue(B.sum(indices).contract_all().arr.ravel()[0] == spl.sum(indices))
           B = B.expand()
+
+
+class TestJIT(unittest.TestCase):
+  """
+  Test the JIT compiled helper routines from the `splico.spl._jit_spl` module.
+  """
+
+  def test_position_in_knotvector(self):
+    pass
+
+
+class TestSymbolic(unittest.TestCase):
+  """
+  Test the routines that are used to perform symbolic operations between
+  NDSpline and NDSplineArray objects.
+  """
+
+  def test_transpose_dependencies(self):
+    with self.subTest('empty transpose_dependencies'):
+      spl = NDSpline([], np.random.randn(1, 3, 4))
+
+      # should not raise if `axes` is empty
+      self.assertTrue(spl is spl.transpose_dependencies(()))
+
+      # should raise because there are no axes to shuffle
+      self.assertRaises(Exception, lambda: spl.transpose_dependencies((0, 1)))
+
+    with self.subTest('Test transpose_dependencies normal input'):
+      kv = np.prod([ UnivariateKnotVector(np.linspace(0, 1, i)) for i in (4, 5, 6) ])
+
+      xi = [np.linspace(0, 1, i) for i in (11, 7, 21)]
+
+      spl = NDSpline(kv, np.random.randn(kv.ndofs, 3, 4))
+      splp = spl.transpose_dependencies((2, 0, 1))
+
+      Xi = np.stack(list(map(np.ravel, np.meshgrid(*xi, indexing='ij'))), axis=1)
+      Xip = Xi[:, [2, 0, 1]]
+      self.assertTrue( np.allclose( spl(*Xi.T), splp(*Xip.T) ))
+
+    # should be vectorized for NDSplineArray
+    with self.subTest('Test transpose_dependencies NDSplineArray'):
+      kv = np.prod([ UnivariateKnotVector(np.linspace(0, 1, i)) for i in (4, 5, 6) ])
+
+      spl = NDSplineArray(NDSpline(kv, np.random.randn(kv.ndofs, 3, 4)))
+      splp = spl.transpose_dependencies((2, 0, 1))
+
+      self.assertTrue( ( np.asarray(spl.arr[()].tcontrolpoints.shape[:3])[[2, 0, 1]] ==
+                         np.asarray(splp.arr[()].tcontrolpoints.shape[:3])).all())
+
+  def test_insert_dependencies(self):
+    with self.subTest('empty insert_dependencies'):
+      spl = NDSpline([], np.random.randn(1, 3, 4))
+
+      # special case: adding no dependencies should not change the spline
+      self.assertTrue(spl is spl.insert_dependencies((), ()))
+
+      # should raise because there are no axes to shuffle
+      self.assertRaises(Exception, lambda: spl.insert_dependencies((0, 1), (0, 1)))
+
+      # make sure adding dependencies to constant spline works
+      new_spl = spl.insert_dependencies((0, 0), [UnivariateKnotVector(np.linspace(0, 1, 4))] * 2)
+      self.assertTrue( new_spl.shape == spl.shape and new_spl.nvars == 2 )
+
+    with self.subTest('Test insert_dependencies normal input'):
+      kv = np.prod([ UnivariateKnotVector(np.linspace(0, 1, i)) for i in (4, 5, 6) ])
+
+      xi = [np.linspace(0, 1, i) for i in (11, 7, 21)]
+
+      spl = NDSpline(kv, np.random.randn(kv.ndofs, 3, 4))
+      splp = spl.insert_dependencies((0,), (UnivariateKnotVector(np.linspace(0, 1, 2)),))
+
+      Xi = np.stack(list(map(np.ravel, np.meshgrid(*xi, indexing='ij'))), axis=1)
+      Xip = np.concatenate((Xi[:, [0]], Xi), axis=1)
+      self.assertTrue( np.allclose( spl(*Xi.T), splp(*Xip.T) ))
+
+    with self.subTest('Test insert_dependencies NDSplineArray'):
+      kv = np.prod([ UnivariateKnotVector(np.linspace(0, 1, i)) for i in (4, 5, 6) ])
+
+      spl = NDSplineArray(NDSpline(kv, np.random.randn(kv.ndofs, 3, 4)))
+      splp = spl.insert_dependencies((0, 0), [UnivariateKnotVector(np.linspace(0, 1, i)) for i in (3, 4)])
+
+      self.assertTrue(splp.nvars == 5 and splp.shape == spl.shape)
 
 
 if __name__ == '__main__':

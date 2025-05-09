@@ -185,7 +185,6 @@ class UnivariateKnotVector(Immutable):
     abscissae = np.asarray(abscissae, dtype=float)
 
     a, *ignore, b = self.knots
-    assert a <= abscissae.min() <= abscissae.max() <= b
 
     args = _collocation_matrix(self.repeated_knots,
                                self.degree,

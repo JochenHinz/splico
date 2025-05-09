@@ -50,7 +50,7 @@ def linear_interpolation(spl0: NDSplineArray,
   # stable greville points. We need not stabilize and the fit should be exact.
   f0, f1 = kvz.to_tensor().fit([z], np.stack([1 - z, z], axis=1), lam0=0)
 
-  return spl0 * f0 + spl1 * f1
+  return spl0 @ f0 + spl1 @ f1
 
 
 @spline_or_array
@@ -111,4 +111,4 @@ def cubic_hermite_interpolation(spl0: NDSplineArray,
                                                       z**3 - z**2], axis=1), lam0=0)
 
   # Interpolation along the last axis.
-  return spl0 * f0 + t0 * f1 + spl1 * f2 + t1 * f3
+  return spl0 @ f0 + t0 @ f1 + spl1 @ f2 + t1 @ f3

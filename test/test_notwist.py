@@ -34,8 +34,8 @@ class TestNoTwist(unittest.TestCase):
     one = disc.one(disc.knotvector)
 
     rRs = rRs[_]
-    vessel = (disc[:, _] * rRs).sum(-1)
-    vessel = vessel + (one * X)[_]
+    vessel = (disc[:, _] @ rRs).sum(-1)
+    vessel = vessel + (one @ X)[_]
 
     eval_mesh = rectilinear([5, 5, 101])
 
