@@ -487,7 +487,8 @@ class NDSpline(Spline, metaclass=NDSplineMeta):
 
   def __call__(self, *positions: FloatArray,
                      tensor: bool = False,
-                     dx: Int | AnyIntSeq = ()):
+                     dx: Int | AnyIntSeq = (),
+                     oob: Int = 0) -> FloatArray:
     """
     Evaluate the spline in a set of points.
 
@@ -534,7 +535,12 @@ class NDSpline(Spline, metaclass=NDSplineMeta):
       # reshape to matrix shape, if self.shape == (), np.prod((), dtype=int) == 1
       controlpoints = self.controlpoints_T.reshape(np.prod(self.shape, dtype=int), -1)
       positions = np.stack(positions, axis=1)
-      ret = call(positions, self.repeated_knots, self.degree, controlpoints, dx)
+      ret = call(positions,
+                 self.repeated_knots,
+                 self.degree,
+                 controlpoints,
+                 dx,
+                 oob=oob)
     else:
       # tensorial evaluation
       op = KroneckerOperator(self.knotvector.collocate(*positions, dx=dx))

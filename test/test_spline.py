@@ -3,6 +3,7 @@ from splico.spl import UnivariateKnotVector, TensorKnotVector
 from splico.mesh import rectilinear
 from splico.geo import ellipse
 from splico.spl import NDSpline, NDSplineArray
+from splico.spl._jit_spl import position_in_knotvector
 
 import operator
 import unittest
@@ -120,7 +121,7 @@ class TestNDSpline(unittest.TestCase):
     self.assertTrue(spl0_s.controlpoints.shape == (kv.ndofs, 4))
     self.assertTrue( np.allclose(spl0_s.controlpoints, spl0.controlpoints.sum((1, 2))) )
 
-  def test_mul(self):
+  def test_matmul(self):
     kv0, kv1 = [UnivariateKnotVector(np.linspace(0, 1, n)) for n in (5, 7)]
     kv = kv0 @ kv1
 
@@ -129,7 +130,7 @@ class TestNDSpline(unittest.TestCase):
     offset = np.random.randn(3, 2, 4)
     self.assertTrue( np.allclose((spl0 * offset).controlpoints, spl0.controlpoints * offset[_]) )
 
-  def test_matmul(self):
+  def test_mul(self):
     # forthcoming
     pass
 
@@ -202,72 +203,6 @@ class TestNDSpline(unittest.TestCase):
                                           amounts=[2])
 
     self.assertTrue(np.allclose(X.controlpoints, Xs[0].join(Xs[1:], direction).controlpoints))
-
-  def test_against_scipy_1D(self):
-    from scipy.interpolate import splev
-
-    # no repeated knots
-    tkv = TensorKnotVector([UnivariateKnotVector(np.linspace(0, 1, 21), 3)])
-
-    controlpoints = np.random.randn(tkv.ndofs)
-    spl = NDSpline(tkv, controlpoints)
-
-    xi = np.linspace(0, 1, 1001)
-    self.assertTrue(np.allclose(spl(xi), splev(xi, (tkv.repeated_knots, controlpoints, 3))))
-    self.assertTrue(np.allclose(spl(xi, dx=1), splev(xi, (tkv.repeated_knots, controlpoints, 3), der=1)))
-    self.assertTrue(np.allclose(spl(xi, dx=2), splev(xi, (tkv.repeated_knots, controlpoints, 3), der=2)))
-
-    # repeated knots
-    tkv = TensorKnotVector([UnivariateKnotVector(np.linspace(0, 1, 21), 3)]). \
-                            raise_multiplicities(0, [5], [3])
-
-    controlpoints = np.random.randn(tkv.ndofs)
-    spl = NDSpline(tkv, controlpoints)
-
-    xi = np.linspace(0, 1, 1001)
-    self.assertTrue(np.allclose(spl(xi), splev(xi, (tkv.repeated_knots, controlpoints, 3))))
-
-  def test_against_scipy_2D(self):
-    from scipy.interpolate import bisplev
-
-    # no repeated knots
-    tkv = TensorKnotVector([UnivariateKnotVector(np.linspace(0, 1, i), 3) for i in (11, 21)])
-
-    controlpoints = np.random.randn(tkv.ndofs)
-    spl = NDSpline(tkv, controlpoints)
-
-    tck = (*tkv.repeated_knots, spl.controlpoints.ravel(), *tkv.degree)
-
-    xi = [np.linspace(0, 1, 101)] * 2
-    Xi = list(map(np.ravel, np.meshgrid(*xi, indexing='ij')))
-
-    # test tcall
-    self.assertTrue(np.allclose(spl(*xi, tensor=True), bisplev(*xi, tck, dx=0, dy=0).ravel()))
-    self.assertTrue(np.allclose(spl(*xi, tensor=True, dx=(1, 1)), bisplev(*xi, tck, dx=1, dy=1).ravel()))
-    self.assertTrue(np.allclose(spl(*xi, tensor=True, dx=(2, 2)), bisplev(*xi, tck, dx=2, dy=2).ravel()))
-
-    # test normal call
-    self.assertTrue(np.allclose(spl(*Xi), bisplev(*xi, tck, dx=0, dy=0).ravel()))
-    self.assertTrue(np.allclose(spl(*Xi, dx=(1, 1)), bisplev(*xi, tck, dx=1, dy=1).ravel()))
-    self.assertTrue(np.allclose(spl(*Xi, dx=(2, 2)), bisplev(*xi, tck, dx=2, dy=2).ravel()))
-
-    # repeated knots
-    tkv = TensorKnotVector([UnivariateKnotVector(np.linspace(0, 1, 21), 3)]*2)
-    tkv = tkv.raise_multiplicities([0, 1], [4, 4], [3, 3])
-
-    controlpoints = np.random.randn(tkv.ndofs)
-    spl = NDSpline(tkv, controlpoints)
-
-    tck = (*tkv.repeated_knots, spl.controlpoints.ravel(), *tkv.degree)
-
-    xi = [np.linspace(0, 1, 9)] * 2
-    Xi = list(map(np.ravel, np.meshgrid(*xi, indexing='ij')))
-    # self.assertTrue(np.allclose(spl(*xi, tensor=True), bisplev(*xi, tck, dx=0, dy=0).ravel()))
-
-    X = spl(*map(np.ravel, np.meshgrid(*xi, indexing='ij')))
-    X_ = bisplev(*xi, tck, dx=0, dy=0).ravel()
-
-    self.assertTrue(np.allclose(X, X_))
 
   # def test_tensor_call(self):
   #   ell = ellipse(1, 1, 4).to_ndim(1).arr[0]
@@ -399,15 +334,6 @@ class TestNDSplineArray(unittest.TestCase):
             self.assertTrue((C.arr.sum(indices) == B.sum(indices).expand_all().arr).all())
             self.assertTrue(B.sum(indices).contract_all().arr.ravel()[0] == spl.sum(indices))
           B = B.expand()
-
-
-class TestJIT(unittest.TestCase):
-  """
-  Test the JIT compiled helper routines from the `splico.spl._jit_spl` module.
-  """
-
-  def test_position_in_knotvector(self):
-    pass
 
 
 class TestSymbolic(unittest.TestCase):

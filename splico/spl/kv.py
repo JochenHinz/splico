@@ -108,13 +108,6 @@ class UnivariateKnotVector(Immutable):
     knots = self.repeated_knots
     ret = knots[np.arange(self.degree, dtype=int)[_] +
                 np.arange(1, self.dim+1, dtype=int)[:, _]].sum(1) / self.degree
-
-    # Check if there are points with discontinuous derivatives
-    # If so, we have to slightly move the point away from the discontinuity's
-    # knot.
-    breaks, = np.where( self.continuity[1:-1] == -1 )
-    if len(breaks):
-      pass
     return np.clip(ret, self.knots[0], self.knots[-1])
 
   @frozen_cached_property
@@ -191,7 +184,8 @@ class UnivariateKnotVector(Immutable):
                                abscissae,
                                dx)
 
-    return sparse.coo_matrix(args).tocsr()
+    # we pass the shape because the collocation points may not be unisolvent
+    return sparse.coo_matrix(args, shape=(self.dim, len(abscissae))).tocsr()
 
   def _refine(self) -> Self:
     """ Uniformly refine the entire knotvector once. """
