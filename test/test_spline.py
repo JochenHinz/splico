@@ -36,7 +36,7 @@ class TestNDSpline(unittest.TestCase):
   def test2D(self):
 
     uknotvector = UnivariateKnotVector(np.linspace(0, 1, 21), 3)
-    knotvector = uknotvector * uknotvector
+    knotvector = uknotvector @ uknotvector
 
     ndatapoints = 11
     xi = np.linspace(0, 1, ndatapoints)
@@ -48,7 +48,7 @@ class TestNDSpline(unittest.TestCase):
 
   def test_arithmetic(self):
     uknotvector = UnivariateKnotVector(np.linspace(0, 1, 21), 3)
-    knotvector = uknotvector * uknotvector
+    knotvector = uknotvector @ uknotvector
 
     ndatapoints = 11
     xi = np.linspace(0, 1, ndatapoints)
@@ -76,7 +76,7 @@ class TestNDSpline(unittest.TestCase):
   def test_add(self):
     with self.subTest('Add KnotVectors with the same upper and lower bounds.'):
       kv0, kv1 = [UnivariateKnotVector(np.linspace(0, 1, n)) for n in (5, 7)]
-      kv = kv0 * kv1
+      kv = kv0 @ kv1
 
       spl0 = NDSpline(kv, np.random.randn(kv.ndofs, 3, 2, 4))
       spl1 = NDSpline(kv, np.random.randn(kv.ndofs, 3, 2, 4))
@@ -98,8 +98,8 @@ class TestNDSpline(unittest.TestCase):
 
       self.assertTrue( np.allclose( spl0(xi) + spl1(xi), spl(xi) ) )
 
-      spl0 = NDSpline(kv1 * kv0, np.random.randn(kv0.dim * kv1.dim, 3, 2, 4))
-      spl1 = NDSpline(kv0 * kv1, np.random.randn(kv0.dim * kv1.dim, 3, 2, 4))
+      spl0 = NDSpline(kv1 @ kv0, np.random.randn(kv0.dim * kv1.dim, 3, 2, 4))
+      spl1 = NDSpline(kv0 @ kv1, np.random.randn(kv0.dim * kv1.dim, 3, 2, 4))
       spl = spl0 + spl1
 
       xi, eta = [np.linspace(-1, 1, 1001)]*2
@@ -109,7 +109,7 @@ class TestNDSpline(unittest.TestCase):
 
   def test_sum(self):
     kv0, kv1 = [UnivariateKnotVector(np.linspace(0, 1, n)) for n in (5, 7)]
-    kv = kv0 * kv1
+    kv = kv0 @ kv1
 
     spl0 = NDSpline(kv, np.random.randn(kv.ndofs, 3, 2, 4))
 
@@ -122,7 +122,7 @@ class TestNDSpline(unittest.TestCase):
 
   def test_mul(self):
     kv0, kv1 = [UnivariateKnotVector(np.linspace(0, 1, n)) for n in (5, 7)]
-    kv = kv0 * kv1
+    kv = kv0 @ kv1
 
     spl0 = NDSpline(kv, np.random.randn(kv.ndofs, 3, 2, 4))
 
@@ -242,9 +242,9 @@ class TestNDSpline(unittest.TestCase):
     Xi = list(map(np.ravel, np.meshgrid(*xi, indexing='ij')))
 
     # test tcall
-    # self.assertTrue(np.allclose(spl(*xi, tensor=True), bisplev(*xi, tck, dx=0, dy=0).ravel()))
-    # self.assertTrue(np.allclose(spl(*xi, tensor=True, dx=(1, 1)), bisplev(*xi, tck, dx=1, dy=1).ravel()))
-    # self.assertTrue(np.allclose(spl(*xi, tensor=True, dx=(2, 2)), bisplev(*xi, tck, dx=2, dy=2).ravel()))
+    self.assertTrue(np.allclose(spl(*xi, tensor=True), bisplev(*xi, tck, dx=0, dy=0).ravel()))
+    self.assertTrue(np.allclose(spl(*xi, tensor=True, dx=(1, 1)), bisplev(*xi, tck, dx=1, dy=1).ravel()))
+    self.assertTrue(np.allclose(spl(*xi, tensor=True, dx=(2, 2)), bisplev(*xi, tck, dx=2, dy=2).ravel()))
 
     # test normal call
     self.assertTrue(np.allclose(spl(*Xi), bisplev(*xi, tck, dx=0, dy=0).ravel()))
@@ -282,7 +282,7 @@ class TestFitSample(unittest.TestCase):
 
   def test_fit_spline2D(self):
     kv = UnivariateKnotVector(np.linspace(0, 1, 11))
-    kv = kv * kv
+    kv = kv @ kv
     abscissae = np.linspace(0, 1, 21)
     x, y = map(np.ravel, np.meshgrid(abscissae, abscissae))
     z = np.zeros_like(x)
@@ -293,7 +293,7 @@ class TestFitSample(unittest.TestCase):
 
   def test_fit_spline3D(self):
     kv = UnivariateKnotVector(np.linspace(0, 1, 11))
-    kv = kv * kv * kv
+    kv = kv @ kv @ kv
     abscissae = np.linspace(0, 1, 21)
     x, y, z = map(np.ravel, np.meshgrid(abscissae, abscissae, abscissae))
     spline = kv.fit([abscissae] * 3, np.stack([x, 1 + x + y, z], axis=1))
@@ -308,7 +308,7 @@ class TestNDSplineArray(unittest.TestCase):
     xi = np.linspace(0, 1, 11)
     kv0 = UnivariateKnotVector(np.linspace(0, 1, 6))
     kv1 = UnivariateKnotVector(xi)
-    kv = kv0 * kv1
+    kv = kv0 @ kv1
     spline = NDSpline(kv, np.random.randn(kv.ndofs, 2, 3))
     spline0 = NDSpline(kv, np.random.randn(kv.ndofs, 2, 3, 4))
 
@@ -427,7 +427,7 @@ class TestSymbolic(unittest.TestCase):
       self.assertRaises(Exception, lambda: spl.transpose_dependencies((0, 1)))
 
     with self.subTest('Test transpose_dependencies normal input'):
-      kv = np.prod([ UnivariateKnotVector(np.linspace(0, 1, i)) for i in (4, 5, 6) ])
+      kv = TensorKnotVector([ UnivariateKnotVector(np.linspace(0, 1, i)) for i in (4, 5, 6) ])
 
       xi = [np.linspace(0, 1, i) for i in (11, 7, 21)]
 
@@ -440,7 +440,7 @@ class TestSymbolic(unittest.TestCase):
 
     # should be vectorized for NDSplineArray
     with self.subTest('Test transpose_dependencies NDSplineArray'):
-      kv = np.prod([ UnivariateKnotVector(np.linspace(0, 1, i)) for i in (4, 5, 6) ])
+      kv = TensorKnotVector([ UnivariateKnotVector(np.linspace(0, 1, i)) for i in (4, 5, 6) ])
 
       spl = NDSplineArray(NDSpline(kv, np.random.randn(kv.ndofs, 3, 4)))
       splp = spl.transpose_dependencies((2, 0, 1))
@@ -463,7 +463,7 @@ class TestSymbolic(unittest.TestCase):
       self.assertTrue( new_spl.shape == spl.shape and new_spl.nvars == 2 )
 
     with self.subTest('Test insert_dependencies normal input'):
-      kv = np.prod([ UnivariateKnotVector(np.linspace(0, 1, i)) for i in (4, 5, 6) ])
+      kv = TensorKnotVector([ UnivariateKnotVector(np.linspace(0, 1, i)) for i in (4, 5, 6) ])
 
       xi = [np.linspace(0, 1, i) for i in (11, 7, 21)]
 
@@ -475,7 +475,7 @@ class TestSymbolic(unittest.TestCase):
       self.assertTrue( np.allclose( spl(*Xi.T), splp(*Xip.T) ))
 
     with self.subTest('Test insert_dependencies NDSplineArray'):
-      kv = np.prod([ UnivariateKnotVector(np.linspace(0, 1, i)) for i in (4, 5, 6) ])
+      kv = TensorKnotVector([ UnivariateKnotVector(np.linspace(0, 1, i)) for i in (4, 5, 6) ])
 
       spl = NDSplineArray(NDSpline(kv, np.random.randn(kv.ndofs, 3, 4)))
       splp = spl.insert_dependencies((0, 0), [UnivariateKnotVector(np.linspace(0, 1, i)) for i in (3, 4)])

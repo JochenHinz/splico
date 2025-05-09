@@ -95,7 +95,7 @@ class __NDSpline_implementations__:
     """
 
     # tensor knotvector
-    knotvector = self.knotvector * other.knotvector
+    knotvector = self.knotvector @ other.knotvector
 
     n, m = map(len, (self.shape, other.shape))
 

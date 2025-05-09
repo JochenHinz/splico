@@ -93,7 +93,7 @@ def _disc(kv0, kv1, kv2, reparam: bool = True) -> NDSplineArray:
                                              geometry=geom,
                                              degree=2*degree).reshape(-1, 2)
 
-  tkvs = [kvs[patch[::2]] * kvs[patch[:2]] for patch in PATCHES]
+  tkvs = [kvs[patch[::2]] @ kvs[patch[:2]] for patch in PATCHES]
   segments = np.array([kv.ndofs for kv in tkvs]).cumsum()[:-1]
 
   spls = [NDSpline(kv, np.concatenate([cps, np.zeros(len(cps))[:, _]], axis=1))

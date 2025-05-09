@@ -17,11 +17,11 @@ class TestUnivariateKnotVector(unittest.TestCase):
   def test_multiply(self):
     knotvalues = np.linspace(0, 2, 21)
     knotvector = UnivariateKnotVector(knotvalues)
-    tknotvector = knotvector * knotvector
+    tknotvector = knotvector @ knotvector
     self.assertTrue( len(tknotvector) == 2 )
     self.assertTrue( isinstance(tknotvector, TensorKnotVector) )
-    self.assertTrue( isinstance(knotvector * tknotvector, TensorKnotVector) )
-    self.assertTrue( isinstance(tknotvector * knotvector, TensorKnotVector) )
+    self.assertTrue( isinstance(knotvector @ tknotvector, TensorKnotVector) )
+    self.assertTrue( isinstance(tknotvector @ knotvector, TensorKnotVector) )
 
   def test_functionality(self):
     knotvector = UnivariateKnotVector(np.linspace(-1, 1, 21))
@@ -86,8 +86,8 @@ class TestTensorKnotvector(unittest.TestCase):
 
     with self.subTest('Test arithmetic'):
       kv1 = UnivariateKnotVector(np.linspace(0, 1, 11))
-      tkv0 = kv0 * kv0
-      tkv1 = kv1 ** 2
+      tkv0 = kv0 @ kv0
+      tkv1 = kv1 @ kv1
 
       self.assertTrue( (tkv0 | tkv1) == tkv0.raise_multiplicities(..., [10]*2, [3]*2) )
 
@@ -98,7 +98,6 @@ class TestTensorKnotvector(unittest.TestCase):
 
   def test_fit(self):
     kvs = [UnivariateKnotVector(np.linspace(0, 1, i)) for i in [5, 6, 7] ]
-    # kvs = [kv.raise_multiplicities(3, 2).to_tensor() for kv in kvs]
     kvs = [kv.to_tensor() for kv in kvs]
 
     for i in range(1, 4):

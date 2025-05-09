@@ -315,7 +315,7 @@ class UnivariateKnotVector(Immutable):
     """
     return self.integrate(dx=2)
 
-  def __mul__(self, other: Any):
+  def __matmul__(self, other: Any):
     """
     Multiplying by :class:`UnivariateKnotVector` or :class:`TensorKnotVector`
     yields a :class:`TensorKnotVector`.
@@ -414,7 +414,7 @@ class UnivariateKnotVector(Immutable):
     return self == other or self > other
 
   @ensure_same_class
-  def __matmul__(self, other: Self) -> Self:
+  def __mul__(self, other: Self) -> Self:
     """
     We overload the `@` operator to compute the knotvector that contains the
     >>product<< of any functional from the linear span of ``self`` and
@@ -590,7 +590,7 @@ def add_vectorizations(cls):
     setattr(cls, name, _vectorize_operator(name, all))
 
   # add all operator vectorizations without custom return type
-  for name in '__and__', '__or__', '__matmul__':
+  for name in '__and__', '__or__', '__mul__':
     setattr(cls, name, _vectorize_operator(name))
 
   return cls
@@ -793,7 +793,7 @@ class TensorKnotVector(Immutable):
     from .spline import NDSpline
     return NDSpline(self, (M.inv @ rhs).reshape((-1,) + data.shape[1:]))
 
-  def __mul__(self, other: Any):
+  def __matmul__(self, other: Any):
     """
     Multiplying by a :class:`TensorKnotVector` or a
     :class:`UnivariateKnotVector` simply gives a bigger knotvector.
