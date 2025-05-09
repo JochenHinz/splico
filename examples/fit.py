@@ -2,6 +2,7 @@ from splico.spl import UnivariateKnotVector, TensorKnotVector
 from splico.mesh import rectilinear
 from splico.util import np, flat_meshgrid
 
+from functools import reduce
 from typing import Sequence
 
 
@@ -26,7 +27,7 @@ def main(nelems: Sequence[int], verts: Sequence[np.ndarray], data: np.ndarray, *
   assert data.shape[0] == np.prod(list(map(len, verts)))
 
   knotvector: TensorKnotVector = \
-      np.prod([UnivariateKnotVector(np.linspace(0, 1, n)) for n in nelems])
+    reduce(lambda x, y: x @ y, [UnivariateKnotVector(np.linspace(0, 1, n)) for n in nelems])
 
   spline = knotvector.fit(verts, data, **fitkwargs)
 
