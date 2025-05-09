@@ -1144,7 +1144,7 @@ class NDSplineArray(Spline):
                              **{k: v[mindex] for k, v in kwargs.items()})
 
       if ret.ravel()[0].__class__ is self._dtype:
-        ret = self._edit(arr=ret)
+        return self._edit(arr=ret)
 
       return frozen(ret)
 
